@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.DS_Store
+node_modules/
+.next/
+coverage/
+.pytest_cache/
+dist/
+build/
