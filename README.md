@@ -16,8 +16,8 @@ This monorepo hosts a turn-based J-league club management business game for inte
    ```
    - The `web` service is optional and gated behind the `web` profile.
 3. Access services:
-   - API: http://localhost:8000 (docs at `/docs`, API prefix `/api`)
-   - Web: http://localhost:3000
+  - API: http://localhost:8000 (docs at `/docs`, API prefix `/api`)
+  - Web: http://localhost:3000
 
 ## Development
 - Run Alembic migrations (inside the API container):
