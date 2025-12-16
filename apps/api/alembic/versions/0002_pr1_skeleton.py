@@ -8,6 +8,7 @@ Create Date: 2024-05-01 00:00:00.000000
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import ENUM
 
 
 # revision identifiers, used by Alembic.
@@ -18,19 +19,20 @@ depends_on = None
 
 
 def upgrade() -> None:
-    game_status = sa.Enum("draft", "active", "archived", name="gamestatus")
-    membership_role = sa.Enum("gm", "club_owner", "club_viewer", name="membershiprole")
-    season_status = sa.Enum("setup", "running", "finished", name="seasonstatus")
-    turn_state = sa.Enum("open", "collecting", "locked", "resolved", "acked", name="turnstate")
-    decision_state = sa.Enum("draft", "committed", "locked", name="decisionstate")
-    match_status = sa.Enum("scheduled", "played", name="matchstatus")
+    game_status = ENUM("draft", "active", "archived", name="gamestatus", create_type=False)
+    membership_role = ENUM("gm", "club_owner", "club_viewer", name="membershiprole", create_type=False)
+    season_status = ENUM("setup", "running", "finished", name="seasonstatus", create_type=False)
+    turn_state = ENUM("open", "collecting", "locked", "resolved", "acked", name="turnstate", create_type=False)
+    decision_state = ENUM("draft", "committed", "locked", name="decisionstate", create_type=False)
+    match_status = ENUM("scheduled", "played", name="matchstatus", create_type=False)
 
-    game_status.create(op.get_bind(), checkfirst=True)
-    membership_role.create(op.get_bind(), checkfirst=True)
-    season_status.create(op.get_bind(), checkfirst=True)
-    turn_state.create(op.get_bind(), checkfirst=True)
-    decision_state.create(op.get_bind(), checkfirst=True)
-    match_status.create(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
+    game_status.create(bind, checkfirst=True)
+    membership_role.create(bind, checkfirst=True)
+    season_status.create(bind, checkfirst=True)
+    turn_state.create(bind, checkfirst=True)
+    decision_state.create(bind, checkfirst=True)
+    match_status.create(bind, checkfirst=True)
 
     op.create_table(
         "games",
