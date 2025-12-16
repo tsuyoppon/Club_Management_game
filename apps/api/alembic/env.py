@@ -1,12 +1,11 @@
-import os
-import sys
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from app.db import Base, get_settings  # noqa: E402
+from app.config import get_settings
+from app.db.base import Base
+from app.db import models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

@@ -8,7 +8,7 @@ class Settings(BaseSettings):
         description="Database connection string",
         env="DATABASE_URL",
     )
-    api_prefix: str = "/api"
+    api_prefix: str = Field("/api", env="API_PREFIX")
 
     class Config:
         env_file = ".env"
