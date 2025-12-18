@@ -99,6 +99,12 @@ def lock_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_curr
 def resolve_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     turn = _get_turn(db, turn_id)
     require_role(user, db, turn.season.game_id, MembershipRole.gm)
+
+    # Apply finance
+    from app.services import finance as finance_service
+
+    finance_service.apply_finance_for_turn(db, turn.season_id, turn.id)
+
     turn.turn_state = TurnState.resolved
     turn.resolved_at = datetime.utcnow()
     db.commit()

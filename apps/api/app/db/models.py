@@ -10,6 +10,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
 )
@@ -87,6 +88,12 @@ class Club(Base):
     fixtures_home = relationship("Fixture", back_populates="home_club", foreign_keys="Fixture.home_club_id")
     fixtures_away = relationship("Fixture", back_populates="away_club", foreign_keys="Fixture.away_club_id")
     bye_fixtures = relationship("Fixture", back_populates="bye_club", foreign_keys="Fixture.bye_club_id")
+
+    financial_profile = relationship("ClubFinancialProfile", back_populates="club", uselist=False, cascade="all, delete-orphan")
+    financial_state = relationship("ClubFinancialState", back_populates="club", uselist=False, cascade="all, delete-orphan")
+    financial_ledgers = relationship("ClubFinancialLedger", back_populates="club", cascade="all, delete-orphan")
+    financial_snapshots = relationship("ClubFinancialSnapshot", back_populates="club", cascade="all, delete-orphan")
+
 
 
 class User(Base):
@@ -259,3 +266,73 @@ def month_mappings():
     ]
     return months
 
+
+class ClubFinancialProfile(Base):
+    __tablename__ = "club_financial_profiles"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    currency_code = Column(String, nullable=False, default="JPY")
+    sponsor_base_monthly = Column(Numeric(14, 2), nullable=False, default=0)
+    sponsor_per_point = Column(Numeric(14, 2), nullable=False, default=0)
+    monthly_cost = Column(Numeric(14, 2), nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    club = relationship("Club", back_populates="financial_profile")
+
+
+class ClubFinancialState(Base):
+    __tablename__ = "club_financial_states"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    balance = Column(Numeric(14, 2), nullable=False, default=0)
+    last_applied_turn_id = Column(UUID(as_uuid=True), ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    club = relationship("Club", back_populates="financial_state")
+    last_applied_turn = relationship("Turn")
+
+
+class ClubFinancialLedger(Base):
+    __tablename__ = "club_financial_ledgers"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    turn_id = Column(UUID(as_uuid=True), ForeignKey("turns.id", ondelete="CASCADE"), nullable=False)
+    kind = Column(String, nullable=False)
+    amount = Column(Numeric(14, 2), nullable=False)
+    meta = Column(JSONB, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    club = relationship("Club", back_populates="financial_ledgers")
+    turn = relationship("Turn")
+
+    __table_args__ = (
+        UniqueConstraint("club_id", "turn_id", "kind", name="uq_ledger_club_turn_kind"),
+    )
+
+
+class ClubFinancialSnapshot(Base):
+    __tablename__ = "club_financial_snapshots"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
+    turn_id = Column(UUID(as_uuid=True), ForeignKey("turns.id", ondelete="CASCADE"), nullable=False)
+    month_index = Column(Integer, nullable=False)
+    opening_balance = Column(Numeric(14, 2), nullable=False)
+    income_total = Column(Numeric(14, 2), nullable=False)
+    expense_total = Column(Numeric(14, 2), nullable=False)
+    closing_balance = Column(Numeric(14, 2), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    club = relationship("Club", back_populates="financial_snapshots")
+    season = relationship("Season")
+    turn = relationship("Turn")
+
+    __table_args__ = (
+        UniqueConstraint("club_id", "turn_id", name="uq_snapshot_club_turn"),
+    )

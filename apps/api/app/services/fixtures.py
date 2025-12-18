@@ -84,5 +84,5 @@ def generate_round_robin(club_ids: List[UUID], match_months: int = 10) -> List[F
             fixtures.extend(round_fixtures)
         cycle += 1
 
-    return fixtures[:match_months]
+    return fixtures
 

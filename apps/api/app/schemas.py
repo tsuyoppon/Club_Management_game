@@ -106,3 +106,48 @@ class ClubScheduleItem(BaseModel):
     home: bool
     is_bye: bool
 
+
+class ClubFinancialProfileUpdate(BaseModel):
+    sponsor_base_monthly: Optional[float] = None
+    sponsor_per_point: Optional[float] = None
+    monthly_cost: Optional[float] = None
+
+
+class ClubFinancialProfileRead(BaseModel):
+    id: UUID
+    club_id: UUID
+    currency_code: str
+    sponsor_base_monthly: float
+    sponsor_per_point: float
+    monthly_cost: float
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+
+class ClubFinancialStateRead(BaseModel):
+    id: UUID
+    club_id: UUID
+    balance: float
+    last_applied_turn_id: Optional[UUID]
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+
+class ClubFinancialSnapshotRead(BaseModel):
+    id: UUID
+    club_id: UUID
+    season_id: UUID
+    turn_id: UUID
+    month_index: int
+    opening_balance: float
+    income_total: float
+    expense_total: float
+    closing_balance: float
+    created_at: datetime
+
+    class Config:
+        orm_mode = True

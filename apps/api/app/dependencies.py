@@ -9,8 +9,8 @@ from app.db.session import SessionLocal, get_db
 
 def get_current_user(
     db: Session = Depends(get_db),
-    x_user_email: Optional[str] = Header(None, convert_underscores=False),
-    x_user_name: Optional[str] = Header(None, convert_underscores=False),
+    x_user_email: Optional[str] = Header(None),
+    x_user_name: Optional[str] = Header(None),
 ) -> User:
     if not x_user_email:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-User-Email header required")
