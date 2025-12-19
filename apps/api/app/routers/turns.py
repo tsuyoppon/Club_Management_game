@@ -105,6 +105,10 @@ def resolve_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_c
 
     finance_service.apply_finance_for_turn(db, turn.season_id, turn.id)
 
+    # Apply Match Results (PR4.5)
+    from app.services import match_results
+    match_results.process_matches_for_turn(db, turn.season_id, turn.id, turn.month_index)
+
     turn.turn_state = TurnState.resolved
     turn.resolved_at = datetime.utcnow()
     db.commit()

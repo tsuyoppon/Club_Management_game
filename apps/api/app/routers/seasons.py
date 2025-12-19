@@ -147,6 +147,9 @@ def season_schedule(
                 "is_bye": fixture.is_bye,
                 "match_id": str(fixture.match.id) if fixture.match else None,
                 "fixture_id": str(fixture.id),
+                "status": fixture.match.status if fixture.match else None,
+                "home_goals": fixture.match.home_goals if fixture.match else None,
+                "away_goals": fixture.match.away_goals if fixture.match else None,
             }
         )
     return grouped
@@ -189,6 +192,9 @@ def club_schedule(
                 "opponent": opponent,
                 "home": is_home,
                 "is_bye": fixture.is_bye,
+                "status": fixture.match.status if fixture.match else None,
+                "home_goals": fixture.match.home_goals if fixture.match else None,
+                "away_goals": fixture.match.away_goals if fixture.match else None,
             }
         )
 

@@ -118,6 +118,9 @@ class ClubScheduleItem(BaseModel):
     opponent: Optional[str]
     home: bool
     is_bye: bool
+    status: Optional[MatchStatus] = None
+    home_goals: Optional[int] = None
+    away_goals: Optional[int] = None
 
 
 class ClubFinancialProfileUpdate(BaseModel):
