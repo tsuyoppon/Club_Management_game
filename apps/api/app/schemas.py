@@ -167,3 +167,19 @@ class ClubFinancialSnapshotRead(BaseModel):
 
     class Config:
         orm_mode = True
+
+class StandingRead(BaseModel):
+    rank: int
+    club_id: UUID
+    club_name: str
+    played: int
+    won: int
+    drawn: int
+    lost: int
+    gf: int
+    ga: int
+    gd: int
+    points: int
+
+    class Config:
+        orm_mode = True

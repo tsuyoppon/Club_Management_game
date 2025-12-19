@@ -22,8 +22,9 @@ from app.db.models import (
     TurnState,
     month_mappings,
 )
-from app.schemas import FixtureGenerateRequest, SeasonCreate, SeasonRead
+from app.schemas import FixtureGenerateRequest, SeasonCreate, SeasonRead, StandingRead
 from app.services.fixtures import generate_round_robin
+from app.services.standings import StandingsCalculator
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
@@ -200,3 +201,18 @@ def club_schedule(
 
     return schedule
 
+
+@router.get("/{season_id}/standings", response_model=List[StandingRead])
+def get_season_standings(
+    season_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+    
+    require_role(user, db, str(season.game_id), MembershipRole.club_viewer)
+
+    calculator = StandingsCalculator(db, season.id)
+    return calculator.calculate()
