@@ -1,11 +1,14 @@
 import math
 import random
+import logging
 from datetime import datetime
 from uuid import UUID
 from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_, or_
 from app.db import models
+
+logger = logging.getLogger(__name__)
 
 # v1Spec Constants
 # ---------------------------------------------------------
@@ -261,6 +264,7 @@ def process_matches_for_turn(db: Session, season_id: UUID, turn_id: UUID, month_
         if not match:
             # Should have been created with fixture? 
             # If not, create it.
+            logger.warning(f"Fixture {fixture.id} has no match record. Creating fallback match.")
             match = models.Match(fixture_id=fixture.id, status=models.MatchStatus.scheduled)
             db.add(match)
             db.flush()

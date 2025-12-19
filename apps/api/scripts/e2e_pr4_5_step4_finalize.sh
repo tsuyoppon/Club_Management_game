@@ -171,4 +171,17 @@ if [ "$FINALIZE_RESP" != "$FINALIZE_RESP_2" ]; then
   exit 1
 fi
 
-echo "E2E PR4.5 Step 4 Finalize Verification Passed!"
+# 11. Verify Finalized Standings (Step 5 Check)
+echo "Verifying Finalized Standings Endpoint..."
+STANDINGS_RESP=$(curl -s -X GET "$API_URL/seasons/$SEASON_ID/standings" \
+  -H "Content-Type: application/json" \
+  -H "X-User-Email: $USER_EMAIL" \
+  -H "X-User-Name: $USER_NAME")
+
+# Compare with finalize response (should be identical)
+if [ "$FINALIZE_RESP" != "$STANDINGS_RESP" ]; then
+  echo "Error: /standings endpoint does not match finalize response."
+  exit 1
+fi
+
+echo "E2E PR4.5 Step 4 & 5 Finalize Verification Passed!"

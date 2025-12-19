@@ -193,3 +193,4 @@ class SeasonStatusRead(BaseModel):
     played_matches: int
     missing_matches: int
     unplayed_matches: int
+    warnings: List[str] = []

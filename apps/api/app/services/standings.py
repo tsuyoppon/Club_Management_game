@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from uuid import UUID
 from sqlalchemy.orm import Session
-from app.db.models import Match, MatchStatus, Fixture
+from app.db.models import Match, MatchStatus, Fixture, Season, SeasonFinalStanding
 
 class StandingsCalculator:
     def __init__(self, session: Session, season_id: UUID):
@@ -9,6 +9,11 @@ class StandingsCalculator:
         self.season_id = season_id
 
     def calculate(self) -> List[Dict[str, Any]]:
+        # 0. Check if season is finalized
+        season = self.session.query(Season).filter(Season.id == self.season_id).first()
+        if season and season.is_finalized:
+            return self._get_finalized_standings()
+
         # 1. Fetch all completed matches for the season
         matches = self.session.query(Match).join(Fixture).filter(
             Fixture.season_id == self.season_id,
@@ -101,6 +106,28 @@ class StandingsCalculator:
             row['rank'] = idx + 1
 
         return standings_list
+
+    def _get_finalized_standings(self) -> List[Dict[str, Any]]:
+        final_standings = self.session.query(SeasonFinalStanding).filter(
+            SeasonFinalStanding.season_id == self.season_id
+        ).order_by(SeasonFinalStanding.rank).all()
+
+        return [
+            {
+                "club_id": fs.club_id,
+                "club_name": fs.club.name,
+                "rank": fs.rank,
+                "points": fs.points,
+                "gd": fs.gd,
+                "gf": fs.gf,
+                "ga": fs.ga,
+                "won": fs.won,
+                "drawn": fs.drawn,
+                "lost": fs.lost,
+                "played": fs.played
+            }
+            for fs in final_standings
+        ]
 
     def _resolve_h2h(self, group: List[Dict[str, Any]], all_matches: List[Match]):
         group_ids = set(x['club_id'] for x in group)

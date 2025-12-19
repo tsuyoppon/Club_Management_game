@@ -38,6 +38,12 @@ class SeasonFinalizer:
         missing_matches = total_fixtures - existing_matches
         unplayed_matches = total_fixtures - played_matches
 
+        warnings = []
+        if missing_matches > 0:
+            warnings.append(f"Integrity Error: {missing_matches} fixtures have no associated match.")
+        if missing_matches < 0:
+             warnings.append(f"Integrity Error: Found {abs(missing_matches)} more matches than fixtures (duplicates?).")
+
         is_completed = (unplayed_matches == 0) and (missing_matches == 0)
 
         return {
@@ -48,7 +54,8 @@ class SeasonFinalizer:
             "total_fixtures": total_fixtures,
             "played_matches": played_matches,
             "missing_matches": missing_matches,
-            "unplayed_matches": unplayed_matches
+            "unplayed_matches": unplayed_matches,
+            "warnings": warnings
         }
 
     def finalize(self) -> List[Dict[str, Any]]:
