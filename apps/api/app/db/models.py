@@ -276,6 +276,11 @@ class ClubFinancialProfile(Base):
     sponsor_base_monthly = Column(Numeric(14, 2), nullable=False, default=0)
     sponsor_per_point = Column(Numeric(14, 2), nullable=False, default=0)
     monthly_cost = Column(Numeric(14, 2), nullable=False, default=0)
+    
+    # PR4: Ticket Revenue
+    base_attendance = Column(Integer, nullable=False, default=10000)
+    ticket_price = Column(Numeric(14, 2), nullable=False, default=2000)
+    
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -288,6 +293,10 @@ class ClubFinancialState(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False, unique=True)
     balance = Column(Numeric(14, 2), nullable=False, default=0)
+    
+    # PR4: Hidden Variables
+    staff_firing_penalty = Column(Numeric(14, 4), nullable=False, default=0)
+    
     last_applied_turn_id = Column(UUID(as_uuid=True), ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -359,6 +368,10 @@ class ClubSponsorState(Base):
     # For tracking if the lump sum revenue has been recorded for this season
     is_revenue_recorded = Column(Boolean, nullable=False, default=False)
     
+    # PR4: Sales Effort History (Apr-Jun)
+    # Format: {"9": effort_val, "10": effort_val, "11": effort_val}
+    sales_effort_history = Column(JSONB, nullable=True, default={})
+    
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -367,6 +380,30 @@ class ClubSponsorState(Base):
     
     __table_args__ = (
         UniqueConstraint("club_id", "season_id", name="uq_sponsor_club_season"),
+    )
+
+
+class ClubAcademy(Base):
+    __tablename__ = "club_academies"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
+    
+    annual_budget = Column(Numeric(14, 2), nullable=False, default=0)
+    cumulative_investment = Column(Numeric(14, 2), nullable=False, default=0)
+    
+    # History of transfer fees generated
+    transfer_fee_history = Column(JSONB, nullable=True, default=[])
+    
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    club = relationship("Club")
+    season = relationship("Season")
+
+    __table_args__ = (
+        UniqueConstraint("club_id", "season_id", name="uq_academy_club_season"),
     )
 
 
@@ -414,6 +451,9 @@ class ClubStaff(Base):
     
     # Count for next season (decided in May)
     next_count = Column(Integer, nullable=True)
+    
+    # PR4: Hiring Target (User request in May)
+    hiring_target = Column(Integer, nullable=True)
     
     salary_per_person = Column(Numeric(14, 2), nullable=False, default=0)
     

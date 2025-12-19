@@ -99,6 +99,19 @@ class FixtureView(BaseModel):
     status: MatchStatus
 
 
+class SponsorEffortUpdate(BaseModel):
+    effort: int = Field(..., ge=0, le=100, description="Sales effort percentage (0-100)")
+
+
+class StaffPlanUpdate(BaseModel):
+    role: str
+    count: int = Field(..., ge=1, description="Target number of staff")
+
+
+class AcademyBudgetUpdate(BaseModel):
+    annual_budget: int = Field(..., ge=0, description="Annual budget for next season")
+
+
 class ClubScheduleItem(BaseModel):
     month_index: int
     month_name: str

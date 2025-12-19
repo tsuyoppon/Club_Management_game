@@ -68,7 +68,7 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
     
     clubs = db.execute(select(models.Club).where(models.Club.game_id == season.game_id)).scalars().all()
     
-from app.services import sponsor, reinforcement, staff
+from app.services import sponsor, reinforcement, staff, academy, ticket
 
 def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
     """
@@ -114,7 +114,19 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
         reinforcement.process_reinforcement_cost(db, club.id, season_id, turn_id, turn.month_index)
         
         # C. Staff Cost (Monthly)
-        staff.process_staff_cost(db, club.id, turn_id, turn.month_index)
+        # PR4: Pass season_id for hiring resolution in August
+        staff.process_staff_cost(db, club.id, turn_id, turn.month_index, season_id)
+        
+        # --- PR4 Dynamics ---
+        # D. Academy Cost (Monthly)
+        academy.process_monthly_cost(db, club.id, season_id, turn_id)
+        
+        # E. Academy Transfer Fee (July)
+        if turn.month_index == 12: # July
+            academy.process_transfer_fee(db, club.id, season_id, turn_id)
+            
+        # F. Ticket Revenue (Monthly)
+        ticket.process_ticket_revenue(db, club.id, season_id, turn_id, turn.month_index)
         # -------------------------------
             
         # 3. Calculate items (Legacy PR2 + New PR3 Aggregation)
