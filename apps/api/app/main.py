@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from .config import get_settings
-from .routers import finance, games, health, seasons, turns
+from .routers import finance, games, health, seasons, turns, finance_structural
 
 settings = get_settings()
 
@@ -11,6 +11,7 @@ app.include_router(games.router, prefix=settings.api_prefix)
 app.include_router(seasons.router, prefix=settings.api_prefix)
 app.include_router(turns.router, prefix=settings.api_prefix)
 app.include_router(finance.router, prefix=settings.api_prefix)
+app.include_router(finance_structural.router, prefix=settings.api_prefix)
 
 
 @app.get("/")

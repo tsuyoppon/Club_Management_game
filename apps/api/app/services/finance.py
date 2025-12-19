@@ -68,6 +68,26 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
     
     clubs = db.execute(select(models.Club).where(models.Club.game_id == season.game_id)).scalars().all()
     
+from app.services import sponsor, reinforcement, staff
+
+def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
+    """
+    Calculate and apply finances for all clubs in the given turn.
+    Idempotent: if snapshot exists for (club_id, turn_id), skip.
+    """
+    # Get turn info to know the month (if needed) or just process all clubs
+    turn = db.execute(select(models.Turn).where(models.Turn.id == turn_id)).scalar_one_or_none()
+    if not turn:
+        raise ValueError(f"Turn {turn_id} not found")
+    
+    # Get all clubs in the game (assuming turn belongs to a season -> game)
+    # We need to find the game_id from season_id
+    season = db.execute(select(models.Season).where(models.Season.id == season_id)).scalar_one_or_none()
+    if not season:
+        raise ValueError(f"Season {season_id} not found")
+    
+    clubs = db.execute(select(models.Club).where(models.Club.game_id == season.game_id)).scalars().all()
+    
     for club in clubs:
         # 1. Ensure initialized
         profile, state = ensure_finance_initialized_for_club(db, club.id)
@@ -81,51 +101,75 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
         if existing_snapshot:
             continue # Already processed
             
-        # 3. Calculate items
+        # --- PR3 Structural Elements ---
+        # A. Sponsor Revenue (August)
+        if turn.month_index == 1: # August
+            sponsor.process_sponsor_revenue(db, club.id, season_id, turn_id)
+            
+        # A2. Sponsor Determination (July)
+        if turn.month_index == 12: # July
+            sponsor.determine_next_sponsors(db, club.id, season_id)
+            
+        # B. Reinforcement Cost (Monthly)
+        reinforcement.process_reinforcement_cost(db, club.id, season_id, turn_id, turn.month_index)
+        
+        # C. Staff Cost (Monthly)
+        staff.process_staff_cost(db, club.id, turn_id, turn.month_index)
+        # -------------------------------
+            
+        # 3. Calculate items (Legacy PR2 + New PR3 Aggregation)
+        # We need to sum up ALL ledgers for this turn to create the snapshot.
+        # Since we just added PR3 ledgers, we should query them or accumulate them.
+        # But `apply_finance_for_turn` is creating ledgers AND snapshot in one go.
+        # The PR2 code created ledgers and then summed them up.
+        # Let's keep PR2 logic for "Base Monthly" but maybe we should deprecate it if PR3 replaces it?
+        # The prompt says "Integrate into resolve_turn".
+        # PR2 had `sponsor_base_monthly` and `monthly_cost`.
+        # PR3 adds specific structural costs.
+        # We should keep PR2 as "Basic/Misc" costs for now, or maybe `monthly_cost` represents "Other fixed costs".
+        
         # Income
         income_sponsor = profile.sponsor_base_monthly
-        # TODO: Add performance based income here later
         
         # Expenses
         expense_fixed = profile.monthly_cost
         
-        # 4. Create Ledgers
-        # Sponsor Income
+        # 4. Create Ledgers (PR2)
+        # Sponsor Income (Monthly Base)
         ledger_sponsor = models.ClubFinancialLedger(
             club_id=club.id,
             turn_id=turn_id,
             kind="sponsor",
             amount=income_sponsor,
-            meta={"description": "Monthly Sponsor Income"}
+            meta={"description": "Monthly Sponsor Income (Base)"}
         )
         db.add(ledger_sponsor)
         
-        # Fixed Cost
+        # Fixed Cost (Monthly Base)
         ledger_cost = models.ClubFinancialLedger(
             club_id=club.id,
             turn_id=turn_id,
             kind="cost",
-            amount=-expense_fixed, # Expense is negative in ledger amount? 
-            # Spec says: "amount NUMERIC(14,2) NOT NULL # 収入は+、支出は-"
-            meta={"description": "Monthly Fixed Cost"}
+            amount=-expense_fixed,
+            meta={"description": "Monthly Fixed Cost (Base)"}
         )
         db.add(ledger_cost)
         
-        # 5. Update State & Create Snapshot
-        opening_balance = state.balance
-        income_total = income_sponsor
-        expense_total = -expense_fixed # expense_total in snapshot usually positive? 
-        # Spec says: "closing_balance = opening + income_total + expense_total"
-        # So expense_total should be negative if we add it. 
-        # Or if expense_total is positive magnitude, then formula is opening + income - expense.
-        # Let's follow "amount is negative for expense" rule for ledger.
-        # For snapshot, let's keep consistency. 
-        # "expense_total NUMERIC(14,2)" -> usually implies magnitude, but let's stick to signed sum for simplicity in formula.
-        # Wait, "expense_total" usually means "Total Expenses", which is a positive number representing cost.
-        # But "closing_balance = opening + income_total + expense_total" implies expense_total is negative.
-        # Let's assume expense_total is negative.
+        # Flush to ensure all ledgers (PR2 + PR3) are in session
+        db.flush()
         
-        net_change = income_sponsor - expense_fixed
+        # 5. Update State & Create Snapshot
+        # Sum all ledgers for this turn
+        ledgers = db.execute(select(models.ClubFinancialLedger).where(
+            models.ClubFinancialLedger.club_id == club.id,
+            models.ClubFinancialLedger.turn_id == turn_id
+        )).scalars().all()
+        
+        turn_income = sum(l.amount for l in ledgers if l.amount > 0)
+        turn_expense = sum(l.amount for l in ledgers if l.amount < 0)
+        
+        opening_balance = state.balance
+        net_change = turn_income + turn_expense
         closing_balance = opening_balance + net_change
         
         snapshot = models.ClubFinancialSnapshot(
@@ -134,8 +178,8 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
             turn_id=turn_id,
             month_index=turn.month_index,
             opening_balance=opening_balance,
-            income_total=income_sponsor,
-            expense_total=-expense_fixed,
+            income_total=turn_income,
+            expense_total=turn_expense,
             closing_balance=closing_balance
         )
         db.add(snapshot)

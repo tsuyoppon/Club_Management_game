@@ -83,3 +83,9 @@ curl -X POST http://localhost:8000/api/turns/<turn_id>/advance -H 'X-User-Email:
 ```
 
 Subsequent PRs will introduce simulation, ledgers, fanbase, sponsor modeling, and UI templates.
+
+## PR3.2 Note: Hidden Variables
+As of PR3.2, the game uses a deterministic model for staff hiring/firing.
+- **Hiring Success Rate**: Currently 100%. Probabilistic success will be introduced in PR4+.
+- **Firing Penalty**: Currently only financial (severance pay). Cumulative morale/reputation penalties will be introduced in PR4+.
+

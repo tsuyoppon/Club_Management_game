@@ -336,3 +336,92 @@ class ClubFinancialSnapshot(Base):
     __table_args__ = (
         UniqueConstraint("club_id", "turn_id", name="uq_snapshot_club_turn"),
     )
+
+
+class ClubSponsorState(Base):
+    __tablename__ = "club_sponsor_states"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
+    
+    # N_next determined in July for the NEXT season.
+    # But we need to store it somewhere.
+    # Let's assume this record represents the state FOR a specific season.
+    # So `count` is the number of sponsors active in THIS season.
+    # `next_count` is the number of sponsors determined for the NEXT season.
+    
+    count = Column(Integer, nullable=False, default=0)
+    # Determined count for the NEXT season (set in July)
+    next_count = Column(Integer, nullable=True)
+    unit_price = Column(Numeric(14, 2), nullable=False, default=5000000)
+    
+    # For tracking if the lump sum revenue has been recorded for this season
+    is_revenue_recorded = Column(Boolean, nullable=False, default=False)
+    
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    club = relationship("Club")
+    season = relationship("Season")
+    
+    __table_args__ = (
+        UniqueConstraint("club_id", "season_id", name="uq_sponsor_club_season"),
+    )
+
+
+class ClubReinforcementPlan(Base):
+    __tablename__ = "club_reinforcement_plans"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
+    
+    annual_budget = Column(Numeric(14, 2), nullable=False, default=0)
+    additional_budget = Column(Numeric(14, 2), nullable=False, default=0)
+    
+    # To track if additional budget has been applied (re-distributed)
+    is_additional_applied = Column(Boolean, nullable=False, default=False)
+    
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    club = relationship("Club")
+    season = relationship("Season")
+
+    __table_args__ = (
+        UniqueConstraint("club_id", "season_id", name="uq_reinforcement_club_season"),
+    )
+
+
+class StaffRole(str, enum.Enum):
+    director = "director"
+    coach = "coach"
+    scout = "scout"
+    # Add others as needed
+
+
+class ClubStaff(Base):
+    __tablename__ = "club_staffs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    
+    role = Column(Enum(StaffRole), nullable=False)
+    
+    # Current active count
+    count = Column(Integer, nullable=False, default=1)
+    
+    # Count for next season (decided in May)
+    next_count = Column(Integer, nullable=True)
+    
+    salary_per_person = Column(Numeric(14, 2), nullable=False, default=0)
+    
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    club = relationship("Club")
+
+    __table_args__ = (
+        UniqueConstraint("club_id", "role", name="uq_staff_club_role"),
+    )

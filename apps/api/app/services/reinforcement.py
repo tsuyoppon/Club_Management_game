@@ -1,0 +1,93 @@
+from uuid import UUID
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from app.db import models
+
+def ensure_reinforcement_plan(db: Session, club_id: UUID, season_id: UUID):
+    plan = db.execute(select(models.ClubReinforcementPlan).where(
+        models.ClubReinforcementPlan.club_id == club_id,
+        models.ClubReinforcementPlan.season_id == season_id
+    )).scalar_one_or_none()
+    
+    if not plan:
+        plan = models.ClubReinforcementPlan(
+            club_id=club_id,
+            season_id=season_id,
+            annual_budget=0,
+            additional_budget=0
+        )
+        db.add(plan)
+        db.flush()
+    return plan
+
+def process_reinforcement_cost(db: Session, club_id: UUID, season_id: UUID, turn_id: UUID, month_index: int):
+    """
+    Calculate and record monthly reinforcement cost.
+    """
+    plan = ensure_reinforcement_plan(db, club_id, season_id)
+    
+    # Check idempotency
+    existing = db.execute(select(models.ClubFinancialLedger).where(
+        models.ClubFinancialLedger.club_id == club_id,
+        models.ClubFinancialLedger.turn_id == turn_id,
+        models.ClubFinancialLedger.kind == "reinforcement_cost"
+    )).scalar_one_or_none()
+    
+    if existing:
+        return
+        
+    # Calculation Logic
+    # 1. Base Annual Budget: Paid over 12 months (Aug-Jul)
+    # 2. Additional Budget: Paid over remaining months from when it's applied.
+    #    But v1 says "Additional budget can be added once mid-season".
+    #    And "re-distributed over remaining months".
+    #    Let's assume if `is_additional_applied` is True, we include it.
+    #    But we need to know WHEN it was applied to calculate correctly?
+    #    Or we just calculate: (Total Remaining Budget) / (Remaining Months).
+    #    But we don't track "Total Remaining Budget" explicitly in DB.
+    #    
+    #    Simpler approach for v1:
+    #    - Base monthly = Annual / 12
+    #    - Additional monthly = Additional / (12 - ApplicationMonthIndex + 1)?
+    #    - If additional is NOT applied yet, cost is Base monthly.
+    #    - If additional IS applied, cost is Base + Additional_Monthly.
+    #    
+    #    Wait, if we add budget in Dec (Month 5), we have Dec, Jan...Jul (8 months).
+    #    So Additional / 8.
+    #    We need to know the month index when it was applied.
+    #    Let's assume for now we just calculate simply:
+    #    If `additional_budget` > 0, we assume it's applied.
+    #    But we need to know the start month.
+    #    Let's assume additional budget is always applied in Dec (Month 5) for v1 as per prompt "assumed December".
+    #    Or better, we can store `additional_applied_month` in the plan.
+    #    But I didn't add that column.
+    #    Let's stick to: Annual / 12.
+    #    And if `additional_budget` > 0, we assume it starts from Dec (Month 5).
+    #    If current month < 5, cost = Annual / 12.
+    #    If current month >= 5, cost = Annual / 12 + Additional / (12 - 5 + 1).
+    
+    base_monthly = plan.annual_budget / 12
+    additional_monthly = 0
+    
+    # Assuming additional budget starts from Dec (Month 5)
+    ADDITIONAL_START_MONTH = 5 # Dec
+    
+    if plan.additional_budget > 0 and month_index >= ADDITIONAL_START_MONTH:
+        # Remaining months including start month: 12 - 5 + 1 = 8 (Dec, Jan, Feb, Mar, Apr, May, Jun, Jul) -> Wait.
+        # Month indices: 1(Aug)..5(Dec)..12(Jul).
+        # Total months = 12.
+        # Remaining = 12 - 5 + 1 = 8.
+        remaining_months = 12 - ADDITIONAL_START_MONTH + 1
+        additional_monthly = plan.additional_budget / remaining_months
+        
+    total_cost = base_monthly + additional_monthly
+    
+    if total_cost > 0:
+        ledger = models.ClubFinancialLedger(
+            club_id=club_id,
+            turn_id=turn_id,
+            kind="reinforcement_cost",
+            amount=-total_cost, # Expense
+            meta={"description": "Monthly Reinforcement Cost", "base": float(base_monthly), "additional": float(additional_monthly)}
+        )
+        db.add(ledger)
