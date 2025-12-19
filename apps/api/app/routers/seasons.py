@@ -22,9 +22,10 @@ from app.db.models import (
     TurnState,
     month_mappings,
 )
-from app.schemas import FixtureGenerateRequest, SeasonCreate, SeasonRead, StandingRead
+from app.schemas import FixtureGenerateRequest, SeasonCreate, SeasonRead, StandingRead, SeasonStatusRead
 from app.services.fixtures import generate_round_robin
 from app.services.standings import StandingsCalculator
+from app.services.season_finalize import SeasonFinalizer
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
@@ -214,5 +215,41 @@ def get_season_standings(
     
     require_role(user, db, str(season.game_id), MembershipRole.club_viewer)
 
+    if season.is_finalized:
+        finalizer = SeasonFinalizer(db, season.id)
+        return finalizer._get_stored_standings()
+
     calculator = StandingsCalculator(db, season.id)
     return calculator.calculate()
+
+
+@router.get("/{season_id}/status", response_model=SeasonStatusRead)
+def get_season_status_endpoint(
+    season_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+    
+    require_role(user, db, str(season.game_id), MembershipRole.club_viewer)
+    
+    finalizer = SeasonFinalizer(db, uuid.UUID(season_id))
+    return finalizer.get_status()
+
+
+@router.post("/{season_id}/finalize", response_model=List[StandingRead])
+def finalize_season_endpoint(
+    season_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+    
+    require_role(user, db, str(season.game_id), MembershipRole.gm)
+    
+    finalizer = SeasonFinalizer(db, uuid.UUID(season_id))
+    return finalizer.finalize()

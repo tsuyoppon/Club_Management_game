@@ -183,3 +183,13 @@ class StandingRead(BaseModel):
 
     class Config:
         orm_mode = True
+
+class SeasonStatusRead(BaseModel):
+    season_id: UUID
+    is_finalized: bool
+    finalized_at: Optional[datetime]
+    is_completed: bool
+    total_fixtures: int
+    played_matches: int
+    missing_matches: int
+    unplayed_matches: int

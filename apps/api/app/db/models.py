@@ -136,11 +136,39 @@ class Season(Base):
     start_month = Column(Integer, nullable=False, default=8)
     end_month = Column(Integer, nullable=False, default=7)
     status = Column(Enum(SeasonStatus), nullable=False, default=SeasonStatus.setup)
+    is_finalized = Column(Boolean, nullable=False, default=False)
+    finalized_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     game = relationship("Game", back_populates="seasons")
     turns = relationship("Turn", back_populates="season", cascade="all, delete-orphan")
     fixtures = relationship("Fixture", back_populates="season", cascade="all, delete-orphan")
+    final_standings = relationship("SeasonFinalStanding", back_populates="season", cascade="all, delete-orphan")
+
+
+class SeasonFinalStanding(Base):
+    __tablename__ = "season_final_standings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    rank = Column(Integer, nullable=False)
+    points = Column(Integer, nullable=False)
+    gd = Column(Integer, nullable=False)
+    gf = Column(Integer, nullable=False)
+    ga = Column(Integer, nullable=False)
+    won = Column(Integer, nullable=False)
+    drawn = Column(Integer, nullable=False)
+    lost = Column(Integer, nullable=False)
+    played = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    season = relationship("Season", back_populates="final_standings")
+    club = relationship("Club")
+
+    __table_args__ = (
+        UniqueConstraint("season_id", "club_id", name="uniq_season_club_standing"),
+    )
 
 
 class Turn(Base):
