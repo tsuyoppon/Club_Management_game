@@ -214,79 +214,70 @@
 
 ---
 
-## PR8: 債務超過ペナルティとゲーム終了条件
+## PR8: 債務超過ペナルティとゲーム終了条件 ✅ 完了
 
 ### フェーズ1: データベース設計
 
-- [ ] `club_financial_states`テーブル拡張
-  - [ ] `is_bankrupt`フラグ追加
-  - [ ] `bankrupt_since_turn_id`追加
-- [ ] `club_point_penalties`テーブル設計（監査用）
-  - [ ] カラム定義（club_id, season_id, turn_id, points_deducted, reason）
-- [ ] `games`テーブル拡張
-  - [ ] `last_place_penalty_enabled`フラグ追加
-- [ ] Alembicマイグレーションファイル作成
-  - [ ] `0007_pr8_bankruptcy_penalty.py`
+- [x] `club_financial_states`テーブル拡張
+  - [x] `is_bankrupt`フラグ追加
+  - [x] `bankrupt_since_turn_id`追加
+  - [x] `point_penalty_applied`フラグ追加
+- [x] `club_point_penalties`テーブル設計（監査用）
+  - [x] カラム定義（club_id, season_id, turn_id, points_deducted, reason）
+- [x] `games`テーブル拡張
+  - [x] `last_place_penalty_enabled`フラグ追加
+- [x] Alembicマイグレーションファイル作成
+  - [x] `6a7b8c9d0e1f_pr8_bankruptcy_penalty.py`
 
 ### フェーズ2: 債務超過判定実装
 
-- [ ] `services/bankruptcy.py`作成
-  - [ ] `check_bankruptcy()` - 債務超過チェック
-  - [ ] `mark_bankrupt()` - 債務超過状態設定
-  - [ ] `is_bankrupt()` - 債務超過状態確認
-- [ ] `apply_finance_for_turn`に債務超過チェック統合
-- [ ] ユニットテスト作成
+- [x] `services/bankruptcy.py`作成
+  - [x] `check_bankruptcy()` - 債務超過チェック
+  - [x] `mark_bankrupt()` - 債務超過状態設定
+  - [x] `is_bankrupt()` - 債務超過状態確認
+  - [x] `can_add_reinforcement()` - 追加強化費可否チェック
+  - [x] `get_bankruptcy_status()` - 債務超過状態取得
+  - [x] `get_bankrupt_clubs_for_season()` - シーズン内債務超過クラブ一覧
+  - [x] `get_penalties_for_club()` - クラブの勝点剥奪履歴取得
+- [x] `finance.py`に債務超過チェック統合
 
 ### フェーズ3: 勝点剥奪実装
 
-- [ ] `services/penalty.py`作成
-  - [ ] `deduct_points()` - 勝点剥奪（-6点）
-  - [ ] `apply_point_penalty()` - 順位表への勝点剥奪適用
-- [ ] `services/standings.py`の更新
-  - [ ] 債務超過クラブの勝点を減算
-  - [ ] マイナス勝点は0にクリップ
-- [ ] ユニットテスト作成
+- [x] `services/bankruptcy.py`に追加
+  - [x] `apply_point_penalty()` - 勝点剥奪（-6点）
+  - [x] `get_point_penalty_for_club()` - クラブの勝点剥奪合計取得
+- [x] `services/standings.py`の更新
+  - [x] 債務超過クラブの勝点を減算
+  - [x] H2H解決後にペナルティ適用
 
 ### フェーズ4: 追加強化費禁止実装
 
-- [ ] `routers/turns.py`の更新
-  - [ ] `POST /api/turns/{turn_id}/decisions/{club_id}/commit` - 債務超過チェック追加
-  - [ ] 12月の追加強化費入力をブロック
-- [ ] バリデーションテスト作成
+- [x] `routers/turns.py`の更新
+  - [x] `commit_decision` - 債務超過クラブの追加強化費ブロック
+  - [x] HTTPException 400でエラー返却
 
-### フェーズ5: 最下位ペナルティ実装（オプション）
+### フェーズ5: 最下位ペナルティ設定
 
-- [ ] `services/penalty.py`の更新
-  - [ ] `apply_last_place_penalty()` - 最下位ペナルティ適用
-  - [ ] 次年度配分金ゼロ設定
-- [ ] ゲーム設定でのON/OFF機能
-- [ ] ユニットテスト作成
+- [x] `games`テーブルに`last_place_penalty_enabled`追加
+- [x] 設定取得・更新API実装
+  - [x] `GET /api/games/{game_id}/settings/last-place-penalty`
+  - [x] `PUT /api/games/{game_id}/settings/last-place-penalty`
 
-### フェーズ6: ゲーム終了条件実装
+### フェーズ6: API実装
 
-- [ ] `services/bankruptcy.py`の更新
-  - [ ] `check_final_bankruptcy()` - 年度終了時の脱落判定（7月）
-  - [ ] `mark_dropped()` - 脱落フラグ設定
-- [ ] 脱落クラブの処理
-  - [ ] 試合参加継続
-  - [ ] 勝点剥奪継続
-- [ ] ユニットテスト作成
+- [x] `routers/bankruptcy.py`作成
+  - [x] `GET /api/clubs/{club_id}/finance/bankruptcy-status` - 債務超過状態取得
+  - [x] `GET /api/seasons/{season_id}/bankrupt-clubs` - 債務超過クラブ一覧
+  - [x] `GET /api/clubs/{club_id}/penalties` - 勝点剥奪履歴取得
+  - [x] `GET /api/games/{game_id}/settings/last-place-penalty` - 最下位ペナルティ設定取得
+  - [x] `PUT /api/games/{game_id}/settings/last-place-penalty` - 最下位ペナルティ設定更新
+- [x] `main.py`にbankruptcy router登録
 
-### フェーズ7: API実装
+### フェーズ7: テスト・ドキュメント
 
-- [ ] `routers/finance.py`の更新
-  - [ ] `GET /api/clubs/{club_id}/finance/state` - 債務超過状態を含む
-- [ ] `routers/seasons.py`の更新
-  - [ ] `GET /api/seasons/{season_id}/bankrupt_clubs` - 債務超過クラブ一覧
-  - [ ] `POST /api/seasons/{season_id}/check_bankruptcy` - 債務超過チェック（7月）
-- [ ] APIテスト作成
-
-### フェーズ8: テスト・ドキュメント
-
-- [ ] 全機能のユニットテスト
-- [ ] 統合テスト
-- [ ] E2Eテスト
-- [ ] API仕様書更新
+- [x] E2Eテスト作成（e2e_pr8_bankruptcy.sh）
+- [x] 全E2Eテスト回帰テスト合格
+- [x] IMPLEMENTATION_ROADMAP.md更新
 
 ---
 

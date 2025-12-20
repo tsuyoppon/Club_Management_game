@@ -246,6 +246,12 @@ def finalize_turn_finance(db: Session, season_id: UUID, turn_id: UUID):
         state.last_applied_turn_id = turn_id
         db.add(state)
         
+        # PR8: 債務超過チェック（balance < 0 で債務超過判定）
+        from app.services.bankruptcy import check_bankruptcy, apply_point_penalty
+        if check_bankruptcy(db, club.id, turn_id):
+            # 債務超過になった場合、勝点剥奪を適用
+            apply_point_penalty(db, club.id, season_id, turn_id)
+        
     db.commit()
 
 # Deprecated wrapper for backward compatibility (if needed, but we will update caller)

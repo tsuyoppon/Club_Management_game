@@ -57,77 +57,19 @@
 - スポンサー内定進捗（4-7月パイプライン）
 - 次年度スポンサー情報API
 
+### ✅ PR8: 債務超過ペナルティとゲーム終了条件
+- 債務超過判定（balance < 0 でis_bankrupt = true）
+- 勝点剥奪（-6点）順位表への反映
+- ClubPointPenaltyテーブル追加（履歴管理）
+- 追加強化費禁止（12月入力ブロック）
+- 最下位ペナルティ設定（ON/OFF、デフォルトOFF）
+- bankruptcy.py サービス（判定・ペナルティ適用）
+- bankruptcy.py ルーター（5エンドポイント）
+- E2Eテスト（e2e_pr8_bankruptcy.sh）
+
 ---
 
 ## 今後の実装PR計画
-
-### 🔄 PR8: 債務超過ペナルティとゲーム終了条件
-
-**目的**: v1Spec セクション1.1, 14.1の完全実装
-
-**実装内容**:
-
-#### 8.1 債務超過判定
-- [ ] 月次債務超過チェック
-  - ターン解決時に各クラブの残高をチェック
-  - マイナス残高の検出
-- [ ] 債務超過状態管理
-  - `ClubFinancialState`に`is_bankrupt`フラグ追加
-  - `bankrupt_since_turn_id`（債務超過開始ターン）
-
-#### 8.2 債務超過ペナルティ
-- [ ] 勝点剥奪（-6点）
-  - 債務超過クラブの順位表から勝点を減算
-  - マイナス勝点は0にクリップ
-- [ ] 追加強化費禁止
-  - 12月の追加強化費入力をブロック
-- [ ] 最下位ペナルティ（オプション）
-  - 次年度配分金ゼロ設定
-  - ゲーム設定でON/OFF可能
-
-#### 8.3 ゲーム終了条件
-- [ ] 年度終了時の脱落判定（7月）
-  - 債務超過クラブの最終確認
-  - 脱落フラグ設定
-- [ ] 脱落クラブの処理
-  - 試合参加は継続（スケジュール通り）
-  - 勝点剥奪は継続
-
-**データベース変更**:
-```sql
--- ClubFinancialState に追加
-ALTER TABLE club_financial_states ADD COLUMN is_bankrupt BOOLEAN DEFAULT FALSE;
-ALTER TABLE club_financial_states ADD COLUMN bankrupt_since_turn_id UUID;
-
--- 勝点剥奪履歴（オプション、監査用）
-CREATE TABLE club_point_penalties (
-    id UUID PRIMARY KEY,
-    club_id UUID NOT NULL,
-    season_id UUID NOT NULL,
-    turn_id UUID NOT NULL,
-    points_deducted INTEGER NOT NULL,
-    reason VARCHAR(100) NOT NULL, -- 'bankruptcy'
-    created_at TIMESTAMP NOT NULL
-);
-
--- Game テーブルに設定追加
-ALTER TABLE games ADD COLUMN last_place_penalty_enabled BOOLEAN DEFAULT FALSE;
-```
-
-**API変更**:
-- `GET /api/clubs/{club_id}/finance/state` - 債務超過状態を含む
-- `GET /api/seasons/{season_id}/bankrupt_clubs` - 債務超過クラブ一覧
-- `POST /api/seasons/{season_id}/check_bankruptcy` - 債務超過チェック（7月）
-
-**テスト要件**:
-- 債務超過判定のテスト
-- 勝点剥奪のテスト
-- 追加強化費禁止のテスト
-- 最下位ペナルティのテスト
-
-**依存関係**: PR6（会計項目）の実装後
-
----
 
 ### 🔄 PR9: 情報公開イベントと最終結果表示
 

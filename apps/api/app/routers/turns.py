@@ -77,6 +77,20 @@ def commit_decision(
         errors = validate_decision_payload(db, turn, club_id, validated)
         if errors:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"validation_errors": errors})
+        
+        # PR8: 債務超過時の追加強化費禁止チェック（12月: month_index=5）
+        if turn.month_index == 5:  # 12月
+            additional = payload.payload.get("additional_reinforcement")
+            if additional is not None:
+                from decimal import Decimal
+                additional_val = Decimal(str(additional))
+                if additional_val > 0:
+                    from app.services.bankruptcy import can_add_reinforcement
+                    if not can_add_reinforcement(db, club_id):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST, 
+                            detail="債務超過クラブは追加強化費を入力できません"
+                        )
     
     decision.decision_state = DecisionState.committed
     decision.committed_at = datetime.utcnow()

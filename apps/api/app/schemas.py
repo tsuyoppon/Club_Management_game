@@ -312,3 +312,54 @@ class NextSponsorInfoRead(BaseModel):
     expected_revenue: float
     is_finalized: bool
 
+
+# =============================================================================
+# PR8: 債務超過・勝点剥奪スキーマ - v1Spec Section 1.1, 14.1
+# =============================================================================
+
+class BankruptcyStatusRead(BaseModel):
+    """債務超過状態レスポンス"""
+    club_id: UUID
+    is_bankrupt: bool
+    bankrupt_since_turn_id: Optional[UUID] = None
+    bankrupt_since_month: Optional[str] = None
+    point_penalty_applied: bool
+    total_penalty_points: int
+    can_add_reinforcement: bool
+
+    class Config:
+        from_attributes = True
+
+
+class PointPenaltyRead(BaseModel):
+    """勝点剥奪履歴レスポンス"""
+    id: UUID
+    club_id: UUID
+    season_id: UUID
+    turn_id: UUID
+    points_deducted: int
+    reason: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BankruptClubSummary(BaseModel):
+    """債務超過クラブサマリー"""
+    club_id: UUID
+    club_name: str
+    is_bankrupt: bool
+    bankrupt_since_month: Optional[str] = None
+    penalty_points: int
+
+
+class LastPlacePenaltyUpdate(BaseModel):
+    """最下位ペナルティ設定更新"""
+    enabled: bool
+
+
+class LastPlacePenaltyRead(BaseModel):
+    """最下位ペナルティ設定取得"""
+    game_id: UUID
+    last_place_penalty_enabled: bool

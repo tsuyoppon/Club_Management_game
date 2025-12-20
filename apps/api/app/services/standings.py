@@ -109,6 +109,20 @@ class StandingsCalculator:
             
             i = j
 
+        # 4.5 PR8: Apply point penalties (bankruptcy deductions)
+        from app.services.bankruptcy import get_point_penalty_for_club
+        for row in standings_list:
+            penalty = get_point_penalty_for_club(self.session, row["club_id"], self.season_id)
+            if penalty != 0:
+                row["penalty"] = penalty
+                row["points_before_penalty"] = row["points"]
+                row["points"] = max(0, row["points"] + penalty)  # 0以上にクリップ
+            else:
+                row["penalty"] = 0
+        
+        # 4.6 Re-sort after applying penalties
+        standings_list.sort(key=lambda x: (x['points'], x['gd'], x['gf']), reverse=True)
+
         # 5. Assign Ranks
         for idx, row in enumerate(standings_list):
             row['rank'] = idx + 1

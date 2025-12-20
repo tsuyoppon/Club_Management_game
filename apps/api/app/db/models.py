@@ -63,6 +63,8 @@ class Game(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     status = Column(Enum(GameStatus), nullable=False, default=GameStatus.active)
+    # PR8: 最下位ペナルティON/OFF設定
+    last_place_penalty_enabled = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -331,12 +333,18 @@ class ClubFinancialState(Base):
     # PR4: Hidden Variables
     staff_firing_penalty = Column(Numeric(14, 4), nullable=False, default=0)
     
+    # PR8: 債務超過状態 - v1Spec Section 1.1, 14.1
+    is_bankrupt = Column(Boolean, nullable=False, default=False)
+    bankrupt_since_turn_id = Column(UUID(as_uuid=True), ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
+    point_penalty_applied = Column(Boolean, nullable=False, default=False)
+    
     last_applied_turn_id = Column(UUID(as_uuid=True), ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     club = relationship("Club", back_populates="financial_state")
-    last_applied_turn = relationship("Turn")
+    last_applied_turn = relationship("Turn", foreign_keys=[last_applied_turn_id])
+    bankrupt_since_turn = relationship("Turn", foreign_keys=[bankrupt_since_turn_id])
 
 
 class ClubFinancialLedger(Base):
@@ -556,4 +564,25 @@ class ClubSalesAllocation(Base):
 
     __table_args__ = (
         UniqueConstraint("club_id", "season_id", "quarter", name="uq_sales_allocation_club_season_quarter"),
+    )
+
+
+class ClubPointPenalty(Base):
+    """PR8: 勝点剥奪履歴（監査用） - v1Spec Section 14.1"""
+    __tablename__ = "club_point_penalties"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
+    turn_id = Column(UUID(as_uuid=True), ForeignKey("turns.id", ondelete="CASCADE"), nullable=False)
+    points_deducted = Column(Integer, nullable=False)  # 剥奪点数（負の値: -6）
+    reason = Column(String, nullable=False)  # 理由（"bankruptcy" など）
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    club = relationship("Club")
+    season = relationship("Season")
+    turn = relationship("Turn")
+
+    __table_args__ = (
+        UniqueConstraint("club_id", "season_id", "reason", name="uq_penalty_club_season_reason"),
     )
