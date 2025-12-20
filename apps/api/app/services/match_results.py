@@ -7,6 +7,9 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_, or_
 from app.db import models
+from app.services import weather as weather_service
+from app.services import attendance as attendance_service
+from app.services import standings as standings_service
 
 logger = logging.getLogger(__name__)
 
@@ -271,6 +274,70 @@ def process_matches_for_turn(db: Session, season_id: UUID, turn_id: UUID, month_
             
         if match.status == models.MatchStatus.played:
             continue # Already processed
+            
+        # --- PR5: Weather & Attendance ---
+        # 1. Determine Weather
+        weather = weather_service.determine_weather()
+        fixture.weather = weather
+        
+        # 2. Get Fanbase States
+        fb_home = db.query(models.ClubFanbaseState).filter_by(club_id=fixture.home_club_id, season_id=season_id).first()
+        fb_away = db.query(models.ClubFanbaseState).filter_by(club_id=fixture.away_club_id, season_id=season_id).first()
+        
+        home_fb_count = fb_home.fb_count if fb_home else 60000
+        away_fb_count = fb_away.fb_count if fb_away else 60000
+        
+        # 3. Get Performance (Rank)
+        perf_val = 0.5
+        hist_perf_val = 0.5
+        
+        if month_index > 1:
+            # Calculate standings up to previous month
+            calc = standings_service.StandingsCalculator(db, season_id)
+            standings = calc.calculate(up_to_month=month_index-1)
+            
+            # Find home club rank
+            num_clubs = len(standings)
+            if num_clubs > 1:
+                for s in standings:
+                    if s["club_id"] == fixture.home_club_id:
+                        rank = s["rank"]
+                        # Normalize: 1st -> 1.0, Last -> 0.0
+                        perf_val = 1.0 - (rank - 1) / (num_clubs - 1)
+                        break
+        
+        # 4. Get Promo Spend (Next Home Promo)
+        # Input in previous month (month_index - 1)
+        next_promo_spend = Decimal(0)
+        if month_index > 1:
+            prev_turn = db.query(models.Turn).filter_by(season_id=season_id, month_index=month_index-1).first()
+            if prev_turn:
+                decision = db.query(models.TurnDecision).filter_by(turn_id=prev_turn.id, club_id=fixture.home_club_id).first()
+                if decision and decision.payload_json:
+                    val = decision.payload_json.get("next_home_promo")
+                    if val is not None:
+                        next_promo_spend = Decimal(val)
+
+        # 5. Calculate Attendance
+        # Event: Aug (1) or May (10)
+        is_event = (month_index == 1 or month_index == 10)
+        
+        h_att, a_att, t_att = attendance_service.calculate_attendance(
+            home_fb=home_fb_count,
+            away_fb=away_fb_count,
+            weather=weather,
+            perf_val=perf_val,
+            hist_perf_val=hist_perf_val,
+            next_promo_spend=next_promo_spend,
+            is_event=is_event
+        )
+        
+        fixture.home_attendance = h_att
+        fixture.away_attendance = a_att
+        fixture.total_attendance = t_att
+        
+        db.add(fixture)
+        # -------------------------------
             
         # 2. Calculate TP
         tp_home = calculate_tp(db, fixture.home_club_id, season_id)

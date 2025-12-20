@@ -68,20 +68,89 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
     
     clubs = db.execute(select(models.Club).where(models.Club.game_id == season.game_id)).scalars().all()
     
-from app.services import sponsor, reinforcement, staff, academy, ticket
+from app.services import sponsor, reinforcement, staff, academy, ticket, fanbase, standings
+from app.services import distribution, decision_expense, merchandise, match_operation, prize
+from decimal import Decimal
 
-def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
+def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
     """
-    Calculate and apply finances for all clubs in the given turn.
-    Idempotent: if snapshot exists for (club_id, turn_id), skip.
+    Process expenses and state updates (FB) BEFORE matches.
     """
-    # Get turn info to know the month (if needed) or just process all clubs
     turn = db.execute(select(models.Turn).where(models.Turn.id == turn_id)).scalar_one_or_none()
     if not turn:
         raise ValueError(f"Turn {turn_id} not found")
     
-    # Get all clubs in the game (assuming turn belongs to a season -> game)
-    # We need to find the game_id from season_id
+    season = db.execute(select(models.Season).where(models.Season.id == season_id)).scalar_one_or_none()
+    if not season:
+        raise ValueError(f"Season {season_id} not found")
+    
+    clubs = db.execute(select(models.Club).where(models.Club.game_id == season.game_id)).scalars().all()
+    
+    # Pre-calculate standings for FB update (previous month)
+    perf_map = {}
+    if turn.month_index > 1:
+        calc = standings.StandingsCalculator(db, season_id)
+        st = calc.calculate(up_to_month=turn.month_index - 1)
+        num_clubs = len(st)
+        if num_clubs > 1:
+            for s in st:
+                rank = s["rank"]
+                perf_map[s["club_id"]] = 1.0 - (rank - 1) / (num_clubs - 1)
+    
+    for club in clubs:
+        profile, state = ensure_finance_initialized_for_club(db, club.id)
+        
+        # Ensure FB state
+        fb_state = fanbase.ensure_fanbase_state(db, club.id, season_id)
+        
+        # Get Decision
+        decision = db.execute(select(models.TurnDecision).where(
+            models.TurnDecision.turn_id == turn_id,
+            models.TurnDecision.club_id == club.id
+        )).scalar_one_or_none()
+        
+        promo_spend = Decimal(0)
+        ht_spend = Decimal(0)
+        if decision and decision.payload_json:
+            promo_spend = Decimal(str(decision.payload_json.get("promo_expense", 0) or 0))
+            ht_spend = Decimal(str(decision.payload_json.get("hometown_expense", 0) or 0))
+            
+        # Update FB
+        perf = perf_map.get(club.id, 0.5)
+        hist_perf = 0.5 # Placeholder
+        fanbase.update_fanbase_for_turn(db, fb_state, promo_spend, ht_spend, perf, hist_perf)
+        
+        # PR6: 配分金（8月一括）
+        distribution.process_distribution_revenue(db, club.id, season_id, turn_id, turn.month_index)
+        
+        # Existing Expenses
+        if turn.month_index == 1: # August
+            sponsor.process_sponsor_revenue(db, club.id, season_id, turn_id)
+            
+        if turn.month_index == 12: # July
+            sponsor.determine_next_sponsors(db, club.id, season_id)
+            
+        reinforcement.process_reinforcement_cost(db, club.id, season_id, turn_id, turn.month_index)
+        staff.process_staff_cost(db, club.id, turn_id, turn.month_index, season_id)
+        academy.process_monthly_cost(db, club.id, season_id, turn_id)
+        
+        if turn.month_index == 12: # July
+            academy.process_transfer_fee(db, club.id, season_id, turn_id)
+            
+        # PR6: 月次入力費用の計上（decision_expenseサービス経由）
+        if decision and decision.payload_json:
+            decision_expense.process_decision_expenses(db, club.id, turn_id, decision.payload_json)
+            
+    db.flush()
+
+def finalize_turn_finance(db: Session, season_id: UUID, turn_id: UUID):
+    """
+    Process revenue (Ticket) and create Snapshot AFTER matches.
+    """
+    turn = db.execute(select(models.Turn).where(models.Turn.id == turn_id)).scalar_one_or_none()
+    if not turn:
+        raise ValueError(f"Turn {turn_id} not found")
+    
     season = db.execute(select(models.Season).where(models.Season.id == season_id)).scalar_one_or_none()
     if not season:
         raise ValueError(f"Season {season_id} not found")
@@ -89,89 +158,52 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
     clubs = db.execute(select(models.Club).where(models.Club.game_id == season.game_id)).scalars().all()
     
     for club in clubs:
-        # 1. Ensure initialized
         profile, state = ensure_finance_initialized_for_club(db, club.id)
         
-        # 2. Check idempotency
-        existing_snapshot = db.execute(select(models.ClubFinancialSnapshot).where(
+        # Check idempotency (Snapshot)
+        existing = db.execute(select(models.ClubFinancialSnapshot).where(
             models.ClubFinancialSnapshot.club_id == club.id,
             models.ClubFinancialSnapshot.turn_id == turn_id
         )).scalar_one_or_none()
         
-        if existing_snapshot:
-            continue # Already processed
+        if existing:
+            continue
             
-        # --- PR3 Structural Elements ---
-        # A. Sponsor Revenue (August)
-        if turn.month_index == 1: # August
-            sponsor.process_sponsor_revenue(db, club.id, season_id, turn_id)
-            
-        # A2. Sponsor Determination (July)
-        if turn.month_index == 12: # July
-            sponsor.determine_next_sponsors(db, club.id, season_id)
-            
-        # B. Reinforcement Cost (Monthly)
-        reinforcement.process_reinforcement_cost(db, club.id, season_id, turn_id, turn.month_index)
-        
-        # C. Staff Cost (Monthly)
-        # PR4: Pass season_id for hiring resolution in August
-        staff.process_staff_cost(db, club.id, turn_id, turn.month_index, season_id)
-        
-        # --- PR4 Dynamics ---
-        # D. Academy Cost (Monthly)
-        academy.process_monthly_cost(db, club.id, season_id, turn_id)
-        
-        # E. Academy Transfer Fee (July)
-        if turn.month_index == 12: # July
-            academy.process_transfer_fee(db, club.id, season_id, turn_id)
-            
-        # F. Ticket Revenue (Monthly)
+        # Ticket Revenue (Now uses Fixture attendance)
         ticket.process_ticket_revenue(db, club.id, season_id, turn_id, turn.month_index)
-        # -------------------------------
-            
-        # 3. Calculate items (Legacy PR2 + New PR3 Aggregation)
-        # We need to sum up ALL ledgers for this turn to create the snapshot.
-        # Since we just added PR3 ledgers, we should query them or accumulate them.
-        # But `apply_finance_for_turn` is creating ledgers AND snapshot in one go.
-        # The PR2 code created ledgers and then summed them up.
-        # Let's keep PR2 logic for "Base Monthly" but maybe we should deprecate it if PR3 replaces it?
-        # The prompt says "Integrate into resolve_turn".
-        # PR2 had `sponsor_base_monthly` and `monthly_cost`.
-        # PR3 adds specific structural costs.
-        # We should keep PR2 as "Basic/Misc" costs for now, or maybe `monthly_cost` represents "Other fixed costs".
         
-        # Income
+        # PR6: 物販収入・費用（ホームゲーム月）
+        merchandise.process_merchandise(db, club.id, season_id, turn_id, turn.month_index)
+        
+        # PR6: 試合運営費（ホームゲーム月）
+        match_operation.process_match_operation_cost(db, club.id, season_id, turn_id, turn.month_index)
+        
+        # PR6: 賞金（6月）
+        prize.process_prize_revenue(db, club.id, season_id, turn_id, turn.month_index)
+        
+        # Base Monthly Items (Legacy/Fixed)
         income_sponsor = profile.sponsor_base_monthly
-        
-        # Expenses
         expense_fixed = profile.monthly_cost
         
-        # 4. Create Ledgers (PR2)
-        # Sponsor Income (Monthly Base)
-        ledger_sponsor = models.ClubFinancialLedger(
+        db.add(models.ClubFinancialLedger(
             club_id=club.id,
             turn_id=turn_id,
             kind="sponsor",
             amount=income_sponsor,
             meta={"description": "Monthly Sponsor Income (Base)"}
-        )
-        db.add(ledger_sponsor)
+        ))
         
-        # Fixed Cost (Monthly Base)
-        ledger_cost = models.ClubFinancialLedger(
+        db.add(models.ClubFinancialLedger(
             club_id=club.id,
             turn_id=turn_id,
             kind="cost",
             amount=-expense_fixed,
             meta={"description": "Monthly Fixed Cost (Base)"}
-        )
-        db.add(ledger_cost)
+        ))
         
-        # Flush to ensure all ledgers (PR2 + PR3) are in session
         db.flush()
         
-        # 5. Update State & Create Snapshot
-        # Sum all ledgers for this turn
+        # Snapshot
         ledgers = db.execute(select(models.ClubFinancialLedger).where(
             models.ClubFinancialLedger.club_id == club.id,
             models.ClubFinancialLedger.turn_id == turn_id
@@ -202,3 +234,8 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
         db.add(state)
         
     db.commit()
+
+# Deprecated wrapper for backward compatibility (if needed, but we will update caller)
+def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
+    process_turn_expenses(db, season_id, turn_id)
+    finalize_turn_finance(db, season_id, turn_id)

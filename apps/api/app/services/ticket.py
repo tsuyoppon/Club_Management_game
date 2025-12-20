@@ -41,14 +41,12 @@ def process_ticket_revenue(db: Session, club_id: UUID, season_id: UUID, turn_id:
             continue
             
         # Calculate Attendance
-        # Random fluctuation 0.9 - 1.1
-        # Seed based on fixture
-        seed = f"{fixture.id}-attendance"
-        rng = random.Random(seed)
-        fluctuation = rng.uniform(0.9, 1.1)
+        # Use stored attendance from Fixture (calculated in match processing)
+        home_att = fixture.home_attendance or 0
+        away_att = fixture.away_attendance or 0
+        total_att = home_att + away_att
         
-        attendance = int(base_attendance * fluctuation)
-        revenue = attendance * ticket_price
+        revenue = total_att * ticket_price
         
         ledger = models.ClubFinancialLedger(
             club_id=club_id,
@@ -57,7 +55,9 @@ def process_ticket_revenue(db: Session, club_id: UUID, season_id: UUID, turn_id:
             amount=revenue,
             meta={
                 "description": "Ticket Revenue", 
-                "attendance": attendance, 
+                "attendance": total_att, 
+                "home_attendance": home_att,
+                "away_attendance": away_att,
                 "price": float(ticket_price),
                 "fixture_id": str(fixture.id)
             }

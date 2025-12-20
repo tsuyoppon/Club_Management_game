@@ -8,17 +8,25 @@ class StandingsCalculator:
         self.session = session
         self.season_id = season_id
 
-    def calculate(self) -> List[Dict[str, Any]]:
+    def calculate(self, up_to_month: int = None) -> List[Dict[str, Any]]:
         # 0. Check if season is finalized
+        # If up_to_month is specified, we should ignore finalized state and recalculate?
+        # Or if finalized, and up_to_month covers all, return finalized?
+        # Safer to recalculate if up_to_month is specified.
         season = self.session.query(Season).filter(Season.id == self.season_id).first()
-        if season and season.is_finalized:
+        if season and season.is_finalized and up_to_month is None:
             return self._get_finalized_standings()
 
         # 1. Fetch all completed matches for the season
-        matches = self.session.query(Match).join(Fixture).filter(
+        query = self.session.query(Match).join(Fixture).filter(
             Fixture.season_id == self.season_id,
             Match.status == MatchStatus.played
-        ).all()
+        )
+        
+        if up_to_month is not None:
+            query = query.filter(Fixture.match_month_index <= up_to_month)
+            
+        matches = query.all()
 
         # 2. Aggregate stats
         stats: Dict[UUID, Dict[str, Any]] = {}

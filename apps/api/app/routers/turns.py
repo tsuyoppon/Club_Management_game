@@ -15,7 +15,7 @@ from app.db.models import (
     TurnDecision,
     TurnState,
 )
-from app.schemas import AckRequest, DecisionCommitRequest, TurnStateResponse
+from app.schemas import AckRequest, DecisionCommitRequest, DecisionPayload, TurnStateResponse
 
 router = APIRouter(prefix="/turns", tags=["turns"])
 
@@ -69,6 +69,15 @@ def commit_decision(
     decision = db.query(TurnDecision).filter(TurnDecision.turn_id == turn_id, TurnDecision.club_id == club_id).first()
     if not decision:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Decision not found")
+    
+    # PR6: バリデーション（オプショナル、エラーがあれば400返却）
+    if payload.payload:
+        from app.services.decision_validation import validate_decision_payload, parse_decision_payload
+        validated = parse_decision_payload(payload.payload)
+        errors = validate_decision_payload(db, turn, club_id, validated)
+        if errors:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"validation_errors": errors})
+    
     decision.decision_state = DecisionState.committed
     decision.committed_at = datetime.utcnow()
     decision.committed_by_user_id = user.id
@@ -100,14 +109,16 @@ def resolve_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_c
     turn = _get_turn(db, turn_id)
     require_role(user, db, turn.season.game_id, MembershipRole.gm)
 
-    # Apply finance
+    # Apply finance (Expenses & Updates)
     from app.services import finance as finance_service
+    finance_service.process_turn_expenses(db, turn.season_id, turn.id)
 
-    finance_service.apply_finance_for_turn(db, turn.season_id, turn.id)
-
-    # Apply Match Results (PR4.5)
+    # Apply Match Results (PR4.5 + PR5 Attendance)
     from app.services import match_results
     match_results.process_matches_for_turn(db, turn.season_id, turn.id, turn.month_index)
+    
+    # Apply finance (Revenue & Snapshot)
+    finance_service.finalize_turn_finance(db, turn.season_id, turn.id)
 
     turn.turn_state = TurnState.resolved
     turn.resolved_at = datetime.utcnow()

@@ -93,6 +93,7 @@ class Club(Base):
     financial_state = relationship("ClubFinancialState", back_populates="club", uselist=False, cascade="all, delete-orphan")
     financial_ledgers = relationship("ClubFinancialLedger", back_populates="club", cascade="all, delete-orphan")
     financial_snapshots = relationship("ClubFinancialSnapshot", back_populates="club", cascade="all, delete-orphan")
+    fanbase_states = relationship("ClubFanbaseState", back_populates="club", cascade="all, delete-orphan")
 
 
 
@@ -244,6 +245,11 @@ class Fixture(Base):
     away_club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=True)
     is_bye = Column(Boolean, nullable=False, default=False)
     bye_club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=True)
+    
+    weather = Column(String, nullable=True)
+    home_attendance = Column(Integer, nullable=True)
+    away_attendance = Column(Integer, nullable=True)
+    total_attendance = Column(Integer, nullable=True)
 
     season = relationship("Season", back_populates="fixtures")
     home_club = relationship("Club", foreign_keys=[home_club_id], back_populates="fixtures_home")
@@ -492,4 +498,29 @@ class ClubStaff(Base):
 
     __table_args__ = (
         UniqueConstraint("club_id", "role", name="uq_staff_club_role"),
+    )
+
+
+class ClubFanbaseState(Base):
+    __tablename__ = "club_fanbase_states"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
+    
+    fb_count = Column(Integer, nullable=False, default=60000)
+    fb_rate = Column(Numeric(10, 6), nullable=False, default=0.06)
+    cumulative_promo = Column(Numeric(14, 2), nullable=False, default=0)
+    cumulative_ht = Column(Numeric(14, 2), nullable=False, default=0)
+    last_ht_spend = Column(Numeric(14, 2), nullable=False, default=0)
+    followers_public = Column(Integer, nullable=True)
+    
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    club = relationship("Club", back_populates="fanbase_states")
+    season = relationship("Season")
+
+    __table_args__ = (
+        UniqueConstraint("club_id", "season_id", name="uniq_club_season_fanbase"),
     )

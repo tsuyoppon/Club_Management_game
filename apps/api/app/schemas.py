@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
 
@@ -71,6 +72,34 @@ class DecisionCommitRequest(BaseModel):
     payload: Optional[dict] = None
 
 
+class DecisionPayload(BaseModel):
+    """
+    月次入力項目（v1Spec Section 5）
+    すべてOptionalとし、未入力は0として扱う
+    """
+    # 5.1 毎月入力（通年：8〜7月）
+    sales_expense: Optional[Decimal] = Field(None, ge=0, description="営業費用（当月）")
+    promo_expense: Optional[Decimal] = Field(None, ge=0, description="プロモーション費用（当月）")
+    hometown_expense: Optional[Decimal] = Field(None, ge=0, description="ホームタウン活動費用（当月）")
+    
+    # 5.2 条件付き入力
+    next_home_promo: Optional[Decimal] = Field(None, ge=0, description="翌月ホームゲーム向けプロモ費")
+    additional_reinforcement: Optional[Decimal] = Field(None, ge=0, description="追加強化費（12月のみ）")
+    
+    # 5.4 営業リソース配分（四半期開始月のみ: 8/11/2/5月）
+    sales_allocation_new: Optional[float] = Field(None, ge=0.0, le=1.0, description="新規営業配分率 ρ^new")
+
+    class Config:
+        # Allow extra fields for backward compatibility
+        extra = "allow"
+
+
+class DecisionValidationResult(BaseModel):
+    """バリデーション結果"""
+    is_valid: bool
+    errors: List[str] = []
+
+
 class AckRequest(BaseModel):
     club_id: UUID
     ack: bool = Field(True)
@@ -97,6 +126,10 @@ class FixtureView(BaseModel):
     is_bye: bool
     bye_club_id: Optional[UUID]
     status: MatchStatus
+    weather: Optional[str] = None
+    home_attendance: Optional[int] = None
+    away_attendance: Optional[int] = None
+    total_attendance: Optional[int] = None
 
 
 class SponsorEffortUpdate(BaseModel):
@@ -194,3 +227,24 @@ class SeasonStatusRead(BaseModel):
     missing_matches: int
     unplayed_matches: int
     warnings: List[str] = []
+
+
+class FanbaseStateRead(BaseModel):
+    id: UUID
+    club_id: UUID
+    season_id: UUID
+    fb_count: int
+    fb_rate: float
+    cumulative_promo: float
+    cumulative_ht: float
+    last_ht_spend: float
+    followers_public: Optional[int]
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
+
+
+class FanIndicatorRead(BaseModel):
+    club_id: UUID
+    followers: int

@@ -22,7 +22,7 @@ from app.db.models import (
     TurnState,
     month_mappings,
 )
-from app.schemas import FixtureGenerateRequest, SeasonCreate, SeasonRead, StandingRead, SeasonStatusRead
+from app.schemas import FixtureGenerateRequest, SeasonCreate, SeasonRead, StandingRead, SeasonStatusRead, FixtureView
 from app.services.fixtures import generate_round_robin
 from app.services.standings import StandingsCalculator
 from app.services.season_finalize import SeasonFinalizer
@@ -152,6 +152,10 @@ def season_schedule(
                 "status": fixture.match.status if fixture.match else None,
                 "home_goals": fixture.match.home_goals if fixture.match else None,
                 "away_goals": fixture.match.away_goals if fixture.match else None,
+                "weather": fixture.weather,
+                "home_attendance": fixture.home_attendance,
+                "away_attendance": fixture.away_attendance,
+                "total_attendance": fixture.total_attendance,
             }
         )
     return grouped
@@ -197,10 +201,47 @@ def club_schedule(
                 "status": fixture.match.status if fixture.match else None,
                 "home_goals": fixture.match.home_goals if fixture.match else None,
                 "away_goals": fixture.match.away_goals if fixture.match else None,
+                "weather": fixture.weather,
+                "home_attendance": fixture.home_attendance,
+                "away_attendance": fixture.away_attendance,
+                "total_attendance": fixture.total_attendance,
             }
         )
 
     return schedule
+
+
+@router.get("/{season_id}/fixtures/{fixture_id}", response_model=FixtureView)
+def get_fixture_detail(
+    season_id: str,
+    fixture_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+    require_role(user, db, str(season.game_id), MembershipRole.club_viewer)
+    
+    fixture = db.query(Fixture).filter(Fixture.id == fixture_id, Fixture.season_id == season_id).first()
+    if not fixture:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fixture not found")
+        
+    # Ensure match status is populated in FixtureView
+    # FixtureView has status field. Fixture model doesn't have status, Match does.
+    # But FixtureView expects status.
+    # I need to map it.
+    # Pydantic ORM mode might not handle nested relationship attribute mapping automatically if names differ?
+    # FixtureView: status: MatchStatus
+    # Fixture model: match (relationship) -> status
+    # I should probably update FixtureView or handle it manually.
+    # But FixtureView is Pydantic.
+    # If I return Fixture object, Pydantic tries to read .status
+    # Fixture object does NOT have .status.
+    # I need to attach it or use a wrapper.
+    
+    fixture.status = fixture.match.status if fixture.match else MatchStatus.scheduled
+    return fixture
 
 
 @router.get("/{season_id}/standings", response_model=List[StandingRead])
@@ -253,3 +294,37 @@ def finalize_season_endpoint(
     
     finalizer = SeasonFinalizer(db, uuid.UUID(season_id))
     return finalizer.finalize()
+
+
+@router.get("/{season_id}/prizes")
+def get_season_prizes(
+    season_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    シーズンの賞金情報を取得（6月以降にアクセス可能）
+    """
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+    
+    require_role(user, db, str(season.game_id), MembershipRole.club_viewer)
+    
+    # Check if season is past June (month_index >= 11)
+    current_turn = (
+        db.query(Turn)
+        .filter(Turn.season_id == season_id, Turn.turn_state != TurnState.acked)
+        .order_by(Turn.month_index)
+        .first()
+    )
+    
+    # If no active turn or current_turn is past June (11+), allow access
+    if current_turn and current_turn.month_index < 11:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Prize information is only available after June (month 11)"
+        )
+    
+    from app.services.prize import get_season_prize_info
+    return get_season_prize_info(db, uuid.UUID(season_id))
