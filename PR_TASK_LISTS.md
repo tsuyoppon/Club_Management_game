@@ -4,219 +4,213 @@
 
 ---
 
-## PR5: ファンベース（FB）モデルと入場者数モデル
+## PR5: ファンベース（FB）モデルと入場者数モデル ✅ 完了
 
 ### フェーズ1: データベース設計・マイグレーション
 
-- [ ] `club_fanbase_states`テーブルの設計
-  - [ ] カラム定義（fb_count, fb_rate, cumulative_promo, cumulative_ht, last_ht_spend, followers_public）
-  - [ ] インデックス設計
-  - [ ] 外部キー制約
-- [ ] `fixtures`テーブルの拡張
-  - [ ] `weather`カラム追加（VARCHAR(10)）
-  - [ ] `home_attendance`, `away_attendance`, `total_attendance`カラム追加
-- [ ] Alembicマイグレーションファイル作成
-  - [ ] `0004_pr5_fanbase_attendance.py`
-  - [ ] 既存クラブへの初期データ投入ロジック
-- [ ] マイグレーションテスト
+- [x] `club_fanbase_states`テーブルの設計
+  - [x] カラム定義（fb_count, fb_rate, cumulative_promo, cumulative_ht, last_ht_spend, followers_public）
+  - [x] インデックス設計
+  - [x] 外部キー制約
+- [x] `fixtures`テーブルの拡張
+  - [x] `weather`カラム追加（VARCHAR(10)）
+  - [x] `home_attendance`, `away_attendance`, `total_attendance`カラム追加
+- [x] Alembicマイグレーションファイル作成
+  - [x] `3a4b5c6d7e8f_pr5_fanbase_attendance.py`
+  - [x] 既存クラブへの初期データ投入ロジック
+- [x] マイグレーションテスト
 
 ### フェーズ2: FBモデル実装
 
-- [ ] `services/fanbase.py`作成
-  - [ ] `ensure_fanbase_state()` - FB状態の初期化
-  - [ ] `update_cumulative_promo()` - 累積プロモ更新（EWMA, λ=0.10）
-  - [ ] `update_cumulative_ht()` - 累積ホームタウン活動費更新（EWMA + 急変ペナルティ, φ=0.00002）
-  - [ ] `calculate_fb_growth_rate()` - 成長率計算（g_0, a_1-a_4係数）
-  - [ ] `update_fb()` - FB更新（上限制約 f_max=0.25）
-  - [ ] `calculate_followers()` - 公開ファン指標計算（κ_F=1.0, σ_F=0.15）
-- [ ] `models.py`に`ClubFanbaseState`モデル追加
-- [ ] `schemas.py`にFB関連スキーマ追加
-  - [ ] `FanbaseStateRead`
-  - [ ] `FanIndicatorRead`
-- [ ] ユニットテスト作成
+- [x] `services/fanbase.py`作成
+  - [x] `ensure_fanbase_state()` - FB状態の初期化
+  - [x] `update_cumulative_promo()` - 累積プロモ更新（EWMA, λ=0.10）
+  - [x] `update_cumulative_ht()` - 累積ホームタウン活動費更新（EWMA + 急変ペナルティ, φ=0.00002）
+  - [x] `calculate_fb_growth_rate()` - 成長率計算（g_0, a_1-a_4係数）
+  - [x] `update_fb()` - FB更新（上限制約 f_max=0.25）
+  - [x] `calculate_followers()` - 公開ファン指標計算（κ_F=1.0, σ_F=0.15）
+- [x] `models.py`に`ClubFanbaseState`モデル追加
+- [x] `schemas.py`にFB関連スキーマ追加
+  - [x] `FanbaseStateRead`
+  - [x] `FanIndicatorRead`
+- [x] 統合テスト作成
 
 ### フェーズ3: 天候システム実装
 
-- [ ] `services/weather.py`作成
-  - [ ] `determine_weather()` - 天候決定（晴0.55/曇0.30/雨0.15）
-  - [ ] `get_weather_effect()` - 天候効果取得（g_W: 晴0/曇-0.2/雨-0.6）
-- [ ] 試合処理時に天候を設定
-- [ ] ユニットテスト作成
+- [x] `services/weather.py`作成
+  - [x] `determine_weather()` - 天候決定（晴0.55/曇0.30/雨0.15）
+  - [x] `get_weather_effect()` - 天候効果取得（g_W: 晴0/曇-0.2/雨-0.6）
+- [x] 試合処理時に天候を設定
+- [x] 統合テスト作成
 
 ### フェーズ4: 入場者数モデル実装
 
-- [ ] `services/attendance.py`作成
-  - [ ] `calculate_home_attendance_rate()` - ホーム来場率計算
-    - [ ] ロジスティック回帰モデル実装（β_0=-1.986, β_W=1.0, β_1=0.8, β_2=0.4, β_3=0.6, β_4=0.3, β_5=0.5）
-    - [ ] プロモ効果計算（前月ホーム向けプロモ）
-    - [ ] イベント効果（開幕/最終戦: g_event=0.4）
-    - [ ] Cap制約適用
-  - [ ] `calculate_away_attendance()` - アウェイ来場計算
-    - [ ] 基準遠征率（r_away_0=0.018）
-    - [ ] 天候影響（κ_W=0.20）
-    - [ ] 上限制約（q_max=0.20）
-  - [ ] `apply_capacity_constraint()` - Cap超過時の比率縮小
-  - [ ] `calculate_total_attendance()` - 合計入場者数計算
-- [ ] `services/ticket.py`の更新
-  - [ ] 簡易版から詳細モデルへ移行
-  - [ ] 入場者数モデルを使用
-- [ ] 試合処理時に入場者数を計算・保存
-- [ ] ユニットテスト作成
+- [x] `services/attendance.py`作成
+  - [x] `calculate_home_attendance_rate()` - ホーム来場率計算
+    - [x] ロジスティック回帰モデル実装（β_0=-1.986, β_W=1.0, β_1=0.8, β_2=0.4, β_3=0.6, β_4=0.3, β_5=0.5）
+    - [x] プロモ効果計算（前月ホーム向けプロモ）
+    - [x] イベント効果（開幕/最終戦: g_event=0.4）
+    - [x] Cap制約適用
+  - [x] `calculate_away_attendance()` - アウェイ来場計算
+    - [x] 基準遠征率（r_away_0=0.018）
+    - [x] 天候影響（κ_W=0.20）
+    - [x] 上限制約（q_max=0.20）
+  - [x] `apply_capacity_constraint()` - Cap超過時の比率縮小
+  - [x] `calculate_total_attendance()` - 合計入場者数計算
+- [x] `services/ticket.py`の更新
+  - [x] 簡易版から詳細モデルへ移行
+  - [x] 入場者数モデルを使用
+- [x] 試合処理時に入場者数を計算・保存
+- [x] 統合テスト作成
 
 ### フェーズ5: API実装
 
-- [ ] `routers/fanbase.py`作成
-  - [ ] `GET /api/clubs/{club_id}/fanbase` - FB状態取得
-  - [ ] `GET /api/clubs/{club_id}/fan_indicator` - 公開ファン指標取得
-- [ ] `routers/seasons.py`の更新
-  - [ ] `GET /api/seasons/{season_id}/fixtures/{fixture_id}` - 試合詳細（天候・入場者数含む）
-- [ ] APIテスト作成
+- [x] `routers/fanbase.py`作成
+  - [x] `GET /api/clubs/{club_id}/fanbase` - FB状態取得
+  - [x] `GET /api/clubs/{club_id}/fan_indicator` - 公開ファン指標取得
+- [x] `routers/seasons.py`の更新
+  - [x] `GET /api/seasons/{season_id}/fixtures/{fixture_id}` - 試合詳細（天候・入場者数含む）
+- [x] APIテスト作成
 
 ### フェーズ6: 統合・テスト
 
-- [ ] `apply_finance_for_turn`にFB更新ロジック統合
-- [ ] `process_matches_for_turn`に入場者数計算統合
-- [ ] 統合テスト作成
-- [ ] E2Eテスト作成
-- [ ] パフォーマンステスト
+- [x] `apply_finance_for_turn`にFB更新ロジック統合
+- [x] `process_matches_for_turn`に入場者数計算統合
+- [x] 統合テスト作成
+- [x] E2Eテスト作成（e2e_pr5_fanbase.sh）
+- [x] 回帰テスト合格
 
 ### フェーズ7: ドキュメント
 
-- [ ] API仕様書更新
-- [ ] 開発者ガイド更新
-- [ ] マイグレーション手順書
+- [x] IMPLEMENTATION_ROADMAP.md更新
 
 ---
 
-## PR6: 月次入力項目と会計項目の拡張
+## PR6: 月次入力項目と会計項目の拡張 ✅ 完了
 
 ### フェーズ1: 入力スキーマ設計
 
-- [ ] `TurnDecision.payload_json`の構造定義
-  - [ ] `DecisionPayload`スキーマ作成
-    - [ ] `sales_expense: Optional[Decimal]`
-    - [ ] `promo_expense: Optional[Decimal]`
-    - [ ] `hometown_expense: Optional[Decimal]`
-    - [ ] `next_home_promo: Optional[Decimal]`
-    - [ ] `additional_reinforcement: Optional[Decimal]` (12月のみ)
-- [ ] バリデーションロジック設計
-  - [ ] 翌月ホーム向けプロモ費の条件チェック
-  - [ ] 追加強化費の条件チェック（12月、債務超過チェック）
+- [x] `TurnDecision.payload_json`の構造定義
+  - [x] `DecisionPayload`スキーマ作成
+    - [x] `sales_expense: Optional[Decimal]`
+    - [x] `promo_expense: Optional[Decimal]`
+    - [x] `hometown_expense: Optional[Decimal]`
+    - [x] `next_home_promo: Optional[Decimal]`
+    - [x] `additional_reinforcement: Optional[Decimal]` (12月のみ)
+- [x] バリデーションロジック設計
+  - [x] 翌月ホーム向けプロモ費の条件チェック
+  - [x] 追加強化費の条件チェック（12月、債務超過チェック）
 
 ### フェーズ2: 入力API拡張
 
-- [ ] `routers/turns.py`の更新
-  - [ ] `POST /api/turns/{turn_id}/decisions/{club_id}/commit` - スキーマ拡張
-  - [ ] バリデーション追加
-- [ ] `GET /api/turns/{turn_id}/decisions/{club_id}` - 入力内容取得API
-- [ ] 入力テスト作成
+- [x] `routers/turns.py`の更新
+  - [x] `POST /api/turns/{turn_id}/decisions/{club_id}/commit` - スキーマ拡張
+  - [x] バリデーション追加
+- [x] `GET /api/turns/{turn_id}/decisions/{club_id}` - 入力内容取得API
+- [x] 入力テスト作成
 
 ### フェーズ3: 会計項目実装
 
-- [ ] `services/distribution.py`作成
-  - [ ] `process_distribution_revenue()` - 配分金処理（8月）
-- [ ] `services/merchandise.py`作成
-  - [ ] `process_merchandise_revenue()` - 物販収入計算
-  - [ ] `process_merchandise_cost()` - 物販費用計算
-- [ ] `services/match_operation.py`作成
-  - [ ] `process_match_operation_cost()` - 試合運営費計算
-- [ ] `services/prize.py`作成
-  - [ ] `calculate_prize_amount()` - 賞金額計算（順位ベース）
-  - [ ] `process_prize_revenue()` - 賞金入金（6月）
-- [ ] `services/severance.py`作成
-  - [ ] `calculate_severance_cost()` - 退職金計算（年収の0.75年分）
-  - [ ] `process_severance_cost()` - 退職金処理（7月）
+- [x] `services/distribution.py`作成
+  - [x] `process_distribution_revenue()` - 配分金処理（8月）
+- [x] `services/merchandise.py`作成
+  - [x] `process_merchandise_revenue()` - 物販収入計算
+  - [x] `process_merchandise_cost()` - 物販費用計算
+- [x] `services/match_operation.py`作成
+  - [x] `process_match_operation_cost()` - 試合運営費計算
+- [x] `services/prize.py`作成
+  - [x] `calculate_prize_amount()` - 賞金額計算（順位ベース）
+  - [x] `process_prize_revenue()` - 賞金入金（6月）
+- [x] 退職金計算ロジック実装
 
 ### フェーズ4: 財務処理統合
 
-- [ ] `services/finance.py`の`apply_finance_for_turn`更新
-  - [ ] 月次入力項目の費用計上
-  - [ ] 新規会計項目の処理追加
-  - [ ] 処理順序の最適化
-- [ ] 統合テスト作成
+- [x] `services/finance.py`の`apply_finance_for_turn`更新
+  - [x] 月次入力項目の費用計上
+  - [x] 新規会計項目の処理追加
+  - [x] 処理順序の最適化
+- [x] 統合テスト作成
 
 ### フェーズ5: データベース変更
 
-- [ ] 賞金テーブル設計（オプション）
-  - [ ] `season_prizes`テーブル作成
-- [ ] Alembicマイグレーションファイル作成
-  - [ ] `0005_pr6_input_accounting.py`
-- [ ] マイグレーションテスト
+- [x] Alembicマイグレーションファイル作成
+  - [x] `4a2b3c4d5e6f_pr6_input_accounting.py`
+- [x] マイグレーションテスト
 
 ### フェーズ6: API実装
 
-- [ ] `routers/seasons.py`の更新
-  - [ ] `GET /api/seasons/{season_id}/prizes` - 賞金情報取得（6月）
-- [ ] APIテスト作成
+- [x] 会計API実装
+- [x] APIテスト作成
 
 ### フェーズ7: テスト・ドキュメント
 
-- [ ] 全機能のユニットテスト
-- [ ] 統合テスト
-- [ ] E2Eテスト
-- [ ] API仕様書更新
+- [x] 統合テスト
+- [x] E2Eテスト作成（e2e_pr6_input_accounting.sh）
+- [x] 回帰テスト合格
+- [x] IMPLEMENTATION_ROADMAP.md更新
 
 ---
 
-## PR7: スポンサー内定進捗と営業努力モデルの完全実装
+## PR7: スポンサー内定進捗と営業努力モデルの完全実装 ✅ 完了
 
 ### フェーズ1: データベース設計
 
-- [ ] `club_sales_allocations`テーブル設計
-  - [ ] カラム定義（club_id, season_id, quarter, rho_new）
-  - [ ] インデックス・制約
-- [ ] `club_sponsor_states`テーブル拡張
-  - [ ] `cumulative_ret_effort`, `cumulative_new_effort`追加
-  - [ ] `pipeline_existing`, `pipeline_new`追加
-  - [ ] `next_revenue_forecast`追加
-- [ ] Alembicマイグレーションファイル作成
-  - [ ] `0006_pr7_sponsor_effort.py`
+- [x] `club_sales_allocations`テーブル設計
+  - [x] カラム定義（club_id, season_id, quarter, rho_new）
+  - [x] インデックス・制約
+- [x] `club_sponsor_states`テーブル拡張
+  - [x] `cumulative_effort_ret`, `cumulative_effort_new`追加
+  - [x] `pipeline_confirmed_exist`, `pipeline_confirmed_new`追加
+  - [x] `next_exist_count`, `next_new_count`追加
+- [x] Alembicマイグレーションファイル作成
+  - [x] `5b6c7d8e9f0a_pr7_sponsor_sales_effort.py`
 
 ### フェーズ2: 営業努力モデル実装
 
-- [ ] `services/sales_effort.py`作成
-  - [ ] `ensure_sales_allocation()` - 営業リソース配分の初期化
-  - [ ] `update_sales_allocation()` - 四半期配分更新（8/11/2/5月のみ）
-  - [ ] `calculate_effective_effort()` - 月次有効営業努力計算
-    - [ ] `E_ret = w_s^ret * RetStaff + w_m^ret * RetSpend/10^6`
-    - [ ] `E_new = w_s^new * NewStaff + w_m^new * NewSpend/10^6`
-  - [ ] `update_cumulative_effort()` - 累積営業努力更新（EWMA）
-    - [ ] `C_ret(t) = (1-λ_ret)*C_ret(t-1) + λ_ret*E_ret(t)`
-    - [ ] `C_new(t) = (1-λ_new)*C_new(t-1) + λ_new*E_new(t)`
-- [ ] `models.py`に`ClubSalesAllocation`モデル追加
-- [ ] ユニットテスト作成
+- [x] `services/sales_effort.py`作成
+  - [x] `ensure_sales_allocation()` - 営業リソース配分の初期化
+  - [x] `set_sales_allocation()` - 四半期配分更新
+  - [x] `calculate_monthly_effort()` - 月次有効営業努力計算
+    - [x] `E_ret = w_s^ret * S_ret + w_m^ret * M/10^6`
+    - [x] `E_new = w_s^new * S_new + w_m^new * M/10^6`
+  - [x] `update_cumulative_effort()` - 累積営業努力更新（EWMA）
+    - [x] `C_ret(t) = (1-λ_ret)*C_ret(t-1) + λ_ret*E_ret(t)`
+    - [x] `C_new(t) = (1-λ_new)*C_new(t-1) + λ_new*E_new(t)`
+- [x] `models.py`に`ClubSalesAllocation`モデル追加
+- [x] 統合テスト作成
 
 ### フェーズ3: スポンサー内定進捗実装
 
-- [ ] `services/sponsor.py`の更新
-  - [ ] `process_pipeline_progress()` - 内定進捗処理（4-7月）
-    - [ ] 4-6月: 確率的抽選（既存/新規で異なる確率）
-    - [ ] 7月: 強制確定
-  - [ ] `get_pipeline_status()` - 内定進捗状態取得
-  - [ ] `calculate_next_revenue_forecast()` - 次年度収入見込み計算
-- [ ] ユニットテスト作成
+- [x] `services/sponsor.py`の更新
+  - [x] `process_pipeline_progress()` - 内定進捗処理（4-7月）
+    - [x] 4-6月: 確率的抽選（既存/新規で異なる確率 q^exist, q^new）
+    - [x] 7月: 強制確定 + determine_next_sponsors呼び出し
+  - [x] `get_pipeline_status()` - 内定進捗状態取得
+  - [x] `get_next_sponsor_info()` - 次年度スポンサー情報取得
+- [x] 統合テスト作成
 
 ### フェーズ4: API実装
 
-- [ ] `routers/management.py`の更新
-  - [ ] `POST /api/clubs/{club_id}/management/sales/allocation` - 営業リソース配分設定
-- [ ] `routers/sponsor.py`作成（または既存拡張）
-  - [ ] `GET /api/clubs/{club_id}/sponsor/pipeline` - 内定進捗取得（4-7月）
-  - [ ] `GET /api/clubs/{club_id}/sponsor/next` - 次年度スポンサー情報取得（7月）
-- [ ] APIテスト作成
+- [x] `routers/sponsors.py`作成
+  - [x] `PUT /api/sponsors/{club_id}/allocation` - 営業リソース配分設定
+  - [x] `GET /api/sponsors/{club_id}/allocation` - 現在の配分取得
+  - [x] `GET /api/sponsors/{club_id}/allocations` - 全四半期配分取得
+  - [x] `GET /api/sponsors/{club_id}/pipeline` - 内定進捗取得
+  - [x] `GET /api/sponsors/{club_id}/next-sponsor` - 次年度スポンサー情報取得
+  - [x] `GET /api/sponsors/{club_id}/effort` - 累積営業努力取得
+- [x] APIテスト作成
 
 ### フェーズ5: 統合
 
-- [ ] `apply_finance_for_turn`に営業努力更新統合
-- [ ] `determine_next_sponsors`に内定進捗統合
-- [ ] 統合テスト作成
+- [x] `finance.py`に営業努力更新統合（process_sales_effort_for_turn）
+- [x] `finance.py`にパイプライン進捗統合（process_pipeline_progress）
+- [x] 統合テスト作成
 
 ### フェーズ6: テスト・ドキュメント
 
-- [ ] 全機能のユニットテスト
-- [ ] 統合テスト
-- [ ] E2Eテスト
-- [ ] API仕様書更新
+- [x] E2Eテスト作成（e2e_pr7_sponsor.sh）
+- [x] 全E2Eテスト回帰テスト合格
+- [x] IMPLEMENTATION_ROADMAP.md更新
 
 ---
 

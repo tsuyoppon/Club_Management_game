@@ -406,6 +406,16 @@ class ClubSponsorState(Base):
     # Format: {"9": effort_val, "10": effort_val, "11": effort_val}
     sales_effort_history = Column(JSONB, nullable=True, default={})
     
+    # PR7: 累積営業努力（EWMA） - Section 10.4
+    cumulative_effort_ret = Column(Numeric(14, 4), nullable=False, default=0)  # C^ret(t)
+    cumulative_effort_new = Column(Numeric(14, 4), nullable=False, default=0)  # C^new(t)
+    
+    # PR7: パイプライン進捗（内定累計） - Section 10.7
+    pipeline_confirmed_exist = Column(Integer, nullable=False, default=0)  # 既存確定数
+    pipeline_confirmed_new = Column(Integer, nullable=False, default=0)    # 新規確定数
+    next_exist_count = Column(Integer, nullable=True)  # N^exist_next（7月確定）
+    next_new_count = Column(Integer, nullable=True)    # N^new_next（7月確定）
+    
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -523,4 +533,27 @@ class ClubFanbaseState(Base):
 
     __table_args__ = (
         UniqueConstraint("club_id", "season_id", name="uniq_club_season_fanbase"),
+    )
+
+
+class ClubSalesAllocation(Base):
+    """PR7: 四半期営業リソース配分 - v1Spec Section 10.2"""
+    __tablename__ = "club_sales_allocations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
+    quarter = Column(Integer, nullable=False)  # 1=Q1(Aug-Oct), 2=Q2(Nov-Jan), 3=Q3(Feb-Apr), 4=Q4(May-Jul)
+    
+    # 新規営業配分率 ρ^new (0.0〜1.0)
+    rho_new = Column(Numeric(5, 4), nullable=False, default=0.5)
+    
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    club = relationship("Club")
+    season = relationship("Season")
+
+    __table_args__ = (
+        UniqueConstraint("club_id", "season_id", "quarter", name="uq_sales_allocation_club_season_quarter"),
     )

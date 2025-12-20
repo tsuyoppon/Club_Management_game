@@ -248,3 +248,67 @@ class FanbaseStateRead(BaseModel):
 class FanIndicatorRead(BaseModel):
     club_id: UUID
     followers: int
+
+
+# =============================================================================
+# PR7: スポンサー営業モデル用スキーマ
+# =============================================================================
+
+class SalesAllocationUpdate(BaseModel):
+    """四半期営業リソース配分の更新"""
+    rho_new: float = Field(..., ge=0.0, le=1.0, description="新規営業配分率 (0.0〜1.0)")
+
+
+class SalesAllocationRead(BaseModel):
+    """四半期営業リソース配分の読み取り"""
+    club_id: UUID
+    season_id: UUID
+    quarter: int
+    rho_new: float
+    
+    class Config:
+        orm_mode = True
+
+
+class SalesEffortRead(BaseModel):
+    """営業努力状況"""
+    month_index: int
+    rho_new: float
+    e_ret: float  # 既存向け月次努力
+    e_new: float  # 新規向け月次努力
+    c_ret: float  # 累積努力（既存）
+    c_new: float  # 累積努力（新規）
+
+
+class PipelineStatusRead(BaseModel):
+    """スポンサーパイプライン状況"""
+    current_sponsors: int
+    next_exist_target: Optional[int]  # N^exist_next
+    next_new_target: Optional[int]    # N^new_next
+    confirmed_exist: int              # 既存確定数
+    confirmed_new: int                # 新規確定数
+    total_confirmed: int              # 確定合計
+    next_total: Optional[int]         # N_next（7月確定後）
+    cumulative_effort_ret: float      # C^ret
+    cumulative_effort_new: float      # C^new
+
+
+class PipelineProgressRead(BaseModel):
+    """パイプライン進捗（月次）"""
+    month_index: int
+    delta_exist: int     # 今月の既存確定増分
+    delta_new: int       # 今月の新規確定増分
+    confirmed_exist: int # 累計既存確定
+    confirmed_new: int   # 累計新規確定
+    total_confirmed: int # 累計合計確定
+
+
+class NextSponsorInfoRead(BaseModel):
+    """次年度スポンサー情報（7月UI表示用）"""
+    next_sponsors_total: int
+    next_sponsors_exist: int
+    next_sponsors_new: int
+    unit_price: float
+    expected_revenue: float
+    is_finalized: bool
+

@@ -70,6 +70,7 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
     
 from app.services import sponsor, reinforcement, staff, academy, ticket, fanbase, standings
 from app.services import distribution, decision_expense, merchandise, match_operation, prize
+from app.services import sales_effort
 from decimal import Decimal
 
 def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
@@ -111,14 +112,26 @@ def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
         
         promo_spend = Decimal(0)
         ht_spend = Decimal(0)
+        sales_spend = Decimal(0)
         if decision and decision.payload_json:
             promo_spend = Decimal(str(decision.payload_json.get("promo_expense", 0) or 0))
             ht_spend = Decimal(str(decision.payload_json.get("hometown_expense", 0) or 0))
+            sales_spend = Decimal(str(decision.payload_json.get("sales_expense", 0) or 0))
             
         # Update FB
         perf = perf_map.get(club.id, 0.5)
         hist_perf = 0.5 # Placeholder
         fanbase.update_fanbase_for_turn(db, fb_state, promo_spend, ht_spend, perf, hist_perf)
+        
+        # PR7: 営業努力更新（毎月）
+        sales_staff = sales_effort.get_sales_staff_count(db, club.id)
+        sales_effort.process_sales_effort_for_turn(
+            db, club.id, season_id, turn_id, turn.month_index, sales_staff, sales_spend
+        )
+        
+        # PR7: パイプライン進捗（4〜6月 = month_index 9,10,11）
+        if turn.month_index in [9, 10, 11]:
+            sponsor.process_pipeline_progress(db, club.id, season_id, turn.month_index)
         
         # PR6: 配分金（8月一括）
         distribution.process_distribution_revenue(db, club.id, season_id, turn_id, turn.month_index)
