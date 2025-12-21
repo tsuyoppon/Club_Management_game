@@ -134,6 +134,10 @@ def resolve_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_c
     # Apply finance (Revenue & Snapshot)
     finance_service.finalize_turn_finance(db, turn.season_id, turn.id)
 
+    # PR9: 情報公開イベント処理
+    from app.services import public_disclosure
+    public_disclosure.process_disclosure_for_turn(db, turn.season_id, turn.id, turn.month_index)
+
     turn.turn_state = TurnState.resolved
     turn.resolved_at = datetime.utcnow()
     db.commit()

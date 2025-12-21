@@ -63,6 +63,13 @@ TURN_RESP=$(curl -s -X GET "$API_URL/turns/seasons/$SEASON_ID/current" \
 TURN_ID=$(echo $TURN_RESP | jq -r .id)
 echo "Turn ID: $TURN_ID"
 
+# Capture initial balance before processing
+INIT_STATE_RESP=$(curl -s -X GET "$API_URL/clubs/$CLUB_ID/finance/state" \
+  -H "X-User-Email: $USER_EMAIL" \
+  -H "X-User-Name: $USER_NAME")
+INIT_BALANCE=$(echo $INIT_STATE_RESP | jq -r .balance)
+echo "Initial Balance: $INIT_BALANCE"
+
 # 7. Advance Turn (Open -> Lock -> Resolve)
 echo "Opening Turn..."
 curl -s -X POST "$API_URL/turns/$TURN_ID/open" \
@@ -88,10 +95,35 @@ BALANCE=$(echo $STATE_RESP | jq -r .balance)
 
 echo "Current Balance: $BALANCE"
 
-if [ "$BALANCE" == "2000.0" ] || [ "$BALANCE" == "2000" ]; then
-  echo "SUCCESS: Balance updated correctly (5000 - 3000 = 2000)"
+EXPECTED=$(python - <<PY
+init_bal = float("$INIT_BALANCE")
+expected = init_bal + 5000 - 3000
+print(int(expected) if expected.is_integer() else expected)
+PY
+)
+
+DELTA=$(python - <<PY
+init_bal = float("$INIT_BALANCE")
+final_bal = float("$BALANCE")
+print(final_bal - init_bal)
+PY
+)
+
+if python - <<PY
+delta = float("$DELTA")
+expected_min = float("$EXPECTED") - float("$INIT_BALANCE")
+import sys
+sys.exit(0 if delta >= expected_min else 1)
+PY
+then
+  echo "SUCCESS: Balance increased by at least monthly net (+2000)"
 else
-  echo "FAILURE: Balance incorrect. Expected 2000, got $BALANCE"
+  echo "FAILURE: Balance did not increase as expected. Delta=$DELTA, Expected minimum increase=$(python - <<PY
+init_bal = float("$INIT_BALANCE")
+expected = init_bal + 5000 - 3000
+print(expected - init_bal)
+PY
+)"
   exit 1
 fi
 

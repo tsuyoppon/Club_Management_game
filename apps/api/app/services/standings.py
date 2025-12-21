@@ -187,3 +187,48 @@ class StandingsCalculator:
             mini_stats[x['club_id']]['gd'],
             mini_stats[x['club_id']]['gf']
         ), reverse=True)
+
+    def calculate_with_may_extras(self) -> List[Dict[str, Any]]:
+        """
+        PR9: 5月用拡張順位表
+        
+        v1Spec Section 13.2:
+        - 1位「優勝」、2位「準優勝」を横に表示
+        - 各クラブの平均入場者数（ホームゲーム平均）を順位表に追加
+        
+        既存のcalculate()を拡張（破壊的変更なし）
+        """
+        standings = self.calculate()
+        
+        for entry in standings:
+            # 優勝・準優勝ラベル追加
+            if entry['rank'] == 1:
+                entry['title'] = '優勝'
+            elif entry['rank'] == 2:
+                entry['title'] = '準優勝'
+            else:
+                entry['title'] = None
+            
+            # ホームゲーム平均入場者数追加
+            entry['avg_home_attendance'] = self._calculate_avg_home_attendance(
+                entry['club_id']
+            )
+        
+        return standings
+
+    def _calculate_avg_home_attendance(self, club_id: UUID) -> int:
+        """
+        シーズン内のホームゲーム平均入場者数を計算
+        """
+        fixtures = self.session.query(Fixture).filter(
+            Fixture.season_id == self.season_id,
+            Fixture.home_club_id == club_id,
+            Fixture.home_attendance != None,
+        ).all()
+        
+        if not fixtures:
+            return 0
+        
+        total = sum(f.home_attendance or 0 for f in fixtures)
+        return total // len(fixtures) if fixtures else 0
+

@@ -363,3 +363,92 @@ class LastPlacePenaltyRead(BaseModel):
     """最下位ペナルティ設定取得"""
     game_id: UUID
     last_place_penalty_enabled: bool
+
+
+# =============================================================================
+# PR9: 情報公開イベントと最終結果表示（v1Spec Section 1.2, 4, 13）
+# =============================================================================
+
+class TeamPowerEntry(BaseModel):
+    """チーム力指標エントリ"""
+    club_id: UUID
+    club_name: str
+    team_power: Decimal
+
+    class Config:
+        from_attributes = True
+
+
+class TeamPowerRead(BaseModel):
+    """チーム力指標公開レスポンス"""
+    clubs: List[TeamPowerEntry]
+    disclosure_type: str  # 'team_power_december' or 'team_power_july'
+    disclosed_at: datetime
+
+
+class FinancialSummaryEntry(BaseModel):
+    """財務サマリーエントリ"""
+    club_id: UUID
+    club_name: str
+    total_revenue: int
+    total_expense: int
+    net_income: int
+    ending_balance: int
+    fiscal_year: str
+
+
+class FinancialSummaryRead(BaseModel):
+    """財務サマリー公開レスポンス"""
+    clubs: List[FinancialSummaryEntry]
+
+
+class PublicDisclosureRead(BaseModel):
+    """公開情報レスポンス"""
+    id: UUID
+    season_id: UUID
+    disclosure_type: str
+    disclosure_month: int
+    disclosed_data: dict
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ExtendedStandingsEntry(BaseModel):
+    """拡張順位表エントリ（5月用）"""
+    rank: int
+    club_id: UUID
+    club_name: str
+    played: int
+    won: int
+    drawn: int
+    lost: int
+    gf: int
+    ga: int
+    gd: int
+    points: int
+    penalty: Optional[int] = 0
+    title: Optional[str] = None  # '優勝', '準優勝', or None
+    avg_home_attendance: Optional[int] = None
+
+
+class GameFinalResultRead(BaseModel):
+    """ゲーム最終結果レスポンス"""
+    club_id: UUID
+    club_name: str
+    final_sales_amount: int
+    final_sales_rank: int
+    final_equity_amount: int
+    final_equity_rank: int
+    championship_count: int
+    runner_up_count: int
+    average_rank: Decimal
+    seasons_played: int
+    total_home_attendance: int
+    average_home_attendance: int
+    attendance_rank: int
+
+    class Config:
+        from_attributes = True
+

@@ -586,3 +586,61 @@ class ClubPointPenalty(Base):
     __table_args__ = (
         UniqueConstraint("club_id", "season_id", "reason", name="uq_penalty_club_season_reason"),
     )
+
+
+class SeasonPublicDisclosure(Base):
+    """PR9: 公開情報履歴 - v1Spec Section 4"""
+    __tablename__ = "season_public_disclosures"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
+    disclosure_type = Column(String(50), nullable=False)  # 'financial_summary', 'team_power_december', 'team_power_july'
+    disclosure_month = Column(Integer, nullable=False)  # 12 or 7
+    turn_id = Column(UUID(as_uuid=True), ForeignKey("turns.id", ondelete="CASCADE"), nullable=True)
+    disclosed_data = Column(JSONB, nullable=False)  # 全クラブの公開データ
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    season = relationship("Season")
+    turn = relationship("Turn")
+
+    __table_args__ = (
+        UniqueConstraint("season_id", "disclosure_type", "disclosure_month", name="uq_season_disclosure"),
+    )
+
+
+class GameFinalResult(Base):
+    """PR9: ゲーム最終結果 - v1Spec Section 1.2"""
+    __tablename__ = "game_final_results"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    game_id = Column(UUID(as_uuid=True), ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+
+    # 売上規模（最終期）
+    final_sales_amount = Column(Numeric(20, 0), nullable=False)
+    final_sales_rank = Column(Integer, nullable=False)
+
+    # 純資産（期末現金残高）
+    final_equity_amount = Column(Numeric(20, 0), nullable=False)
+    final_equity_rank = Column(Integer, nullable=False)
+
+    # 成績
+    championship_count = Column(Integer, nullable=False, default=0)
+    runner_up_count = Column(Integer, nullable=False, default=0)
+    average_rank = Column(Numeric(4, 2), nullable=False)
+    seasons_played = Column(Integer, nullable=False)
+
+    # 入場者数
+    total_home_attendance = Column(Numeric(20, 0), nullable=False)
+    average_home_attendance = Column(Integer, nullable=False)
+    attendance_rank = Column(Integer, nullable=False)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    game = relationship("Game")
+    club = relationship("Club")
+
+    __table_args__ = (
+        UniqueConstraint("game_id", "club_id", name="uq_game_club_result"),
+    )
+

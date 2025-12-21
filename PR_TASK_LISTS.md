@@ -281,70 +281,76 @@
 
 ---
 
-## PR9: 情報公開イベントと最終結果表示
+## PR9: 情報公開イベントと最終結果表示 ✅ 完了
 
 ### フェーズ1: データベース設計
 
-- [ ] `season_public_disclosures`テーブル設計
-  - [ ] カラム定義（season_id, disclosure_type, disclosure_month, disclosed_data）
-- [ ] `game_final_results`テーブル設計
-  - [ ] カラム定義（game_id, club_id, final_sales_rank, final_sales_amount, etc.）
-- [ ] Alembicマイグレーションファイル作成
-  - [ ] `0008_pr9_public_disclosure_results.py`
+- [x] `season_public_disclosures`テーブル設計
+  - [x] カラム定義（season_id, disclosure_type, disclosure_month, disclosed_data）
+- [x] `game_final_results`テーブル設計
+  - [x] カラム定義（game_id, club_id, final_sales_rank, final_sales_amount, etc.）
+- [x] Alembicマイグレーションファイル作成
+  - [x] `7a8b9c0d1e2f_pr9_disclosure_results.py`
 
 ### フェーズ2: 情報公開イベント実装
 
-- [ ] `services/public_disclosure.py`作成
-  - [ ] `publish_financial_summary()` - 財務サマリー公開（12月）
-  - [ ] `publish_team_power()` - チーム力指標公開（12月/7月）
-  - [ ] `get_disclosure_history()` - 公開履歴取得
-- [ ] `services/team_power.py`作成
-  - [ ] `calculate_team_power()` - チーム力計算
-  - [ ] `calculate_team_power_with_uncertainty()` - 不確実性付きチーム力（7月）
-- [ ] ユニットテスト作成
+- [x] `services/public_disclosure.py`作成
+  - [x] `publish_financial_summary()` - 財務サマリー公開（12月）
+  - [x] `publish_team_power_december()` - チーム力指標公開（12月）
+  - [x] `publish_team_power_july()` - 不確実性付きチーム力公開（7月）
+  - [x] `process_disclosure_for_turn()` - ターン処理統合
+  - [x] `get_latest_disclosure()`, `get_all_disclosures()` - 公開履歴取得
+- [x] `services/team_power.py`作成
+  - [x] `calculate_team_power()` - チーム力計算 (TP = α*ln(1+B/B_ref) + β*ln(1+A_cum/A_ref))
+  - [x] `calculate_team_power_with_uncertainty()` - 不確実性付きチーム力（7月）
+  - [x] `get_all_clubs_team_power()` - 全クラブのチーム力取得
 
 ### フェーズ3: 5月順位表の追加表示
 
-- [ ] `services/standings.py`の更新
-  - [ ] `calculate_with_championship()` - 優勝・準優勝表示
-  - [ ] `calculate_with_attendance()` - 平均入場者数追加
-- [ ] `routers/seasons.py`の更新
-  - [ ] `GET /api/seasons/{season_id}/standings` - 5月時は追加情報を含む
-- [ ] ユニットテスト作成
+- [x] `services/standings.py`の更新
+  - [x] `calculate_with_may_extras()` - 優勝・準優勝表示 + 平均入場者数追加
+- [x] `routers/disclosures.py`のエンドポイント
+  - [x] `GET /api/seasons/{season_id}/standings/extended` - 拡張順位表
 
 ### フェーズ4: 最終結果表示実装
 
-- [ ] `services/final_results.py`作成
-  - [ ] `calculate_final_sales()` - 最終売上規模計算
-  - [ ] `calculate_final_equity()` - 最終純資産計算
-  - [ ] `calculate_championship_stats()` - 優勝回数・準優勝回数・平均順位
-  - [ ] `calculate_average_attendance()` - 全シーズン平均入場者数
-  - [ ] `generate_final_results()` - 最終結果生成
-- [ ] `models.py`に`GameFinalResult`モデル追加
-- [ ] ユニットテスト作成
+- [x] `services/final_results.py`作成
+  - [x] `_calculate_final_sales()` - 最終売上規模計算
+  - [x] `_get_final_balance()` - 最終純資産計算
+  - [x] `_count_championships()` - 優勝回数
+  - [x] `_count_runner_ups()` - 準優勝回数
+  - [x] `_calculate_average_rank()` - 平均順位
+  - [x] `_calculate_attendance_stats()` - 全シーズン平均入場者数
+  - [x] `generate_final_results()` - 最終結果生成
+  - [x] `get_final_results()` - 最終結果取得
+- [x] `models.py`に`GameFinalResult`モデル追加
+- [x] `models.py`に`SeasonPublicDisclosure`モデル追加
 
 ### フェーズ5: API実装
 
-- [ ] `routers/seasons.py`の更新
-  - [ ] `GET /api/seasons/{season_id}/public/financial_summary` - 財務サマリー公開
-  - [ ] `GET /api/seasons/{season_id}/public/team_power` - チーム力指標公開
-- [ ] `routers/games.py`の更新
-  - [ ] `GET /api/games/{game_id}/final_results` - 最終結果表示
-- [ ] APIテスト作成
+- [x] `routers/disclosures.py`新規作成
+  - [x] `GET /api/seasons/{season_id}/disclosures` - 全公開情報一覧
+  - [x] `GET /api/seasons/{season_id}/disclosures/{disclosure_type}` - 特定タイプの公開情報
+  - [x] `GET /api/seasons/{season_id}/team-power` - チーム力指標公開
+  - [x] `GET /api/seasons/{season_id}/standings/extended` - 拡張順位表
+  - [x] `GET /api/games/{game_id}/final-results` - 最終結果表示
+  - [x] `POST /api/games/{game_id}/final-results/generate` - 最終結果生成
+- [x] `main.py`にルーター登録
 
 ### フェーズ6: 統合
 
-- [ ] 12月ターン終了時の公開処理統合
-- [ ] 7月ターン終了時の公開処理統合
-- [ ] ゲーム終了時の最終結果生成統合
-- [ ] 統合テスト作成
+- [x] 12月ターン終了時の公開処理統合 (resolve_turn)
+- [x] 7月ターン終了時の公開処理統合 (resolve_turn)
+- [x] 最終結果生成API (POST /final-results/generate)
+- [x] `config/constants.py`にPR9定数追加
+  - [x] TEAM_POWER_B_REF, TEAM_POWER_A_REF, TEAM_POWER_DISCLOSURE_SIGMA
+  - [x] DISCLOSURE_MONTH_DECEMBER, DISCLOSURE_MONTH_MAY, DISCLOSURE_MONTH_JULY
 
 ### フェーズ7: テスト・ドキュメント
 
-- [ ] 全機能のユニットテスト
-- [ ] 統合テスト
-- [ ] E2Eテスト
-- [ ] API仕様書更新
+- [x] E2Eテスト作成 (`e2e_pr9_disclosure.sh`)
+- [x] IMPLEMENTATION_ROADMAP.md更新
+- [x] PR_TASK_LISTS.md更新
 
 ---
 
