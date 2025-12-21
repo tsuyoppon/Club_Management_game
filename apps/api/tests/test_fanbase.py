@@ -2,11 +2,21 @@ import pytest
 from decimal import Decimal
 from uuid import uuid4
 from app.services import fanbase
-from app.db.models import ClubFanbaseState
+from app.db.models import ClubFanbaseState, Game, Season, Club, GameStatus, SeasonStatus
 
 def test_fanbase_update_logic(db_session):
     club_id = uuid4()
     season_id = uuid4()
+
+    game = Game(id=uuid4(), name="Fanbase Game", status=GameStatus.active)
+    db_session.add(game)
+    db_session.commit()
+
+    season = Season(id=season_id, game_id=game.id, year_label="2025", status=SeasonStatus.running)
+    db_session.add(season)
+    club = Club(id=club_id, game_id=game.id, name="Club A")
+    db_session.add(club)
+    db_session.commit()
     
     # Mock state
     state = ClubFanbaseState(

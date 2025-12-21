@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -100,6 +100,19 @@ class DecisionValidationResult(BaseModel):
     errors: List[str] = []
 
 
+class DecisionRead(BaseModel):
+    """ターン入力の参照用レスポンス"""
+    turn_id: UUID
+    season_id: UUID
+    club_id: UUID
+    month_index: int
+    month_name: str
+    decision_state: DecisionState
+    payload: Optional[dict] = None
+    committed_at: Optional[datetime] = None
+    committed_by_user_id: Optional[UUID] = None
+
+
 class AckRequest(BaseModel):
     club_id: UUID
     ack: bool = Field(True)
@@ -143,6 +156,27 @@ class StaffPlanUpdate(BaseModel):
 
 class AcademyBudgetUpdate(BaseModel):
     annual_budget: int = Field(..., ge=0, description="Annual budget for next season")
+
+
+class StaffEntryRead(BaseModel):
+    """スタッフ配置の参照用スナップショット"""
+    role: str
+    count: int
+    salary_per_person: float
+    next_count: Optional[int] = None
+    hiring_target: Optional[int] = None
+    updated_at: datetime
+
+
+class StaffHistoryEntry(BaseModel):
+    """月次スタッフコストから再構成した履歴"""
+    turn_id: UUID
+    season_id: UUID
+    month_index: int
+    month_name: str
+    total_cost: float
+    staff: Dict[str, dict]
+    created_at: datetime
 
 
 class ClubScheduleItem(BaseModel):

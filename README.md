@@ -84,6 +84,33 @@ curl -X POST http://localhost:8000/api/turns/<turn_id>/advance -H 'X-User-Email:
 
 Subsequent PRs will introduce simulation, ledgers, fanbase, sponsor modeling, and UI templates.
 
+## Reference APIs added for CLI (PR9.1 prep)
+
+All endpoints require `X-User-Email` with appropriate role checks.
+
+- Staff snapshot: `GET /api/clubs/{club_id}/management/staff`
+- Staff history (ledger-derived): `GET /api/clubs/{club_id}/management/staff/history?season_id=...&from_month=...&to_month=...`
+- Current decision for active turn: `GET /api/turns/seasons/{season_id}/decisions/{club_id}/current`
+- Specific turn decision: `GET /api/turns/{turn_id}/decisions/{club_id}`
+- Decision history (season, optional month filter): `GET /api/turns/seasons/{season_id}/decisions/{club_id}?from_month=...&to_month=...`
+- Season schedule with optional month filter: `GET /api/seasons/{season_id}/schedule?month_index=...`
+- Club schedule with optional month filter: `GET /api/seasons/{season_id}/clubs/{club_id}/schedule?month_index=...`
+
+Month index is 1–12 mapped to Aug–Jul.
+
+## CLI (PR10 read-only)
+
+- Install deps: `pip install -r apps/cli/requirements.txt`
+- Config: create `~/.club-game/config` (JSON or YAML) with at least:
+  ```json
+  {"base_url": "http://localhost:8000", "user_email": "owner@example.com", "season_id": "<season>", "club_id": "<club>"}
+  ```
+- Run: `python -m apps.cli.main show table` (uses config defaults)
+- Examples:
+  - `python -m apps.cli.main show match --month 2026-04`
+  - `python -m apps.cli.main show current_input --json-output`
+- Flags: `--verbose` prints HTTP status; `--json-output` returns raw JSON; `--month` is mapped to `month_index` (Aug=1 … Jul=12).
+
 ## PR3.2 Note: Hidden Variables
 As of PR3.2, the game uses a deterministic model for staff hiring/firing.
 - **Hiring Success Rate**: Currently 100%. Probabilistic success will be introduced in PR4+.

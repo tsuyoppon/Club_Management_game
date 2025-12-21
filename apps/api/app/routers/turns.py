@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -15,7 +15,7 @@ from app.db.models import (
     TurnDecision,
     TurnState,
 )
-from app.schemas import AckRequest, DecisionCommitRequest, DecisionPayload, TurnStateResponse
+from app.schemas import AckRequest, DecisionCommitRequest, DecisionPayload, DecisionRead, TurnStateResponse
 
 router = APIRouter(prefix="/turns", tags=["turns"])
 
@@ -25,6 +25,20 @@ def _get_turn(db: Session, turn_id: str) -> Turn:
     if not turn:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Turn not found")
     return turn
+
+
+def _decision_to_response(decision: TurnDecision, turn: Turn) -> DecisionRead:
+    return DecisionRead(
+        turn_id=decision.turn_id,
+        season_id=turn.season_id,
+        club_id=decision.club_id,
+        month_index=turn.month_index,
+        month_name=turn.month_name,
+        decision_state=decision.decision_state,
+        payload=decision.payload_json,
+        committed_at=decision.committed_at,
+        committed_by_user_id=decision.committed_by_user_id,
+    )
 
 
 @router.get("/seasons/{season_id}/current", response_model=Optional[TurnStateResponse])
@@ -44,6 +58,34 @@ def current_turn(
         .first()
     )
     return turn
+
+
+@router.get("/seasons/{season_id}/decisions/{club_id}/current", response_model=Optional[DecisionRead])
+def get_current_decision(
+    season_id: str,
+    club_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+    require_role(user, db, season.game_id, MembershipRole.club_viewer, club_id)
+
+    turn = (
+        db.query(Turn)
+        .filter(Turn.season_id == season_id, Turn.turn_state != TurnState.acked)
+        .order_by(Turn.month_index)
+        .first()
+    )
+    if not turn:
+        return None
+
+    decision = db.query(TurnDecision).filter(TurnDecision.turn_id == turn.id, TurnDecision.club_id == club_id).first()
+    if not decision:
+        return None
+
+    return _decision_to_response(decision, turn)
 
 
 @router.post("/{turn_id}/open")
@@ -100,6 +142,21 @@ def commit_decision(
     return {"state": decision.decision_state}
 
 
+@router.get("/{turn_id}/decisions/{club_id}", response_model=DecisionRead)
+def get_decision(
+    turn_id: str,
+    club_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    turn = _get_turn(db, turn_id)
+    require_role(user, db, turn.season.game_id, MembershipRole.club_viewer, club_id)
+    decision = db.query(TurnDecision).filter(TurnDecision.turn_id == turn_id, TurnDecision.club_id == club_id).first()
+    if not decision:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Decision not found")
+    return _decision_to_response(decision, turn)
+
+
 @router.post("/{turn_id}/lock")
 def lock_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     turn = _get_turn(db, turn_id)
@@ -116,6 +173,36 @@ def lock_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_curr
     db.query(TurnDecision).filter(TurnDecision.turn_id == turn_id).update({"decision_state": DecisionState.locked})
     db.commit()
     return {"state": turn.turn_state}
+
+
+@router.get("/seasons/{season_id}/decisions/{club_id}", response_model=List[DecisionRead])
+def get_decision_history(
+    season_id: str,
+    club_id: str,
+    from_month: Optional[int] = None,
+    to_month: Optional[int] = None,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+
+    require_role(user, db, season.game_id, MembershipRole.club_viewer, club_id)
+
+    query = (
+        db.query(TurnDecision, Turn)
+        .join(Turn, TurnDecision.turn_id == Turn.id)
+        .filter(TurnDecision.club_id == club_id, Turn.season_id == season_id)
+    )
+
+    if from_month is not None:
+        query = query.filter(Turn.month_index >= from_month)
+    if to_month is not None:
+        query = query.filter(Turn.month_index <= to_month)
+
+    records = query.order_by(Turn.month_index).all()
+    return [_decision_to_response(decision, turn) for decision, turn in records]
 
 
 @router.post("/{turn_id}/resolve")

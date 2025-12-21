@@ -162,28 +162,27 @@ CREATE TABLE game_final_results (
 **実装内容**:
 
 #### 10.1 CLI基盤
-- [ ] CLIフレームワーク導入
-  - `click`または`argparse`を使用
+- [x] CLIフレームワーク導入（click採用）
   - 認証・セッション管理
-- [ ] コマンド構造
+- [x] コマンド構造
   - `club-game <command> [options]`
   - 設定ファイル（`.club-game/config`）でAPIエンドポイント管理
 
 #### 10.2 実装コマンド
-- [ ] `show match` - 試合結果一覧
+- [x] `show match` - 試合結果一覧
   - `--month YYYY-MM` オプション
-- [ ] `show table` - 順位表
-- [ ] `show team_power` - チーム力指標
-- [ ] `show staff` - 部署別人数
-- [ ] `show staff_history` - 人員変動履歴
+- [x] `show table` - 順位表
+- [x] `show team_power` - チーム力指標
+- [x] `show staff` - 部署別人数
+- [x] `show staff_history` - 人員変動履歴
   - `--from YYYY-MM`, `--to YYYY-MM` オプション
-- [ ] `show current_input` - 当ターン入力内容
-- [ ] `show history` - 過去の入力一覧
+- [x] `show current_input` - 当ターン入力内容
+- [x] `show history` - 過去の入力一覧
   - `--from YYYY-MM`, `--to YYYY-MM` オプション（デフォルト: 先月）
-- [ ] `show fan_indicator` - ファン指標
+- [x] `show fan_indicator` - ファン指標
   - `--club <name>` オプション
   - `--from YYYY-MM`, `--to YYYY-MM` オプション
-- [ ] `show sponsor_status` - スポンサー状態
+- [x] `show sponsor_status` - スポンサー状態
   - `--pipeline` オプション（4-6月）
   - `--next` オプション（7月）
 - [ ] `help` / `help <command>` - ヘルプ表示
@@ -199,6 +198,15 @@ CREATE TABLE game_final_results (
 - CLIは別パッケージとして実装（`apps/cli/`）
 - 既存のREST APIを呼び出す形で実装
 - 認証は`X-User-Email`ヘッダを使用
+
+**前提API（追加済み）**:
+- GET `/api/clubs/{club_id}/management/staff`（スタッフ現況）
+- GET `/api/clubs/{club_id}/management/staff/history?season_id=&from_month=&to_month=`（スタッフ履歴）
+- GET `/api/turns/seasons/{season_id}/decisions/{club_id}/current`（現行ターン入力）
+- GET `/api/turns/{turn_id}/decisions/{club_id}`（指定ターン入力）
+- GET `/api/turns/seasons/{season_id}/decisions/{club_id}?from_month=&to_month=`（入力履歴）
+- GET `/api/seasons/{season_id}/schedule?month_index=`（シーズン日程、月フィルタ）
+- GET `/api/seasons/{season_id}/clubs/{club_id}/schedule?month_index=`（クラブ日程、月フィルタ）
 
 **テスト要件**:
 - 各コマンドの動作テスト

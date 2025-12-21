@@ -38,3 +38,9 @@ def db():
         yield db
     finally:
         db.close()
+
+
+# Compatibility alias for tests expecting a db_session fixture
+@pytest.fixture
+def db_session(db):
+    return db

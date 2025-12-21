@@ -133,9 +133,6 @@ def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
         if turn.month_index in [9, 10, 11]:
             sponsor.process_pipeline_progress(db, club.id, season_id, turn.month_index)
         
-        # PR6: 配分金（8月一括）
-        distribution.process_distribution_revenue(db, club.id, season_id, turn_id, turn.month_index)
-        
         # Existing Expenses
         if turn.month_index == 1: # August
             sponsor.process_sponsor_revenue(db, club.id, season_id, turn_id)

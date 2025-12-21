@@ -1,6 +1,6 @@
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Optional
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -130,6 +130,7 @@ def generate_fixtures(
 @router.get("/{season_id}/schedule")
 def season_schedule(
     season_id: str,
+    month_index: Optional[int] = None,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -138,7 +139,11 @@ def season_schedule(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
     require_role(user, db, season.game_id, MembershipRole.gm)
 
-    fixtures = db.query(Fixture).filter(Fixture.season_id == season_id).order_by(Fixture.match_month_index).all()
+    fixtures_query = db.query(Fixture).filter(Fixture.season_id == season_id)
+    if month_index is not None:
+        fixtures_query = fixtures_query.filter(Fixture.match_month_index == month_index)
+
+    fixtures = fixtures_query.order_by(Fixture.match_month_index).all()
     grouped: Dict[int, List[dict]] = defaultdict(list)
     for fixture in fixtures:
         grouped[fixture.match_month_index].append(
@@ -165,6 +170,7 @@ def season_schedule(
 def club_schedule(
     season_id: str,
     club_id: str,
+    month_index: Optional[int] = None,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -174,15 +180,14 @@ def club_schedule(
     require_role(user, db, season.game_id, MembershipRole.club_viewer, club_id)
 
     club_uuid = uuid.UUID(str(club_id))
-    fixtures = (
-        db.query(Fixture)
-        .filter(
-            Fixture.season_id == season_id,
-            ((Fixture.home_club_id == club_uuid) | (Fixture.away_club_id == club_uuid) | (Fixture.bye_club_id == club_uuid)),
-        )
-        .order_by(Fixture.match_month_index)
-        .all()
+    fixtures_query = db.query(Fixture).filter(
+        Fixture.season_id == season_id,
+        ((Fixture.home_club_id == club_uuid) | (Fixture.away_club_id == club_uuid) | (Fixture.bye_club_id == club_uuid)),
     )
+    if month_index is not None:
+        fixtures_query = fixtures_query.filter(Fixture.match_month_index == month_index)
+
+    fixtures = fixtures_query.order_by(Fixture.match_month_index).all()
 
     schedule = []
     month_lookup: Dict[int, str] = {m[0]: m[1] for m in month_mappings()}

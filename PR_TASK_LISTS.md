@@ -358,55 +358,55 @@
 
 ### フェーズ1: CLI基盤構築
 
-- [ ] `apps/cli/`ディレクトリ作成
-- [ ] CLIフレームワーク選定・導入
-  - [ ] `click`または`argparse`の選定
-- [ ] プロジェクト構造設計
-  - [ ] `cli/main.py` - エントリーポイント
-  - [ ] `cli/config.py` - 設定管理
-  - [ ] `cli/auth.py` - 認証・セッション管理
-  - [ ] `cli/api_client.py` - APIクライアント
+- [x] `apps/cli/`ディレクトリ作成
+- [x] CLIフレームワーク選定・導入
+  - [x] `click`または`argparse`の選定（click採用）
+- [x] プロジェクト構造設計
+  - [x] `cli/main.py` - エントリーポイント
+  - [x] `cli/config.py` - 設定管理
+  - [x] `cli/auth.py` - 認証・セッション管理
+  - [x] `cli/api_client.py` - APIクライアント
 
 ### フェーズ2: 認証・セッション管理
 
-- [ ] 設定ファイル管理（`.club-game/config`）
-  - [ ] APIエンドポイント設定
-  - [ ] ユーザー情報保存（オプション）
-- [ ] 認証機能実装
-  - [ ] `X-User-Email`ヘッダの設定
-  - [ ] セッション管理
+- [x] 設定ファイル管理（`.club-game/config`）
+  - [x] APIエンドポイント設定
+  - [x] ユーザー情報保存（オプション）
+- [x] 認証機能実装
+  - [x] `X-User-Email`ヘッダの設定
+  - [x] セッション管理
 
 ### フェーズ3: コマンド実装（基本）
 
-- [ ] `cli/commands/show_match.py`
-  - [ ] `show match` - 試合結果一覧
-  - [ ] `--month YYYY-MM` オプション
-- [ ] `cli/commands/show_table.py`
-  - [ ] `show table` - 順位表
-- [ ] `cli/commands/show_team_power.py`
-  - [ ] `show team_power` - チーム力指標
-- [ ] `cli/commands/show_staff.py`
-  - [ ] `show staff` - 部署別人数
-  - [ ] `show staff_history` - 人員変動履歴
-    - [ ] `--from YYYY-MM`, `--to YYYY-MM` オプション
+- [x] `cli/commands/show_match.py`
+  - [x] `show match` - 試合結果一覧
+  - [x] `--month YYYY-MM` オプション
+- [x] `cli/commands/show_table.py`
+  - [x] `show table` - 順位表
+- [x] `cli/commands/show_team_power.py`
+  - [x] `show team_power` - チーム力指標
+- [x] `cli/commands/show_staff.py`
+  - [x] `show staff` - 部署別人数
+  - [x] `show staff_history` - 人員変動履歴
+    - [x] `--from YYYY-MM`, `--to YYYY-MM` オプション
 
 ### フェーズ4: コマンド実装（入力関連）
 
-- [ ] `cli/commands/show_input.py`
-  - [ ] `show current_input` - 当ターン入力内容
-  - [ ] `show history` - 過去の入力一覧
-    - [ ] `--from YYYY-MM`, `--to YYYY-MM` オプション
+- [x] `cli/commands/show_input.py`
+  - [x] `show current_input` - 当ターン入力内容
+  - [x] `show history` - 過去の入力一覧
+    - [x] `--from YYYY-MM`, `--to YYYY-MM` オプション
 
 ### フェーズ5: コマンド実装（ファン・スポンサー）
 
-- [ ] `cli/commands/show_fan.py`
-  - [ ] `show fan_indicator` - ファン指標
+- [x] `cli/commands/show_fan.py`
+  - [x] `show fan_indicator` - ファン指標
     - [ ] `--club <name>` オプション
     - [ ] `--from YYYY-MM`, `--to YYYY-MM` オプション
-- [ ] `cli/commands/show_sponsor.py`
-  - [ ] `show sponsor_status` - スポンサー状態
-    - [ ] `--pipeline` オプション（4-6月）
-    - [ ] `--next` オプション（7月）
+- [x] `cli/commands/show_sponsor.py`
+  - [x] `show sponsor_status` - スポンサー状態
+    - [x] `--pipeline` オプション（4-6月）
+    - [x] `--next` オプション（7月）
 
 ### フェーズ6: 入力コマンド（オプション）
 

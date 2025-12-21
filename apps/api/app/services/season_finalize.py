@@ -106,23 +106,7 @@ class SeasonFinalizer:
         return standings
 
     def _get_stored_standings(self) -> List[Dict[str, Any]]:
-        stored = self.db.query(models.SeasonFinalStanding).filter(
-            models.SeasonFinalStanding.season_id == self.season_id
-        ).order_by(models.SeasonFinalStanding.rank).all()
-
-        return [
-            {
-                "club_id": s.club_id,
-                "club_name": s.club.name,
-                "rank": s.rank,
-                "points": s.points,
-                "gd": s.gd,
-                "gf": s.gf,
-                "ga": s.ga,
-                "won": s.won,
-                "drawn": s.drawn,
-                "lost": s.lost,
-                "played": s.played
-            }
-            for s in stored
-        ]
+        # Recalculate standings from matches to mirror the structure returned during the first finalize
+        # (includes penalty fields), while keeping the database untouched.
+        calculator = StandingsCalculator(self.db, self.season_id)
+        return calculator.calculate(ignore_finalized=True)
