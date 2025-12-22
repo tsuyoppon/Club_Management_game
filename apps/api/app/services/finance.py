@@ -179,6 +179,9 @@ def finalize_turn_finance(db: Session, season_id: UUID, turn_id: UUID):
         if existing:
             continue
             
+        # PR6: 配分金（8月一括入金）
+        distribution.process_distribution_revenue(db, club.id, season_id, turn_id, turn.month_index)
+
         # Ticket Revenue (Now uses Fixture attendance)
         ticket.process_ticket_revenue(db, club.id, season_id, turn_id, turn.month_index)
         
