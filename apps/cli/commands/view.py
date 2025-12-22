@@ -1,0 +1,87 @@
+"""`view` command for showing current input (alias for show current_input)."""
+from __future__ import annotations
+
+from typing import Optional
+
+import click
+
+from ..api_client import ApiClient
+from ..auth import build_headers
+from ..config import CliConfig
+from ..errors import CliError, ValidationError
+from ..output import print_json, print_table
+
+
+def _resolve_required(option: Optional[str], fallback: Optional[str], label: str) -> str:
+    value = option or fallback
+    if not value:
+        raise ValidationError(f"{label} is required; provide a flag or set it in config")
+    return value
+
+
+def _with_client(config: CliConfig, timeout: float, verbose: bool) -> ApiClient:
+    headers = build_headers(config)
+    return ApiClient(config.base_url, headers=headers, timeout=timeout, verbose=verbose)
+
+
+@click.command("view")
+@click.option("--season-id", help="Season UUID (defaults to config)")
+@click.option("--club-id", help="Club UUID (defaults to config)")
+@click.option("--json-output", is_flag=True, help="Print raw JSON response")
+@click.pass_context
+def view_cmd(
+    ctx: click.Context,
+    season_id: Optional[str],
+    club_id: Optional[str],
+    json_output: bool,
+) -> None:
+    """View current turn input (same as `show current_input`)."""
+    config: CliConfig = ctx.obj["config"]
+    timeout: float = ctx.obj["timeout"]
+    verbose: bool = ctx.obj["verbose"]
+
+    season_id = _resolve_required(season_id, config.season_id, "season_id")
+    club_id = _resolve_required(club_id, config.club_id, "club_id")
+
+    with _with_client(config, timeout, verbose) as client:
+        data = client.get(f"/api/turns/seasons/{season_id}/decisions/{club_id}/current")
+
+    if data is None:
+        click.echo("No current input found (maybe all turns acked?)")
+        return
+
+    if json_output:
+        print_json(data)
+        return
+
+    payload = data.get("payload") if isinstance(data, dict) else None
+    summary = {
+        "month_index": data.get("month_index"),
+        "month_name": data.get("month_name"),
+        "decision_state": data.get("decision_state"),
+        "committed_at": data.get("committed_at"),
+    }
+    click.echo("Turn:")
+    print_table([summary], ["month_index", "month_name", "decision_state", "committed_at"])
+    if payload:
+        click.echo("Payload:")
+        print_json(payload)
+    else:
+        click.echo("Payload: (empty)")
+
+
+def dispatch_errors(func):
+    """Decorator to surface CliError as ClickException."""
+    from functools import wraps
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except CliError as exc:
+            raise click.ClickException(str(exc)) from exc
+
+    return wrapper
+
+
+view_cmd.callback = dispatch_errors(view_cmd.callback)

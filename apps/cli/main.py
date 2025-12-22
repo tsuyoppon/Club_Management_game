@@ -9,6 +9,9 @@ import click
 from .config import CliConfig, DEFAULT_CONFIG_PATH, load_config
 from .errors import ConfigError, CliError
 from .commands.show import show
+from .commands.input import input_cmd
+from .commands.commit import commit_cmd
+from .commands.view import view_cmd
 
 
 @click.group()
@@ -42,6 +45,9 @@ def cli(ctx: click.Context, config_path: Optional[Path], base_url: Optional[str]
 
 
 cli.add_command(show)
+cli.add_command(input_cmd)
+cli.add_command(commit_cmd)
+cli.add_command(view_cmd)
 
 
 def main() -> None:
