@@ -10,6 +10,7 @@ from ..auth import build_headers
 from ..config import CliConfig
 from ..errors import CliError, ValidationError
 from ..output import print_json, print_table
+from ..draft import load_draft
 
 
 def _resolve_required(option: Optional[str], fallback: Optional[str], label: str) -> str:
@@ -39,9 +40,12 @@ def view_cmd(
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
+    config_dir = ctx.obj["config_dir"]
 
     season_id = _resolve_required(season_id, config.season_id, "season_id")
     club_id = _resolve_required(club_id, config.club_id, "club_id")
+
+    draft = load_draft(config_dir, season_id, club_id)
 
     with _with_client(config, timeout, verbose) as client:
         data = client.get(f"/api/turns/seasons/{season_id}/decisions/{club_id}/current")
@@ -51,7 +55,7 @@ def view_cmd(
         return
 
     if json_output:
-        print_json(data)
+        print_json({"api": data, "draft": draft.payload if draft else None})
         return
 
     payload = data.get("payload") if isinstance(data, dict) else None
@@ -60,14 +64,19 @@ def view_cmd(
         "month_name": data.get("month_name"),
         "decision_state": data.get("decision_state"),
         "committed_at": data.get("committed_at"),
+        "payload_source": "draft+api" if draft else "api",
     }
     click.echo("Turn:")
-    print_table([summary], ["month_index", "month_name", "decision_state", "committed_at"])
+    print_table([summary], ["month_index", "month_name", "decision_state", "committed_at", "payload_source"])
     if payload:
-        click.echo("Payload:")
+        click.echo("Payload (server):")
         print_json(payload)
     else:
-        click.echo("Payload: (empty)")
+        click.echo("Payload (server): (empty)")
+
+    if draft:
+        click.echo("Draft overrides (not committed):")
+        print_json(draft.payload)
 
 
 def dispatch_errors(func):

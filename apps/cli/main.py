@@ -26,7 +26,8 @@ from .commands.view import view_cmd
 @click.pass_context
 def cli(ctx: click.Context, config_path: Optional[Path], base_url: Optional[str], user_email: Optional[str], game_id: Optional[str], season_id: Optional[str], club_id: Optional[str], timeout: float, verbose: bool) -> None:
     try:
-        config = load_config(config_path) if config_path else load_config(DEFAULT_CONFIG_PATH)
+        resolved_path = (config_path or DEFAULT_CONFIG_PATH).expanduser()
+        config = load_config(resolved_path)
     except ConfigError as exc:
         raise click.ClickException(str(exc))
 
@@ -41,7 +42,12 @@ def cli(ctx: click.Context, config_path: Optional[Path], base_url: Optional[str]
     if club_id:
         config.club_id = club_id
 
-    ctx.obj = {"config": config, "timeout": timeout, "verbose": verbose}
+    ctx.obj = {
+        "config": config,
+        "timeout": timeout,
+        "verbose": verbose,
+        "config_dir": resolved_path.parent,
+    }
 
 
 cli.add_command(show)

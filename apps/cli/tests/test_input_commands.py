@@ -1,4 +1,4 @@
-"""Tests for input/commit/view commands with mocked API."""
+"""Tests for input/commit/view commands with mocked API and local drafts."""
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 from click.testing import CliRunner
 
 from apps.cli.main import cli
-from apps.cli.api_client import ApiClient
+from apps.cli.draft import save_draft, load_draft
 
 
 def _write_config(tmp_path: Path) -> Path:
@@ -52,19 +52,13 @@ class MockApiClient:
 
     def __exit__(self, *args):
         pass
-
-
-def test_input_basic(tmp_path, monkeypatch):
-    """Test input command with basic expenses."""
+def test_input_updates_local_draft_and_merges_with_api(tmp_path, monkeypatch):
     cfg = _write_config(tmp_path)
 
     mock_client = MockApiClient()
-    mock_client.responses[("GET", "/api/turns/seasons/s1/current")] = {
-        "id": "turn-1",
-        "month_index": 1,
-        "month_name": "Aug",
+    mock_client.responses[("GET", "/api/turns/seasons/s1/decisions/c1/current")] = {
+        "payload": {"promo_expense": 200000},
     }
-    mock_client.responses[("PUT", "/api/turns/turn-1/decisions/c1")] = {"status": "ok"}
 
     def mock_with_client(*args, **kwargs):
         return mock_client
@@ -78,26 +72,21 @@ def test_input_basic(tmp_path, monkeypatch):
             "--config-path", str(cfg),
             "input",
             "--sales-expense", "1000000",
-            "--promo-expense", "500000",
-            "--hometown-expense", "300000",
         ],
     )
 
     assert result.exit_code == 0
-    assert "Input submitted successfully" in result.output
+    assert "Draft updated locally" in result.output
 
-    # Verify PUT call
-    put_calls = [c for c in mock_client.calls if c[0] == "PUT"]
-    assert len(put_calls) == 1
-    assert put_calls[0][1] == "/api/turns/turn-1/decisions/c1"
-    payload = put_calls[0][2]["payload"]
-    assert payload["sales_expense"] == 1000000.0
-    assert payload["promo_expense"] == 500000.0
-    assert payload["hometown_expense"] == 300000.0
+    draft = load_draft(cfg.parent, "s1", "c1")
+    assert draft is not None
+    assert draft.payload["sales_expense"] == 1000000.0
+    assert draft.payload["promo_expense"] == 200000
+    # No PUT/POST
+    assert all(call[0] == "GET" for call in mock_client.calls)
 
 
 def test_input_no_options_fails(tmp_path, monkeypatch):
-    """Test input command fails when no options provided."""
     cfg = _write_config(tmp_path)
 
     runner = CliRunner()
@@ -108,7 +97,6 @@ def test_input_no_options_fails(tmp_path, monkeypatch):
 
 
 def test_input_negative_value_fails(tmp_path, monkeypatch):
-    """Test input command fails with negative values."""
     cfg = _write_config(tmp_path)
 
     runner = CliRunner()
@@ -121,9 +109,23 @@ def test_input_negative_value_fails(tmp_path, monkeypatch):
     assert "non-negative" in result.output
 
 
-def test_commit_with_confirmation(tmp_path, monkeypatch):
-    """Test commit command shows confirmation."""
+def test_input_clear_deletes_draft(tmp_path, monkeypatch):
     cfg = _write_config(tmp_path)
+    path = save_draft(cfg.parent, "s1", "c1", {"sales_expense": 1}, base_source="draft")
+    assert path.exists()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--config-path", str(cfg), "input", "--clear"])
+
+    assert result.exit_code == 0
+    assert not path.exists()
+
+
+def test_commit_with_confirmation(tmp_path, monkeypatch):
+    cfg = _write_config(tmp_path)
+
+    # Prepare draft to ensure it is used and cleared
+    draft_path = save_draft(cfg.parent, "s1", "c1", {"sales_expense": 1000000}, base_source="draft")
 
     mock_client = MockApiClient()
     mock_client.responses[("GET", "/api/turns/seasons/s1/current")] = {
@@ -132,11 +134,10 @@ def test_commit_with_confirmation(tmp_path, monkeypatch):
         "month_name": "Aug",
     }
     mock_client.responses[("GET", "/api/turns/seasons/s1/decisions/c1/current")] = {
-        "month_index": 1,
-        "month_name": "Aug",
         "decision_state": "draft",
-        "payload": {"sales_expense": 1000000},
+        "payload": {"promo_expense": 200000},
     }
+    mock_client.responses[("PUT", "/api/turns/turn-1/decisions/c1")] = {"status": "ok"}
     mock_client.responses[("POST", "/api/turns/turn-1/decisions/c1/commit")] = {"status": "committed"}
 
     def mock_with_client(*args, **kwargs):
@@ -145,23 +146,21 @@ def test_commit_with_confirmation(tmp_path, monkeypatch):
     monkeypatch.setattr("apps.cli.commands.commit._with_client", mock_with_client)
 
     runner = CliRunner()
-    # Use -y to skip confirmation
-    result = runner.invoke(
-        cli,
-        ["--config-path", str(cfg), "commit", "-y"],
-    )
+    result = runner.invoke(cli, ["--config-path", str(cfg), "commit", "-y"])
 
     assert result.exit_code == 0
     assert "committed successfully" in result.output
 
-    # Verify POST call
+    # PUT + POST
+    put_calls = [c for c in mock_client.calls if c[0] == "PUT"]
+    assert len(put_calls) == 1
+    assert put_calls[0][2]["payload"]["sales_expense"] == 1000000
     post_calls = [c for c in mock_client.calls if c[0] == "POST"]
     assert len(post_calls) == 1
-    assert "/commit" in post_calls[0][1]
+    assert not draft_path.exists()
 
 
 def test_commit_abort(tmp_path, monkeypatch):
-    """Test commit command can be aborted."""
     cfg = _write_config(tmp_path)
 
     mock_client = MockApiClient()
@@ -174,7 +173,7 @@ def test_commit_abort(tmp_path, monkeypatch):
         "month_index": 1,
         "month_name": "Aug",
         "decision_state": "draft",
-        "payload": {},
+        "payload": {"promo_expense": 5000},
     }
 
     def mock_with_client(*args, **kwargs):
@@ -183,7 +182,6 @@ def test_commit_abort(tmp_path, monkeypatch):
     monkeypatch.setattr("apps.cli.commands.commit._with_client", mock_with_client)
 
     runner = CliRunner()
-    # Input 'n' to abort
     result = runner.invoke(
         cli,
         ["--config-path", str(cfg), "commit"],
@@ -193,13 +191,36 @@ def test_commit_abort(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "Aborted" in result.output
 
-    # Verify no POST call
     post_calls = [c for c in mock_client.calls if c[0] == "POST"]
     assert len(post_calls) == 0
 
 
+def test_commit_without_draft_uses_api_payload(tmp_path, monkeypatch):
+    cfg = _write_config(tmp_path)
+
+    mock_client = MockApiClient()
+    mock_client.responses[("GET", "/api/turns/seasons/s1/current")] = {"id": "turn-1", "month_index": 1, "month_name": "Aug"}
+    mock_client.responses[("GET", "/api/turns/seasons/s1/decisions/c1/current")] = {
+        "decision_state": "draft",
+        "payload": {"promo_expense": 123},
+    }
+    mock_client.responses[("PUT", "/api/turns/turn-1/decisions/c1")] = {"status": "ok"}
+    mock_client.responses[("POST", "/api/turns/turn-1/decisions/c1/commit")] = {"status": "committed"}
+
+    def mock_with_client(*args, **kwargs):
+        return mock_client
+
+    monkeypatch.setattr("apps.cli.commands.commit._with_client", mock_with_client)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--config-path", str(cfg), "commit", "-y"])
+
+    assert result.exit_code == 0
+    put_calls = [c for c in mock_client.calls if c[0] == "PUT"]
+    assert put_calls[0][2]["payload"]["promo_expense"] == 123
+
+
 def test_view_command(tmp_path, monkeypatch):
-    """Test view command displays current input."""
     cfg = _write_config(tmp_path)
 
     mock_client = MockApiClient()
@@ -211,24 +232,22 @@ def test_view_command(tmp_path, monkeypatch):
         "payload": {"sales_expense": 1000000},
     }
 
+    save_draft(cfg.parent, "s1", "c1", {"promo_expense": 200000}, base_source="draft")
+
     def mock_with_client(*args, **kwargs):
         return mock_client
 
     monkeypatch.setattr("apps.cli.commands.view._with_client", mock_with_client)
 
     runner = CliRunner()
-    result = runner.invoke(
-        cli,
-        ["--config-path", str(cfg), "view"],
-    )
+    result = runner.invoke(cli, ["--config-path", str(cfg), "view"])
 
     assert result.exit_code == 0
-    assert "Aug" in result.output
-    assert "sales_expense" in result.output
+    assert "Payload (server)" in result.output
+    assert "Draft overrides" in result.output
 
 
 def test_rho_new_validation(tmp_path, monkeypatch):
-    """Test rho-new must be between 0.0 and 1.0."""
     cfg = _write_config(tmp_path)
 
     runner = CliRunner()

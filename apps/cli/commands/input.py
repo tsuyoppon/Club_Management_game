@@ -10,6 +10,7 @@ from ..api_client import ApiClient
 from ..auth import build_headers
 from ..config import CliConfig
 from ..errors import CliError, ValidationError
+from ..draft import load_draft, save_draft, clear_draft
 
 
 def _resolve_required(option: Optional[str], fallback: Optional[str], label: str) -> str:
@@ -53,6 +54,7 @@ def _parse_float_ratio(value: Optional[float], label: str) -> Optional[float]:
 @click.option("--next-home-promo", type=str, help="Next-month home promo (Decimal, conditional)")
 @click.option("--additional-reinforcement", type=str, help="Additional reinforcement (Decimal, Dec only)")
 @click.option("--rho-new", type=float, help="New sponsor allocation ratio 0.0-1.0 (Q-start months only)")
+@click.option("--clear", is_flag=True, help="Clear local draft for this season/club")
 @click.option("--json-output", is_flag=True, help="Print raw JSON response")
 @click.pass_context
 def input_cmd(
@@ -65,66 +67,78 @@ def input_cmd(
     next_home_promo: Optional[str],
     additional_reinforcement: Optional[str],
     rho_new: Optional[float],
+    clear: bool,
     json_output: bool,
 ) -> None:
     """Submit monthly input (decision payload)."""
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
+    config_dir = ctx.obj["config_dir"]
 
     season_id = _resolve_required(season_id, config.season_id, "season_id")
     club_id = _resolve_required(club_id, config.club_id, "club_id")
 
-    # Build payload
-    payload: Dict[str, Any] = {}
+    if clear:
+        clear_draft(config_dir, season_id, club_id)
+        click.echo("Draft cleared.")
+        return
+
+    # Build overrides
+    overrides: Dict[str, Any] = {}
 
     se = _parse_decimal(sales_expense, "sales-expense")
     if se is not None:
-        payload["sales_expense"] = float(se)
+        overrides["sales_expense"] = float(se)
 
     pe = _parse_decimal(promo_expense, "promo-expense")
     if pe is not None:
-        payload["promo_expense"] = float(pe)
+        overrides["promo_expense"] = float(pe)
 
     he = _parse_decimal(hometown_expense, "hometown-expense")
     if he is not None:
-        payload["hometown_expense"] = float(he)
+        overrides["hometown_expense"] = float(he)
 
     nhp = _parse_decimal(next_home_promo, "next-home-promo")
     if nhp is not None:
-        payload["next_home_promo"] = float(nhp)
+        overrides["next_home_promo"] = float(nhp)
 
     ar = _parse_decimal(additional_reinforcement, "additional-reinforcement")
     if ar is not None:
-        payload["additional_reinforcement"] = float(ar)
+        overrides["additional_reinforcement"] = float(ar)
 
     rn = _parse_float_ratio(rho_new, "rho-new")
     if rn is not None:
-        payload["rho_new"] = rn
+        overrides["rho_new"] = rn
 
-    if not payload:
+    if not overrides:
         raise ValidationError("No input provided. Use --help for available options.")
 
-    # Get current turn
-    with _with_client(config, timeout, verbose) as client:
-        turn_data = client.get(f"/api/turns/seasons/{season_id}/current")
-        turn_id = turn_data.get("id")
-        if not turn_id:
-            raise CliError("No active turn found for this season")
+    # Determine base payload
+    draft = load_draft(config_dir, season_id, club_id)
+    base_payload: Dict[str, Any]
+    base_source = "draft" if draft else "api"
 
-        # Submit decision update
-        result = client.put(
-            f"/api/turns/{turn_id}/decisions/{club_id}",
-            json_body={"payload": payload},
-        )
+    if draft:
+        base_payload = dict(draft.payload)
+    else:
+        with _with_client(config, timeout, verbose) as client:
+            current = client.get(f"/api/turns/seasons/{season_id}/decisions/{club_id}/current")
+        if current and isinstance(current, dict) and isinstance(current.get("payload"), dict):
+            base_payload = dict(current.get("payload") or {})
+        else:
+            base_payload = {}
+
+    merged = {**base_payload, **overrides}
+    path = save_draft(config_dir, season_id, club_id, merged, base_source=base_source)
 
     if json_output:
         import json
-        click.echo(json.dumps(result, indent=2, default=str))
+        click.echo(json.dumps({"payload": merged, "draft_path": str(path)}, indent=2, default=str))
     else:
-        click.echo("Input submitted successfully.")
-        click.echo(f"Turn: {turn_data.get('month_name')} (month_index={turn_data.get('month_index')})")
-        click.echo(f"Payload: {payload}")
+        click.echo("Draft updated locally (not committed).")
+        click.echo(f"Draft path: {path}")
+        click.echo(f"Payload: {merged}")
 
 
 def dispatch_errors(func):

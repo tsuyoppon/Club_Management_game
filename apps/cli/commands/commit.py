@@ -10,6 +10,7 @@ from ..auth import build_headers
 from ..config import CliConfig
 from ..errors import CliError, ValidationError
 from ..output import print_json
+from ..draft import load_draft, clear_draft
 
 
 def _resolve_required(option: Optional[str], fallback: Optional[str], label: str) -> str:
@@ -41,38 +42,46 @@ def commit_cmd(
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
+    config_dir = ctx.obj["config_dir"]
 
     season_id = _resolve_required(season_id, config.season_id, "season_id")
     club_id = _resolve_required(club_id, config.club_id, "club_id")
 
+    draft = load_draft(config_dir, season_id, club_id)
+
     with _with_client(config, timeout, verbose) as client:
-        # Get current turn
         turn_data = client.get(f"/api/turns/seasons/{season_id}/current")
         turn_id = turn_data.get("id")
         if not turn_id:
             raise CliError("No active turn found for this season")
 
-        # Get current decision to show
         decision_data = client.get(f"/api/turns/seasons/{season_id}/decisions/{club_id}/current")
-        payload = decision_data.get("payload") if decision_data else None
+        api_payload = decision_data.get("payload") if decision_data else None
 
-        # Show summary
+        payload = draft.payload if draft else api_payload
+        if not payload:
+            raise CliError("No input found to commit. Provide input first.")
+
         click.echo(f"Turn: {turn_data.get('month_name')} (month_index={turn_data.get('month_index')})")
-        click.echo(f"State: {decision_data.get('decision_state')}")
-        if payload:
-            click.echo("Payload:")
-            print_json(payload)
-        else:
-            click.echo("Payload: (empty)")
+        click.echo(f"State: {decision_data.get('decision_state') if decision_data else 'unknown'}")
+        source = "draft" if draft else "api"
+        click.echo(f"Payload source: {source}")
+        click.echo("Payload:")
+        print_json(payload)
 
-        # Confirm
         if not yes:
             if not click.confirm("Commit this decision?"):
                 click.echo("Aborted.")
                 return
 
-        # Commit
+        result = client.put(
+            f"/api/turns/{turn_id}/decisions/{club_id}",
+            json_body={"payload": payload},
+        )
         result = client.post(f"/api/turns/{turn_id}/decisions/{club_id}/commit")
+
+    if draft:
+        clear_draft(config_dir, season_id, club_id)
 
     if json_output:
         print_json(result)
