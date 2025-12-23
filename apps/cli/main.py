@@ -56,6 +56,37 @@ cli.add_command(commit_cmd)
 cli.add_command(view_cmd)
 
 
+@cli.command("help")
+@click.argument("command", required=False)
+@click.argument("subcommand", required=False)
+@click.pass_context
+def help_cmd(ctx: click.Context, command: Optional[str], subcommand: Optional[str]) -> None:
+    """Show help for the CLI or a specific (sub)command."""
+    target = cli
+    target_name = "club-game"
+
+    if command:
+        cmd = cli.commands.get(command)
+        if not cmd:
+            raise click.ClickException(f"Unknown command: {command}")
+        target = cmd
+        target_name = command
+        if subcommand and isinstance(cmd, click.Group):
+            sub = cmd.commands.get(subcommand)
+            if not sub:
+                raise click.ClickException(f"Unknown subcommand for {command}: {subcommand}")
+            target = sub
+            target_name = f"{command} {subcommand}"
+        elif subcommand:
+            raise click.ClickException(f"Command {command} has no subcommands")
+
+    with click.Context(target, info_name=target_name, parent=ctx) as help_ctx:
+        click.echo(target.get_help(help_ctx))
+
+
+cli.add_command(help_cmd)
+
+
 def main() -> None:
     try:
         cli(obj={})

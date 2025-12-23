@@ -301,26 +301,37 @@ def show_history(ctx: click.Context, season_id: Optional[str], club_id: Optional
 
 
 @show.command("fan_indicator")
-@click.option("--club-id", help="Club UUID (defaults to config)")
+@click.option("--club-id", "club_id", help="Club UUID (defaults to config)")
+@click.option("--club", "club_override", help="Club identifier (alias; uses UUID in current API)")
 @click.option("--season-id", help="Season UUID (defaults to config)")
+@click.option("--from", "from_month", help="From YYYY-MM (mapped to month_index; optional)")
+@click.option("--to", "to_month", help="To YYYY-MM (mapped to month_index; optional)")
 @click.option("--json-output", is_flag=True, help="Print raw JSON")
 @click.pass_context
-def show_fan_indicator(ctx: click.Context, club_id: Optional[str], season_id: Optional[str], json_output: bool) -> None:
+def show_fan_indicator(ctx: click.Context, club_id: Optional[str], club_override: Optional[str], season_id: Optional[str], from_month: Optional[str], to_month: Optional[str], json_output: bool) -> None:
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
     season_id = _resolve_required(season_id, config.season_id, "season_id")
-    club_id = _resolve_required(club_id, config.club_id, "club_id")
+    resolved_club = club_override or club_id or config.club_id
+    resolved_club = _resolve_required(resolved_club, None, "club_id/club")
 
-    params = {"season_id": season_id}
+    params: Dict[str, Any] = {"season_id": season_id}
+    fm = ensure_month_bounds(parse_month_to_index(from_month) if from_month else None, "from_month")
+    tm = ensure_month_bounds(parse_month_to_index(to_month) if to_month else None, "to_month")
+    if fm is not None:
+        params["from_month"] = fm
+    if tm is not None:
+        params["to_month"] = tm
+
     with _with_client(config, timeout, verbose) as client:
-        data = client.get(f"/api/clubs/{club_id}/fan_indicator", params=params)
+        data = client.get(f"/api/clubs/{resolved_club}/fan_indicator", params=params)
 
     if json_output:
-        print_json(data)
+        print_json({"params": params, "data": data})
         return
 
-    rows = [{"club_id": data.get("club_id"), "followers": data.get("followers")}]
+    rows = [{"club_id": data.get("club_id"), "followers": data.get("followers")}] if isinstance(data, dict) else []
     print_table(rows, ["club_id", "followers"])
 
 
