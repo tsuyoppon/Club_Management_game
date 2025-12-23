@@ -12,6 +12,7 @@ from .commands.show import show
 from .commands.input import input_cmd
 from .commands.commit import commit_cmd
 from .commands.view import view_cmd
+from .commands.gm import gm
 
 
 @click.group()
@@ -54,6 +55,7 @@ cli.add_command(show)
 cli.add_command(input_cmd)
 cli.add_command(commit_cmd)
 cli.add_command(view_cmd)
+cli.add_command(gm)
 
 
 @cli.command("help")

@@ -109,10 +109,12 @@ Month index is 1–12 mapped to Aug–Jul.
 - Examples:
   - `python -m apps.cli.main show match --month 2026-04`
   - `python -m apps.cli.main show current_input --json-output`
+  - `python -m apps.cli.main gm lock --season-id <season>` (GM only)
+  - `python -m apps.cli.main gm resolve --turn-id <turn>` (GM only)
+  - `python -m apps.cli.main gm advance --season-id <season>` (GM only)
 - Flags: `--verbose` prints HTTP status; `--json-output` returns raw JSON; `--month` is mapped to `month_index` (Aug=1 … Jul=12).
 
 ## PR3.2 Note: Hidden Variables
 As of PR3.2, the game uses a deterministic model for staff hiring/firing.
 - **Hiring Success Rate**: Currently 100%. Probabilistic success will be introduced in PR4+.
 - **Firing Penalty**: Currently only financial (severance pay). Cumulative morale/reputation penalties will be introduced in PR4+.
-
