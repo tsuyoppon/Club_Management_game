@@ -33,6 +33,24 @@ This monorepo hosts a turn-based J-league club management business game for inte
   curl http://localhost:8000/api/health
   ```
 
+## デモプレイ手順
+
+### APIベース
+- ゲーム作成: `POST /api/games`（GMユーザーで作成）
+- クラブ追加: `POST /api/games/{game_id}/clubs`
+- シーズン生成: `POST /api/seasons/games/{game_id}`
+- 試合生成: `POST /api/seasons/{season_id}/fixtures/generate`
+- ターン進行: `open → commit → lock → resolve → ack → advance`（`/api/turns/...`）
+
+### CLIベース
+- config作成: `~/.club-game/config` に `base_url`/`user_email`/`season_id`/`club_id` を設定
+- show/input/commit:
+  - `python -m apps.cli.main show ...`
+  - `python -m apps.cli.main input ...`
+  - `python -m apps.cli.main commit ...`
+- GM操作:
+  - `python -m apps.cli.main gm open|lock|resolve|advance ...`
+
 ## Core API sequence (PR1)
 
 All requests must send `X-User-Email` to identify the acting user. The first user to create a game becomes its GM.
