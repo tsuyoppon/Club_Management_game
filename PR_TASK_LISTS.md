@@ -401,39 +401,43 @@
 
 - [x] `cli/commands/show_fan.py`
   - [x] `show fan_indicator` - ファン指標
-    - [ ] `--club <name>` オプション
-    - [ ] `--from YYYY-MM`, `--to YYYY-MM` オプション
+    - [x] `--club <name>` オプション
+    - [x] `--from YYYY-MM`, `--to YYYY-MM` オプション
 - [x] `cli/commands/show_sponsor.py`
   - [x] `show sponsor_status` - スポンサー状態
     - [x] `--pipeline` オプション（4-6月）
     - [x] `--next` オプション（7月）
 
-### フェーズ6: 入力コマンド（オプション）
+### フェーズ6: 入力コマンド
 
-- [ ] `cli/commands/input.py`
-  - [ ] `input` - 月次入力
-    - [ ] `--sales-expense`, `--promo-expense`, `--hometown-expense`
-    - [ ] `--next-home-promo`
-- [ ] `cli/commands/commit.py`
-  - [ ] `commit` - 入力確定
-- [ ] `cli/commands/view.py`
-  - [ ] `view` - 入力確認
+- [x] `cli/commands/input.py`
+  - [x] `input` - 月次入力
+    - [x] `--sales-expense`, `--promo-expense`, `--hometown-expense`
+    - [x] `--next-home-promo`, `--additional-reinforcement`, `--rho-new`
+- [x] `cli/commands/commit.py`
+  - [x] `commit` - 入力確定（`-y` でプロンプトスキップ）
+- [x] `cli/commands/view.py`
+  - [x] `view` - 入力確認（ドラフト差分表示対応）
 
 ### フェーズ7: ヘルプ・エラーハンドリング
 
-- [ ] `cli/commands/help.py`
-  - [ ] `help` - 全コマンド一覧
-  - [ ] `help <command>` - コマンド詳細ヘルプ
-- [ ] エラーハンドリング実装
-  - [ ] APIエラー処理
-  - [ ] バリデーションエラー処理
-  - [ ] ネットワークエラー処理
+- [x] `cli/main.py` に `help` コマンド追加
+  - [x] `help` - 全コマンド一覧
+  - [x] `help <command>` - コマンド詳細ヘルプ
+  - [x] `help <command> <subcommand>` - サブコマンドヘルプ
+- [x] エラーハンドリング実装（`cli/errors.py`, `cli/api_client.py`）
+  - [x] APIエラー処理（ステータスコード別メッセージ）
+  - [x] バリデーションエラー処理（ValidationError）
+  - [x] ネットワークエラー処理（CliError）
 
 ### フェーズ8: テスト
 
-- [ ] 各コマンドのユニットテスト
-- [ ] 統合テスト
-- [ ] エラーハンドリングテスト
+- [x] 各コマンドのユニットテスト
+  - [x] `test_cli_smoke.py` - 基本スモークテスト
+  - [x] `test_input_commands.py` - input/commit/viewテスト（7件）
+  - [x] `test_help_and_fan.py` - help/fan_indicatorテスト（5件）
+- [x] 統合テスト（モック使用）
+- [x] エラーハンドリングテスト（バリデーション、API例外）
 
 ### フェーズ9: ドキュメント・パッケージング
 
@@ -474,6 +478,6 @@
 
 ---
 
-**最終更新日**: 2024年12月
+**最終更新日**: 2025年12月
 
 
