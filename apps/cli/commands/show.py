@@ -71,18 +71,20 @@ def show_match(ctx: click.Context, season_id: Optional[str], club_id: Optional[s
             score = f"{home_goals}-{away_goals}" if home else f"{away_goals}-{home_goals}"
         else:
             score = "-"
+        opponent_display = item.get("opponent_name") or item.get("opponent") or "(bye)"
         rows.append(
             {
                 "month": f"{item.get('month_name', '')} ({item.get('month_index', '')})",
-                "opponent": item.get("opponent") or "(bye)",
+                "opponent": opponent_display,
                 "home": "H" if home else ("A" if item.get("opponent") else "-"),
                 "status": item.get("status") or "-",
                 "score": score,
+                "weather": item.get("weather") or "-",
                 "attendance": item.get("total_attendance"),
             }
         )
 
-    print_table(rows, ["month", "home", "opponent", "status", "score", "attendance"])
+    print_table(rows, ["month", "home", "opponent", "status", "score", "weather", "attendance"])
 
 
 @show.command("table")
@@ -96,11 +98,17 @@ def show_table(ctx: click.Context, season_id: Optional[str], json_output: bool) 
     season_id = _resolve_required(season_id, config.season_id, "season_id")
 
     with _with_client(config, timeout, verbose) as client:
+        turn = client.get(f"/api/turns/seasons/{season_id}/current")
         data = client.get(f"/api/seasons/{season_id}/standings")
 
     if json_output:
-        print_json(data)
+        print_json({"as_of": turn, "standings": data})
         return
+
+    if isinstance(turn, dict):
+        click.echo(
+            f"As of season={season_id}, month_index={turn.get('month_index')} ({turn.get('month_name')})"
+        )
 
     rows = [
         {
@@ -118,6 +126,133 @@ def show_table(ctx: click.Context, season_id: Optional[str], json_output: bool) 
         for row in data
     ]
     print_table(rows, ["rank", "club", "played", "won", "drawn", "lost", "gf", "ga", "gd", "pts"])
+
+
+@show.command("finance")
+@click.option("--season-id", help="Season UUID (defaults to config)")
+@click.option("--club-id", help="Club UUID (defaults to config)")
+@click.option("--month-index", type=int, help="Filter by month_index (1-12)")
+@click.option("--json-output", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional[str], month_index: Optional[int], json_output: bool) -> None:
+    """Show financial state and ledger for a club."""
+    config: CliConfig = ctx.obj["config"]
+    timeout: float = ctx.obj["timeout"]
+    verbose: bool = ctx.obj["verbose"]
+
+    season_id = _resolve_required(season_id, config.season_id, "season_id")
+    club_id = _resolve_required(club_id, config.club_id, "club_id")
+
+    params = {"season_id": season_id}
+    if month_index is not None:
+        params["month_index"] = month_index
+
+    with _with_client(config, timeout, verbose) as client:
+        state = client.get(f"/api/clubs/{club_id}/finance/state")
+        ledger = client.get(f"/api/clubs/{club_id}/finance/ledger", params=params)
+
+    if json_output:
+        print_json({"state": state, "ledger": ledger})
+        return
+
+    balance = state.get("balance") if isinstance(state, dict) else None
+    last_turn = state.get("last_applied_turn_id") if isinstance(state, dict) else None
+
+    # Prepare ledger grouping
+    if not ledger:
+        click.echo(f"Balance: {balance}")
+        click.echo(f"Last applied turn: {last_turn}")
+        click.echo("No ledger entries found.")
+        return
+
+    # Latest month when not specified
+    all_months = sorted({e.get("month_index") for e in ledger if e.get("month_index") is not None})
+    target_month = month_index if month_index is not None else (all_months[-1] if all_months else None)
+
+    # Map for normalization of kinds (merge fixture-specific keys)
+    def normalize_kind(kind: str) -> str:
+        prefixes = [
+            "match_operation_cost",
+            "merchandise_cost",
+            "merchandise_rev",
+            "ticket_rev",
+        ]
+        for pref in prefixes:
+            if kind.startswith(pref):
+                return pref
+        return kind
+
+    month_name_lookup = {
+        1: "August", 2: "September", 3: "October", 4: "November", 5: "December",
+        6: "January", 7: "February", 8: "March", 9: "April", 10: "May", 11: "June", 12: "July",
+    }
+    month_label = month_name_lookup.get(target_month, "-") if target_month else "-"
+
+    click.echo(f"Balance: {balance}")
+    click.echo(f"Last applied turn: {last_turn}, month_index={target_month} ({month_label})")
+
+    # Filter ledger for target month
+    month_entries = [e for e in ledger if e.get("month_index") == target_month]
+
+    # Monthly per-item breakdown
+    monthly_by_kind: Dict[str, float] = {}
+    for entry in month_entries:
+        kind = normalize_kind(entry.get("kind") or "(unknown)")
+        amt = entry.get("amount", 0)
+        monthly_by_kind[kind] = monthly_by_kind.get(kind, 0) + amt
+
+    monthly_table = []
+    for k, v in sorted(monthly_by_kind.items()):
+        monthly_table.append({
+            "kind": k,
+            "income": v if v > 0 else 0,
+            "expense": v if v < 0 else 0,
+            "net": v,
+        })
+
+    if monthly_table:
+        income_total = sum(r["income"] for r in monthly_table)
+        expense_total = sum(r["expense"] for r in monthly_table)
+        net_total = sum(r["net"] for r in monthly_table)
+        monthly_table.append({"kind": "TOTAL", "income": income_total, "expense": expense_total, "net": net_total})
+        click.echo("Current month breakdown (by item):")
+        print_table(monthly_table, ["kind", "income", "expense", "net"])
+    else:
+        click.echo("No entries for the target month.")
+
+    # Season cumulative by normalized kind
+    kind_rows: Dict[str, float] = {}
+    for entry in ledger:
+        kind = normalize_kind(entry.get("kind") or "(unknown)")
+        amount = entry.get("amount", 0)
+        kind_rows[kind] = kind_rows.get(kind, 0) + amount
+
+    income_rows = []
+    expense_rows = []
+    for k, v in sorted(kind_rows.items()):
+        row = {
+            "kind": k,
+            "income": v if v > 0 else 0,
+            "expense": v if v < 0 else 0,
+            "net": v,
+        }
+        if v > 0:
+            income_rows.append(row)
+        elif v < 0:
+            expense_rows.append(row)
+        else:
+            # zero rows can go with expense side for stability
+            expense_rows.append(row)
+
+    cumulative_table = income_rows + expense_rows
+    if cumulative_table:
+        income_total = sum(r["income"] for r in cumulative_table)
+        expense_total = sum(r["expense"] for r in cumulative_table)
+        net_total = sum(r["net"] for r in cumulative_table)
+        cumulative_table.append({"kind": "TOTAL", "income": income_total, "expense": expense_total, "net": net_total})
+
+    click.echo("Season cumulative by item:")
+    print_table(cumulative_table, ["kind", "income", "expense", "net"])
 
 
 @show.command("team_power")

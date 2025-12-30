@@ -860,7 +860,31 @@ cli-alpha show match
 cli-gm show fan_indicator --from 2025-08 --to 2025-08
 ```
 
-##### 7. GMが次ターンへ進行
+##### 7. 各クラブがACKする（必須）
+
+resolve後は全クラブがACKしないとadvanceできません。ターンIDを取得し、クラブごとに `ack:true` を送ります。
+
+```bash
+# ターンID取得（GMメール）
+TURN_ID=$(curl -s -H 'X-User-Email: gm@example.com' \
+  "http://localhost:8000/api/turns/seasons/<season_id>/current" | jq -r .id)
+
+# クラブ1がACK
+curl -s -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Email: owner1@example.com' \
+  "http://localhost:8000/api/turns/${TURN_ID}/ack" \
+  -d '{"club_id":"<club_id_1>","ack":true}'
+
+# クラブ2がACK
+curl -s -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Email: owner2@example.com' \
+  "http://localhost:8000/api/turns/${TURN_ID}/ack" \
+  -d '{"club_id":"<club_id_2>","ack":true}'
+```
+
+##### 8. GMが次ターンへ進行
 
 ```bash
 cli-gm gm advance

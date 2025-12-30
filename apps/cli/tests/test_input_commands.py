@@ -137,7 +137,6 @@ def test_commit_with_confirmation(tmp_path, monkeypatch):
         "decision_state": "draft",
         "payload": {"promo_expense": 200000},
     }
-    mock_client.responses[("PUT", "/api/turns/turn-1/decisions/c1")] = {"status": "ok"}
     mock_client.responses[("POST", "/api/turns/turn-1/decisions/c1/commit")] = {"status": "committed"}
 
     def mock_with_client(*args, **kwargs):
@@ -151,12 +150,10 @@ def test_commit_with_confirmation(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "committed successfully" in result.output
 
-    # PUT + POST
-    put_calls = [c for c in mock_client.calls if c[0] == "PUT"]
-    assert len(put_calls) == 1
-    assert put_calls[0][2]["payload"]["sales_expense"] == 1000000
+    # Single POST commit carrying the payload
     post_calls = [c for c in mock_client.calls if c[0] == "POST"]
     assert len(post_calls) == 1
+    assert post_calls[0][2]["payload"]["sales_expense"] == 1000000
     assert not draft_path.exists()
 
 
@@ -204,7 +201,6 @@ def test_commit_without_draft_uses_api_payload(tmp_path, monkeypatch):
         "decision_state": "draft",
         "payload": {"promo_expense": 123},
     }
-    mock_client.responses[("PUT", "/api/turns/turn-1/decisions/c1")] = {"status": "ok"}
     mock_client.responses[("POST", "/api/turns/turn-1/decisions/c1/commit")] = {"status": "committed"}
 
     def mock_with_client(*args, **kwargs):
@@ -216,8 +212,9 @@ def test_commit_without_draft_uses_api_payload(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["--config-path", str(cfg), "commit", "-y"])
 
     assert result.exit_code == 0
-    put_calls = [c for c in mock_client.calls if c[0] == "PUT"]
-    assert put_calls[0][2]["payload"]["promo_expense"] == 123
+    post_calls = [c for c in mock_client.calls if c[0] == "POST"]
+    assert len(post_calls) == 1
+    assert post_calls[0][2]["payload"]["promo_expense"] == 123
 
 
 def test_view_command(tmp_path, monkeypatch):

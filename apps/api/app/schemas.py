@@ -235,6 +235,17 @@ class ClubFinancialSnapshotRead(BaseModel):
     class Config:
         orm_mode = True
 
+
+class ClubFinancialLedgerRead(BaseModel):
+    turn_id: UUID
+    month_index: int
+    kind: str
+    amount: float
+    meta: Optional[dict]
+
+    class Config:
+        orm_mode = True
+
 class StandingRead(BaseModel):
     rank: int
     club_id: UUID

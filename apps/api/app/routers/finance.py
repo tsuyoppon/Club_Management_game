@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -12,8 +12,11 @@ from app.schemas import (
     ClubFinancialProfileUpdate,
     ClubFinancialSnapshotRead,
     ClubFinancialStateRead,
+    ClubFinancialLedgerRead,
 )
 from app.services import finance as finance_service
+from sqlalchemy import select
+from app.db import models
 
 router = APIRouter(prefix="/clubs/{club_id}/finance", tags=["finance"])
 
@@ -67,3 +70,48 @@ def get_finance_snapshots(
     
     snapshots = finance_service.get_financial_snapshots(db, club_id, season_id)
     return snapshots
+
+
+@router.get("/ledger", response_model=List[ClubFinancialLedgerRead])
+def get_finance_ledger(
+    club_id: UUID,
+    season_id: UUID,
+    month_index: Optional[int] = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return ledger entries for a club in a season, optionally filtered by month."""
+    club = get_club_or_404(db, club_id)
+    require_role(user, db, club.game_id, MembershipRole.club_viewer, club_id=club_id)
+
+    stmt = (
+        select(
+            models.ClubFinancialLedger.turn_id,
+            models.Turn.month_index,
+            models.ClubFinancialLedger.kind,
+            models.ClubFinancialLedger.amount,
+            models.ClubFinancialLedger.meta,
+        )
+        .join(models.Turn, models.Turn.id == models.ClubFinancialLedger.turn_id)
+        .where(
+            models.ClubFinancialLedger.club_id == club_id,
+            models.Turn.season_id == season_id,
+        )
+        .order_by(models.Turn.month_index)
+    )
+
+    if month_index is not None:
+        stmt = stmt.where(models.Turn.month_index == month_index)
+
+    rows = db.execute(stmt).all()
+    # Map to list of dicts for Pydantic
+    return [
+        {
+            "turn_id": r.turn_id,
+            "month_index": r.month_index,
+            "kind": r.kind,
+            "amount": float(r.amount),
+            "meta": r.meta,
+        }
+        for r in rows
+    ]

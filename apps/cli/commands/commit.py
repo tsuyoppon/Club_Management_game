@@ -74,11 +74,10 @@ def commit_cmd(
                 click.echo("Aborted.")
                 return
 
-        result = client.put(
-            f"/api/turns/{turn_id}/decisions/{club_id}",
+        result = client.post(
+            f"/api/turns/{turn_id}/decisions/{club_id}/commit",
             json_body={"payload": payload},
         )
-        result = client.post(f"/api/turns/{turn_id}/decisions/{club_id}/commit")
 
     if draft:
         clear_draft(config_dir, season_id, club_id)

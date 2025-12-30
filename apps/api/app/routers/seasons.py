@@ -189,18 +189,30 @@ def club_schedule(
 
     fixtures = fixtures_query.order_by(Fixture.match_month_index).all()
 
+    # Preload club names to enrich opponent display
+    club_rows = db.query(Club).filter(Club.game_id == season.game_id).all()
+    club_name_map = {row.id: row.name for row in club_rows}
+    club_short_name_map = {row.id: row.short_name for row in club_rows}
+
     schedule = []
     month_lookup: Dict[int, str] = {m[0]: m[1] for m in month_mappings()}
     for fixture in fixtures:
         is_home = fixture.home_club_id == club_uuid
         opponent = None
+        opponent_name = None
+        opponent_short_name = None
         if fixture.home_club_id and fixture.away_club_id:
             opponent = str(fixture.away_club_id if is_home else fixture.home_club_id)
+            opp_uuid = fixture.away_club_id if is_home else fixture.home_club_id
+            opponent_name = club_name_map.get(opp_uuid)
+            opponent_short_name = club_short_name_map.get(opp_uuid)
         schedule.append(
             {
                 "month_index": fixture.match_month_index,
                 "month_name": month_lookup.get(fixture.match_month_index, ""),
                 "opponent": opponent,
+                "opponent_name": opponent_name,
+                "opponent_short_name": opponent_short_name,
                 "home": is_home,
                 "is_bye": fixture.is_bye,
                 "status": fixture.match.status if fixture.match else None,
