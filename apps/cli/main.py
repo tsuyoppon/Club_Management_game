@@ -13,6 +13,7 @@ from .commands.input import input_cmd
 from .commands.commit import commit_cmd
 from .commands.view import view_cmd
 from .commands.gm import gm
+from .commands.game import game
 
 
 @click.group()
@@ -56,6 +57,7 @@ cli.add_command(input_cmd)
 cli.add_command(commit_cmd)
 cli.add_command(view_cmd)
 cli.add_command(gm)
+cli.add_command(game)
 
 
 @cli.command("help")
