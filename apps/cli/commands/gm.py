@@ -7,7 +7,7 @@ import click
 
 from ..api_client import ApiClient
 from ..auth import build_headers
-from ..config import CliConfig
+from ..config import CliConfig, save_config
 from ..errors import CliError, ValidationError
 from ..output import print_json
 
@@ -115,10 +115,22 @@ def advance_turn(ctx: click.Context, turn_id: Optional[str], season_id: Optional
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
+    config_path = ctx.obj.get("config_path")
 
     with _with_client(config, timeout, verbose) as client:
         resolved_turn_id = _resolve_turn_id(client, season_id, config.season_id, turn_id)
         result = client.post(f"/api/turns/{resolved_turn_id}/advance")
+
+    # Auto-persist new season_id if the server advanced to a new season
+    if isinstance(result, dict):
+        new_season_id = result.get("season_id")
+        if new_season_id and new_season_id != config.season_id:
+            config.season_id = new_season_id
+            try:
+                save_config(config, config_path)
+            except Exception as exc:  # pragma: no cover - file system issues are surfaced to the user
+                if verbose:
+                    click.echo(f"Failed to save updated config: {exc}", err=True)
 
     if json_output:
         print_json(result)

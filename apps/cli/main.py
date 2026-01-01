@@ -51,6 +51,7 @@ def cli(ctx: click.Context, config_path: Optional[Path], base_url: Optional[str]
         "timeout": timeout,
         "verbose": verbose,
         "config_dir": resolved_path.parent,
+        "config_path": resolved_path,
     }
 
 

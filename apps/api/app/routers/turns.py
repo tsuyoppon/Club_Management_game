@@ -10,6 +10,7 @@ from app.db.models import (
     DecisionState,
     MembershipRole,
     Season,
+    SeasonStatus,
     Turn,
     TurnAck,
     TurnDecision,
@@ -289,9 +290,51 @@ def advance_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_c
         .order_by(Turn.month_index)
         .first()
     )
+
+    next_turn_info = None
     if next_turn:
         next_turn.turn_state = TurnState.collecting
         next_turn.opened_at = datetime.utcnow()
-    db.commit()
-    return {"state": turn.turn_state}
+        db.commit()
+        next_turn_info = {"next_turn_id": str(next_turn.id), "season_id": str(next_turn.season_id)}
+    else:
+        # シーズンを終了扱いにして次シーズンを自動生成
+        season = turn.season
+        from app.services.season_finalize import SeasonFinalizer
+        finalizer = SeasonFinalizer(db, season.id)
+        finalizer.finalize()
+        season.status = SeasonStatus.finished
+        season.is_finalized = True
+        db.add(season)
+        db.commit()
+
+        # 次年度を作成（year_labelが数値である場合のみ）
+        next_season = None
+        try:
+            if season.year_label and season.year_label.isdigit():
+                next_label = str(int(season.year_label) + 1)
+                from app.routers.seasons import create_season_core, generate_fixtures_core
+
+                next_season = create_season_core(db, season.game, next_label)
+                generate_fixtures_core(db, next_season)
+        except Exception:
+            next_season = None
+
+        if next_season:
+            first_turn = (
+                db.query(Turn)
+                .filter(Turn.season_id == next_season.id)
+                .order_by(Turn.month_index)
+                .first()
+            )
+            if first_turn:
+                first_turn.turn_state = TurnState.collecting
+                first_turn.opened_at = datetime.utcnow()
+                db.commit()
+                next_turn_info = {"next_turn_id": str(first_turn.id), "season_id": str(first_turn.season_id)}
+
+    response = {"state": turn.turn_state}
+    if next_turn_info:
+        response.update(next_turn_info)
+    return response
 

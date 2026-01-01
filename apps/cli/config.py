@@ -41,6 +41,15 @@ class CliConfig:
             club_id=data.get("club_id"),
         )
 
+    def to_mapping(self) -> Dict[str, Any]:
+        return {
+            "base_url": self.base_url,
+            "user_email": self.user_email,
+            "game_id": self.game_id,
+            "season_id": self.season_id,
+            "club_id": self.club_id,
+        }
+
 
 def load_config(path: Optional[Path] = None) -> CliConfig:
     cfg_path = path or DEFAULT_CONFIG_PATH
@@ -76,4 +85,11 @@ def load_config(path: Optional[Path] = None) -> CliConfig:
         raise ConfigError(f"Failed to parse config: {exc}") from exc
 
     return CliConfig.from_mapping(data)
+
+
+def save_config(config: CliConfig, path: Optional[Path] = None) -> None:
+    cfg_path = (path or DEFAULT_CONFIG_PATH).expanduser()
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    data = config.to_mapping()
+    cfg_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 

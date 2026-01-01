@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.dependencies import get_current_user, get_db, require_role
 from app.db.models import (
     Club,
+    ClubFanbaseState,
     DecisionState,
     Fixture,
     Game,
@@ -26,28 +27,32 @@ from app.schemas import FixtureGenerateRequest, SeasonCreate, SeasonRead, Standi
 from app.services.fixtures import generate_round_robin
 from app.services.standings import StandingsCalculator
 from app.services.season_finalize import SeasonFinalizer
-from app.services import reinforcement
+from app.services import reinforcement, sponsor, academy
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
 
-@router.post("/games/{game_id}", response_model=SeasonRead)
-def create_season(
-    game_id: str,
-    payload: SeasonCreate,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    require_role(user, db, game_id, MembershipRole.gm)
-    game = db.query(Game).filter(Game.id == game_id).first()
-    if not game:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found")
+# ---------------------------------------------------------------------------
+# Internal helpers (used by API routes and auto-season transition)
+# ---------------------------------------------------------------------------
 
-    existing_season = db.query(Season).filter(Season.game_id == game_id, Season.year_label == payload.year_label).first()
-    if existing_season:
-        return existing_season
 
-    season = Season(game_id=game_id, year_label=payload.year_label, status=SeasonStatus.running)
+def create_season_core(db: Session, game: Game, year_label: str) -> Season:
+    """
+    Create a new season with default turns/decisions.
+
+    - First turn is set to `collecting` (opened)
+    - All other turns start as `open`
+    - If previous season exists (numeric year), propagate reinforcement budget and
+      copy fanbase state forward so that hidden variables persist across seasons.
+    - Idempotent per (game_id, year_label).
+    """
+
+    existing = db.query(Season).filter(Season.game_id == game.id, Season.year_label == year_label).first()
+    if existing:
+        return existing
+
+    season = Season(game_id=game.id, year_label=year_label, status=SeasonStatus.running)
     db.add(season)
     db.commit()
     db.refresh(season)
@@ -68,7 +73,7 @@ def create_season(
         db.add(turn)
     db.commit()
 
-    clubs = db.query(Club).filter(Club.game_id == game_id).all()
+    clubs = db.query(Club).filter(Club.game_id == game.id).all()
     for turn in turns:
         for club in clubs:
             decision = TurnDecision(turn_id=turn.id, club_id=club.id, decision_state=DecisionState.draft)
@@ -78,8 +83,8 @@ def create_season(
     # 前季オフシーズン入力を新シーズンの強化費初期値に反映
     prev_season = None
     try:
-        prev_label = str(int(payload.year_label) - 1)
-        prev_season = db.query(Season).filter(Season.game_id == game_id, Season.year_label == prev_label).first()
+        prev_label = str(int(year_label) - 1)
+        prev_season = db.query(Season).filter(Season.game_id == game.id, Season.year_label == prev_label).first()
     except Exception:
         prev_season = None
 
@@ -90,8 +95,87 @@ def create_season(
             plan.annual_budget = prev_plan.next_season_budget
         db.commit()
 
+        # Fanbaseをシーズン跨ぎで引き継ぐ（初期値を前季終値で開始）
+        prev_states = db.query(ClubFanbaseState).filter(ClubFanbaseState.season_id == prev_season.id).all()
+        for prev_state in prev_states:
+            copied = ClubFanbaseState(
+                club_id=prev_state.club_id,
+                season_id=season.id,
+                fb_count=prev_state.fb_count,
+                fb_rate=prev_state.fb_rate,
+                cumulative_promo=prev_state.cumulative_promo,
+                cumulative_ht=prev_state.cumulative_ht,
+                last_ht_spend=prev_state.last_ht_spend,
+                followers_public=prev_state.followers_public,
+            )
+            db.add(copied)
+        db.commit()
+
+    # Sponsor state: inherit final next_count (or count) and keep pipelines consistent with Section 10
+    for club in clubs:
+        sponsor.ensure_sponsor_state(db, club.id, season.id)
+
+    # Academy state: carry cumulative investment and planned budget forward
+    for club in clubs:
+        academy.ensure_academy_state(db, club.id, season.id)
+
+    db.commit()
+
     db.refresh(season)
     return season
+
+
+def generate_fixtures_core(db: Session, season: Season, force: bool = False) -> int:
+    """Generate fixtures and matches for a season. Returns count of fixtures."""
+    existing = db.query(Fixture).filter(Fixture.season_id == season.id).all()
+    if existing and not force:
+        return len(existing)
+
+    if existing and force:
+        for row in existing:
+            db.delete(row)
+        db.commit()
+
+    clubs = db.query(Club).filter(Club.game_id == season.game_id).all()
+    if not clubs:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No clubs to schedule")
+
+    specs = generate_round_robin([club.id for club in clubs], match_months=10)
+    month_lookup: Dict[int, str] = {m[0]: m[1] for m in month_mappings()}
+
+    for spec in specs:
+        fixture = Fixture(
+            season_id=season.id,
+            match_month_index=spec.match_month_index,
+            match_month_name=month_lookup.get(spec.match_month_index, ""),
+            home_club_id=spec.home_club_id,
+            away_club_id=spec.away_club_id,
+            is_bye=spec.is_bye,
+            bye_club_id=spec.bye_club_id,
+        )
+        db.add(fixture)
+        db.flush()
+
+        match = Match(fixture_id=fixture.id, status=MatchStatus.scheduled)
+        db.add(match)
+
+    db.commit()
+    return db.query(Fixture).filter(Fixture.season_id == season.id).count()
+
+
+@router.post("/games/{game_id}", response_model=SeasonRead)
+def create_season(
+    game_id: str,
+    payload: SeasonCreate,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    require_role(user, db, game_id, MembershipRole.gm)
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game not found")
+
+    return create_season_core(db, game, payload.year_label)
 
 
 @router.post("/{season_id}/fixtures/generate", status_code=status.HTTP_201_CREATED)
@@ -107,41 +191,8 @@ def generate_fixtures(
 
     require_role(user, db, season.game_id, MembershipRole.gm)
 
-    existing = db.query(Fixture).filter(Fixture.season_id == season_id).all()
-    if existing and not payload.force:
-        return {"fixtures": len(existing)}
-
-    if existing and payload.force:
-        for row in existing:
-            db.delete(row)
-        db.commit()
-
-    clubs = db.query(Club).filter(Club.game_id == season.game_id).all()
-    if not clubs:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No clubs to schedule")
-
-    specs = generate_round_robin([club.id for club in clubs], match_months=10)
-    month_lookup: Dict[int, str] = {m[0]: m[1] for m in month_mappings()}
-
-    for spec in specs:
-        fixture = Fixture(
-            season_id=season_id,
-            match_month_index=spec.match_month_index,
-            match_month_name=month_lookup.get(spec.match_month_index, ""),
-            home_club_id=spec.home_club_id,
-            away_club_id=spec.away_club_id,
-            is_bye=spec.is_bye,
-            bye_club_id=spec.bye_club_id,
-        )
-        db.add(fixture)
-        db.commit()
-        db.refresh(fixture)
-        if not spec.is_bye:
-            match = Match(fixture_id=fixture.id, status=MatchStatus.scheduled)
-            db.add(match)
-            db.commit()
-
-    return {"fixtures": len(specs)}
+    count = generate_fixtures_core(db, season, force=payload.force)
+    return {"fixtures": count}
 
 
 @router.get("/{season_id}/schedule")
@@ -256,24 +307,11 @@ def get_fixture_detail(
     if not season:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
     require_role(user, db, str(season.game_id), MembershipRole.club_viewer)
-    
     fixture = db.query(Fixture).filter(Fixture.id == fixture_id, Fixture.season_id == season_id).first()
     if not fixture:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fixture not found")
-        
-    # Ensure match status is populated in FixtureView
-    # FixtureView has status field. Fixture model doesn't have status, Match does.
-    # But FixtureView expects status.
-    # I need to map it.
-    # Pydantic ORM mode might not handle nested relationship attribute mapping automatically if names differ?
-    # FixtureView: status: MatchStatus
-    # Fixture model: match (relationship) -> status
-    # I should probably update FixtureView or handle it manually.
-    # But FixtureView is Pydantic.
-    # If I return Fixture object, Pydantic tries to read .status
-    # Fixture object does NOT have .status.
-    # I need to attach it or use a wrapper.
-    
+
+    # Ensure FixtureView.status is populated from related Match
     fixture.status = fixture.match.status if fixture.match else MatchStatus.scheduled
     return fixture
 
