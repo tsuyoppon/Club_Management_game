@@ -457,11 +457,20 @@ curl -X POST http://localhost:8000/api/turns/<turn_id>/decisions/<club_id_2>/com
 ### 5.5 結果確認（ack）
 
 ```bash
+# CLI（クラブオーナーまたはGM）
+# configのclub_idを使う場合
+python -m apps.cli.main ack -y
+
+# GMが別クラブを代行してACKする場合
+python -m apps.cli.main --config-path ~/.club-game/config-gm ack --club-id <club_id> -y
+
+# curl で直接叩く場合
 curl -X POST http://localhost:8000/api/turns/<turn_id>/ack \
   -H 'X-User-Email: owner1@example.com' \
   -H 'Content-Type: application/json' \
   -d '{"club_id":"<club_id>","ack":true}'
 ```
+※ ACK はクラブオーナーまたはGMのみ実行できます。
 
 ### 5.6 参照コマンド
 
@@ -523,6 +532,7 @@ python -m apps.cli.main show sponsor_status
 | `input --additional-reinforcement <金額>` | 追加強化費（12月のみ） |
 | `input --rho-new <0.0-1.0>` | 新規スポンサー配分（四半期開始月のみ） |
 | `staff plan --role <director|coach|scout> --count <人数>` | スタッフ採用/解雇（5月のみ、count増で採用・減で解雇） |
+| `ack` | 解決済みターンをACK（クラブオーナーまたはGM。GMはclub_id指定で代行可） |
 | `view` | 入力内容確認 |
 | `commit` | 入力確定（`-y`で確認スキップ） |
 

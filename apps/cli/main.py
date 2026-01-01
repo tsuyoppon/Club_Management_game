@@ -15,6 +15,7 @@ from .commands.view import view_cmd
 from .commands.gm import gm
 from .commands.game import game
 from .commands.staff import staff
+from .commands.ack import ack_cmd
 
 
 @click.group()
@@ -60,6 +61,7 @@ cli.add_command(view_cmd)
 cli.add_command(gm)
 cli.add_command(game)
 cli.add_command(staff)
+cli.add_command(ack_cmd)
 
 
 @cli.command("help")
