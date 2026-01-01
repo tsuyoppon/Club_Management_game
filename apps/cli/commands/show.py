@@ -461,13 +461,28 @@ def show_fan_indicator(ctx: click.Context, club_id: Optional[str], club_override
 
     with _with_client(config, timeout, verbose) as client:
         data = client.get(f"/api/clubs/{resolved_club}/fan_indicator", params=params)
+        standings = client.get(f"/api/seasons/{season_id}/standings")
+
+    club_map: Dict[str, str] = {}
+    if isinstance(standings, list):
+        for entry in standings:
+            cid = entry.get("club_id")
+            if cid:
+                club_map[str(cid)] = entry.get("club_name") or entry.get("club") or str(cid)
+
+    if isinstance(data, dict):
+        club_id_val = str(data.get("club_id")) if data.get("club_id") else str(resolved_club)
+        club_name = club_map.get(club_id_val, club_id_val)
+        rendered = {"club": club_name, "followers": data.get("followers"), "club_id": club_id_val}
+    else:
+        rendered = None
 
     if json_output:
-        print_json({"params": params, "data": data})
+        print_json({"params": params, "data": data, "club_name": rendered.get("club") if rendered else None})
         return
 
-    rows = [{"club_id": data.get("club_id"), "followers": data.get("followers")}] if isinstance(data, dict) else []
-    print_table(rows, ["club_id", "followers"])
+    rows = [rendered] if rendered else []
+    print_table(rows, ["club", "followers"])
 
 
 @show.command("sponsor_status")

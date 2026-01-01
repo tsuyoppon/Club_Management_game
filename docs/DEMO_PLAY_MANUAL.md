@@ -352,6 +352,24 @@ python -m apps.cli.main view
 python -m apps.cli.main commit -y
 ```
 
+#### スタッフ採用/解雇（5月のみ: month_index=10）
+
+- 役職: director / coach / scout
+- countを減らすと解雇（即時に退職金計上）、増やすと採用リクエスト（次シーズン開始時に反映）
+- May以外で実行すると400エラー
+
+```bash
+# 例: コーチを3→2へ削減（解雇）
+python -m apps.cli.main --config-path ~/.club-game/config-alpha staff plan \
+  --role coach \
+  --count 2
+
+# 例: スカウトを1→2へ増員（採用リクエスト）
+python -m apps.cli.main --config-path ~/.club-game/config-beta staff plan \
+  --role scout \
+  --count 2
+```
+
 ### 5.4 複数クラブの入力（ローカルデモ時）
 
 ローカル環境で複数クラブを1人で操作する場合、以下の方法があります。
@@ -504,6 +522,7 @@ python -m apps.cli.main show sponsor_status
 | `input --next-home-promo <金額>` | 翌月ホーム向けプロモ（条件付き） |
 | `input --additional-reinforcement <金額>` | 追加強化費（12月のみ） |
 | `input --rho-new <0.0-1.0>` | 新規スポンサー配分（四半期開始月のみ） |
+| `staff plan --role <director|coach|scout> --count <人数>` | スタッフ採用/解雇（5月のみ、count増で採用・減で解雇） |
 | `view` | 入力内容確認 |
 | `commit` | 入力確定（`-y`で確認スキップ） |
 

@@ -14,6 +14,7 @@ from .commands.commit import commit_cmd
 from .commands.view import view_cmd
 from .commands.gm import gm
 from .commands.game import game
+from .commands.staff import staff
 
 
 @click.group()
@@ -58,6 +59,7 @@ cli.add_command(commit_cmd)
 cli.add_command(view_cmd)
 cli.add_command(gm)
 cli.add_command(game)
+cli.add_command(staff)
 
 
 @cli.command("help")
