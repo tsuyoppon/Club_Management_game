@@ -468,6 +468,7 @@ class ClubReinforcementPlan(Base):
     
     annual_budget = Column(Numeric(14, 2), nullable=False, default=0)
     additional_budget = Column(Numeric(14, 2), nullable=False, default=0)
+    next_season_budget = Column(Numeric(14, 2), nullable=False, default=0)
     
     # To track if additional budget has been applied (re-distributed)
     is_additional_applied = Column(Boolean, nullable=False, default=False)

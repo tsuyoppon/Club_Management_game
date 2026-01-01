@@ -460,8 +460,8 @@ def show_fan_indicator(ctx: click.Context, club_id: Optional[str], club_override
         params["to_month"] = tm
 
     with _with_client(config, timeout, verbose) as client:
-        data = client.get(f"/api/clubs/{resolved_club}/fan_indicator", params=params)
         standings = client.get(f"/api/seasons/{season_id}/standings")
+        data = client.get(f"/api/clubs/{resolved_club}/fan_indicator", params=params)
 
     club_map: Dict[str, str] = {}
     if isinstance(standings, list):

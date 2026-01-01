@@ -141,6 +141,9 @@ def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
             sponsor.determine_next_sponsors(db, club.id, season_id)
             
         reinforcement.process_reinforcement_cost(db, club.id, season_id, turn_id, turn.month_index)
+        if turn.month_index in [11, 12]:
+            # オフシーズン(6月・7月)の翌シーズン強化費を集計して次季プランに反映
+            reinforcement.update_next_season_reinforcement_plan(db, club.id, season_id)
         staff.process_staff_cost(db, club.id, turn_id, turn.month_index, season_id)
         academy.process_monthly_cost(db, club.id, season_id, turn_id)
         

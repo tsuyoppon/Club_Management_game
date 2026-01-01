@@ -24,7 +24,7 @@
 | 採用目標 | `hiring_target` | 5月（month_index=10）のみ |
 | 解雇 | `firing` | 5月（month_index=10）のみ |
 | アカデミー投資額（翌年度） | `academy_budget` | 5月（month_index=10）のみ |
-| 強化費（翌年度） | `reinforcement_budget` | 6月（month_index=11）まで |
+| 強化費（翌年度） | `reinforcement_budget` | 6月・7月（month_index=11,12）の合算 |
 
 ### 1.4 営業リソース配分（四半期開始月のみ）
 

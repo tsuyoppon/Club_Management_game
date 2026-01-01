@@ -41,6 +41,11 @@ def validate_decision_payload(
         # 債務超過チェック
         if _is_in_debt(db, club_id):
             errors.append("債務超過中のため追加強化費は入力できません")
+
+    # 2.5 翌シーズン強化費: 6月・7月（month_index=11,12）のみ入力可
+    if payload.reinforcement_budget is not None and payload.reinforcement_budget > 0:
+        if turn.month_index not in [11, 12]:
+            errors.append("翌シーズン強化費は6月と7月のみ入力可能です")
     
     # 3. 営業リソース配分: 四半期開始月のみ変更可能
     if payload.sales_allocation_new is not None:

@@ -85,6 +85,7 @@ class DecisionPayload(BaseModel):
     # 5.2 条件付き入力
     next_home_promo: Optional[Decimal] = Field(None, ge=0, description="翌月ホームゲーム向けプロモ費")
     additional_reinforcement: Optional[Decimal] = Field(None, ge=0, description="追加強化費（12月のみ）")
+    reinforcement_budget: Optional[Decimal] = Field(None, ge=0, description="翌シーズン強化費（6月・7月で合算）")
     
     # 5.4 営業リソース配分（四半期開始月のみ: 8/11/2/5月）
     sales_allocation_new: Optional[float] = Field(None, ge=0.0, le=1.0, description="新規営業配分率 ρ^new")

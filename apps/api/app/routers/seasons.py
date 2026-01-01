@@ -26,6 +26,7 @@ from app.schemas import FixtureGenerateRequest, SeasonCreate, SeasonRead, Standi
 from app.services.fixtures import generate_round_robin
 from app.services.standings import StandingsCalculator
 from app.services.season_finalize import SeasonFinalizer
+from app.services import reinforcement
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
@@ -73,6 +74,22 @@ def create_season(
             decision = TurnDecision(turn_id=turn.id, club_id=club.id, decision_state=DecisionState.draft)
             db.add(decision)
     db.commit()
+
+    # 前季オフシーズン入力を新シーズンの強化費初期値に反映
+    prev_season = None
+    try:
+        prev_label = str(int(payload.year_label) - 1)
+        prev_season = db.query(Season).filter(Season.game_id == game_id, Season.year_label == prev_label).first()
+    except Exception:
+        prev_season = None
+
+    if prev_season:
+        for club in clubs:
+            prev_plan = reinforcement.ensure_reinforcement_plan(db, club.id, prev_season.id)
+            plan = reinforcement.ensure_reinforcement_plan(db, club.id, season.id)
+            plan.annual_budget = prev_plan.next_season_budget
+        db.commit()
+
     db.refresh(season)
     return season
 

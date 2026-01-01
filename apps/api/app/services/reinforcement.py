@@ -1,6 +1,7 @@
 from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from decimal import Decimal
 from app.db import models
 
 def ensure_reinforcement_plan(db: Session, club_id: UUID, season_id: UUID):
@@ -14,11 +15,59 @@ def ensure_reinforcement_plan(db: Session, club_id: UUID, season_id: UUID):
             club_id=club_id,
             season_id=season_id,
             annual_budget=0,
-            additional_budget=0
+            additional_budget=0,
+            next_season_budget=0
         )
         db.add(plan)
         db.flush()
     return plan
+
+
+def calculate_next_season_budget(db: Session, club_id: UUID, season_id: UUID) -> Decimal:
+    """Sum offseason reinforcement inputs (June/July) for the given season/club."""
+    rows = db.execute(
+        select(models.TurnDecision.payload_json, models.Turn.month_index)
+        .join(models.Turn, models.TurnDecision.turn_id == models.Turn.id)
+        .where(
+            models.TurnDecision.club_id == club_id,
+            models.Turn.season_id == season_id,
+            models.Turn.month_index.in_([11, 12]),
+        )
+    ).all()
+
+    total = Decimal(0)
+    for payload, _month_index in rows:
+        if not payload:
+            continue
+        value = payload.get("reinforcement_budget")
+        if value is None:
+            continue
+        total += Decimal(str(value or 0))
+    return total
+
+
+def update_next_season_reinforcement_plan(db: Session, club_id: UUID, season_id: UUID) -> Decimal:
+    """Persist offseason reinforcement sum on current plan and next season plan if it exists."""
+    total = calculate_next_season_budget(db, club_id, season_id)
+
+    current_plan = ensure_reinforcement_plan(db, club_id, season_id)
+    current_plan.next_season_budget = total
+
+    season = db.execute(select(models.Season).where(models.Season.id == season_id)).scalar_one_or_none()
+    if season and season.year_label and season.year_label.isdigit():
+        next_label = str(int(season.year_label) + 1)
+        next_season = db.execute(
+            select(models.Season).where(
+                models.Season.game_id == season.game_id,
+                models.Season.year_label == next_label,
+            )
+        ).scalar_one_or_none()
+        if next_season:
+            next_plan = ensure_reinforcement_plan(db, club_id, next_season.id)
+            next_plan.annual_budget = total
+
+    db.flush()
+    return total
 
 def process_reinforcement_cost(db: Session, club_id: UUID, season_id: UUID, turn_id: UUID, month_index: int):
     """

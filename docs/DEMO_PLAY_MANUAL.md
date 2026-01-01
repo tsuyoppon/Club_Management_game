@@ -530,6 +530,7 @@ python -m apps.cli.main show sponsor_status
 | `input --hometown-expense <金額>` | ホームタウン活動費 |
 | `input --next-home-promo <金額>` | 翌月ホーム向けプロモ（条件付き） |
 | `input --additional-reinforcement <金額>` | 追加強化費（12月のみ） |
+| `input --reinforcement-budget <金額>` | 翌シーズン強化費（6月・7月に入力し合算） |
 | `input --rho-new <0.0-1.0>` | 新規スポンサー配分（四半期開始月のみ） |
 | `staff plan --role <director|coach|scout> --count <人数>` | スタッフ採用/解雇（5月のみ、count増で採用・減で解雇） |
 | `ack` | 解決済みターンをACK（クラブオーナーまたはGM。GMはclub_id指定で代行可） |

@@ -53,6 +53,7 @@ def _parse_float_ratio(value: Optional[float], label: str) -> Optional[float]:
 @click.option("--hometown-expense", type=str, help="Hometown activity expense (Decimal)")
 @click.option("--next-home-promo", type=str, help="Next-month home promo (Decimal, conditional)")
 @click.option("--additional-reinforcement", type=str, help="Additional reinforcement (Decimal, Dec only)")
+@click.option("--reinforcement-budget", type=str, help="Next-season reinforcement budget (Decimal, Jun/Jul only)")
 @click.option("--rho-new", type=float, help="New sponsor allocation ratio 0.0-1.0 (Q-start months only)")
 @click.option("--clear", is_flag=True, help="Clear local draft for this season/club")
 @click.option("--json-output", is_flag=True, help="Print raw JSON response")
@@ -66,6 +67,7 @@ def input_cmd(
     hometown_expense: Optional[str],
     next_home_promo: Optional[str],
     additional_reinforcement: Optional[str],
+    reinforcement_budget: Optional[str],
     rho_new: Optional[float],
     clear: bool,
     json_output: bool,
@@ -106,6 +108,10 @@ def input_cmd(
     ar = _parse_decimal(additional_reinforcement, "additional-reinforcement")
     if ar is not None:
         overrides["additional_reinforcement"] = float(ar)
+
+    rb = _parse_decimal(reinforcement_budget, "reinforcement-budget")
+    if rb is not None:
+        overrides["reinforcement_budget"] = float(rb)
 
     rn = _parse_float_ratio(rho_new, "rho-new")
     if rn is not None:
