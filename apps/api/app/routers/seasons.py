@@ -33,6 +33,46 @@ router = APIRouter(prefix="/seasons", tags=["seasons"])
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _latest_running_season(db: Session, game_id: str) -> Optional[Season]:
+    season = (
+        db.query(Season)
+        .filter(Season.game_id == game_id, Season.status == SeasonStatus.running)
+        .order_by(Season.created_at.desc())
+        .first()
+    )
+    if season:
+        return season
+
+    # Fallback: latest season regardless of status (e.g., all finished)
+    return (
+        db.query(Season)
+        .filter(Season.game_id == game_id)
+        .order_by(Season.created_at.desc())
+        .first()
+    )
+
+
+@router.get("/games/{game_id}/latest", response_model=SeasonRead)
+def get_latest_season(
+    game_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    # Require at least viewer role for the game
+    require_role(user, db, game_id, MembershipRole.club_viewer)
+
+    season = _latest_running_season(db, game_id)
+    if not season:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No seasons found for game")
+
+    return season
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers (used by API routes and auto-season transition)
 # ---------------------------------------------------------------------------
 

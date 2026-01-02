@@ -216,6 +216,19 @@ EOF
 python -m apps.cli.main help
 ```
 
+### 4.4 シーズンIDを最新シーズンへ更新（自動解決）
+
+シーズンロールオーバー後に設定ファイルの `season_id` を最新の running シーズンへ差し替えるには、GM/各クラブがそれぞれの設定ファイルで以下を実行してください。
+
+```bash
+python -m apps.cli.main --config-path ~/.club-game/config config set-season --latest
+# game_id が設定ファイルに無い場合は --game-id <GAME_ID> を指定
+```
+
+- ゲームIDから最新の running シーズン（なければ直近シーズン）を取得し、`season_id` を上書き保存します。
+- 各ユーザー（GM/クラブオーナー）が自分の設定ファイルに対して実行してください。
+- 実行後に `season_id set to latest: <UUID>` と表示されれば更新完了です。
+
 ---
 
 ## 5. デモプレイの流れ
