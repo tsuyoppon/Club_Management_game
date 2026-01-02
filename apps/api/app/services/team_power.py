@@ -12,7 +12,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Club, Season, ClubFinancialProfile
+from app.db.models import Club, Season, ClubFinancialProfile, ClubReinforcementPlan, ClubAcademy
 from app.config.constants import (
     TP_ALPHA,
     TP_BETA,
@@ -37,34 +37,28 @@ def calculate_team_power(
     - A_cum: アカデミー累積投資
     - α = 10, β = 1
     """
-    # 強化費（当年）取得
-    profile = db.query(ClubFinancialProfile).filter(
-        ClubFinancialProfile.club_id == club_id
+    # 強化費（当年）: シーズン固有の強化計画を参照
+    plan = db.query(ClubReinforcementPlan).filter(
+        ClubReinforcementPlan.club_id == club_id,
+        ClubReinforcementPlan.season_id == season_id,
     ).first()
-    
-    if not profile:
-        return Decimal("0")
-    
-    # 強化費（フィールドが無い環境でも0扱い）
-    reinforcement_budget = getattr(profile, "reinforcement_budget", None)
-    reinforcement_budget = Decimal(str(reinforcement_budget or "0"))
-    
-    # アカデミー累積投資（academy.academy_cumulativeを取得）
-    # 現時点ではprofileにacademy_budget_annualがある想定
-    # 累積はシーズンをまたいで計算する必要があるが、
-    # 簡易版としてacademy_cumulativeカラムがあれば使用
-    academy_cumulative = getattr(profile, "academy_cumulative", None)
-    if academy_cumulative is None:
-        # 累積がなければ現在のacademy_budgetを使用（簡易版）
-        academy_cumulative = getattr(profile, "academy_budget_annual", None)
-    academy_cumulative = Decimal(str(academy_cumulative or "0"))
-    
-    # チーム力計算
+    reinforcement_budget = Decimal("0")
+    if plan:
+        reinforcement_budget = Decimal(plan.annual_budget or 0) + Decimal(plan.additional_budget or 0)
+
+    # アカデミー累積投資: シーズン固有の累積値を参照
+    academy = db.query(ClubAcademy).filter(
+        ClubAcademy.club_id == club_id,
+        ClubAcademy.season_id == season_id,
+    ).first()
+    academy_cumulative = Decimal(academy.cumulative_investment or 0) if academy else Decimal("0")
+
+    # チーム力計算（参照係数は円ベースで保持しているため金額そのままを参照）
     b_ratio = float(reinforcement_budget) / float(TEAM_POWER_B_REF) if TEAM_POWER_B_REF else 0
     a_ratio = float(academy_cumulative) / float(TEAM_POWER_A_REF) if TEAM_POWER_A_REF else 0
-    
+
     tp = TP_ALPHA * math.log(1 + b_ratio) + TP_BETA * math.log(1 + a_ratio)
-    
+
     return Decimal(str(round(tp, 2)))
 
 
