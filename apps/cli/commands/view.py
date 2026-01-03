@@ -25,6 +25,18 @@ def _with_client(config: CliConfig, timeout: float, verbose: bool) -> ApiClient:
     return ApiClient(config.base_url, headers=headers, timeout=timeout, verbose=verbose)
 
 
+def _format_season_turn_label(turn: Optional[dict]) -> str:
+    if not isinstance(turn, dict):
+        return "-"
+    season_number = turn.get("season_number")
+    month_name = turn.get("month_name") or "-"
+    month_index = turn.get("month_index")
+    turn_label = month_index if month_index is not None else "?"
+    if season_number is None:
+        return f"{month_name}({turn_label})"
+    return f"season{season_number}-{month_name}({turn_label})"
+
+
 @click.command("view")
 @click.option("--season-id", help="Season UUID (defaults to config)")
 @click.option("--club-id", help="Club UUID (defaults to config)")
@@ -60,6 +72,7 @@ def view_cmd(
 
     payload = data.get("payload") if isinstance(data, dict) else None
     summary = {
+        "season_turn": _format_season_turn_label(data),
         "month_index": data.get("month_index"),
         "month_name": data.get("month_name"),
         "decision_state": data.get("decision_state"),
@@ -67,7 +80,7 @@ def view_cmd(
         "payload_source": "draft+api" if draft else "api",
     }
     click.echo("Turn:")
-    print_table([summary], ["month_index", "month_name", "decision_state", "committed_at", "payload_source"])
+    print_table([summary], ["season_turn", "month_index", "month_name", "decision_state", "committed_at", "payload_source"])
     if payload:
         click.echo("Payload (server):")
         print_json(payload)

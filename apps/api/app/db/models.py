@@ -135,6 +135,7 @@ class Season(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     game_id = Column(UUID(as_uuid=True), ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    season_number = Column(Integer, nullable=False, default=1)
     year_label = Column(String, nullable=False)
     start_month = Column(Integer, nullable=False, default=8)
     end_month = Column(Integer, nullable=False, default=7)
@@ -147,6 +148,10 @@ class Season(Base):
     turns = relationship("Turn", back_populates="season", cascade="all, delete-orphan")
     fixtures = relationship("Fixture", back_populates="season", cascade="all, delete-orphan")
     final_standings = relationship("SeasonFinalStanding", back_populates="season", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("game_id", "season_number", name="uniq_game_season_number"),
+    )
 
 
 class SeasonFinalStanding(Base):
@@ -195,6 +200,11 @@ class Turn(Base):
     __table_args__ = (
         UniqueConstraint("season_id", "month_index", name="uniq_turn_month"),
     )
+
+    @property
+    def season_number(self):
+        # Expose season number for responses without duplicating column
+        return self.season.season_number if self.season else None
 
 
 class TurnDecision(Base):

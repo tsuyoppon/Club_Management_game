@@ -42,7 +42,7 @@ def _latest_running_season(db: Session, game_id: str) -> Optional[Season]:
     season = (
         db.query(Season)
         .filter(Season.game_id == game_id, Season.status == SeasonStatus.running)
-        .order_by(Season.created_at.desc())
+        .order_by(Season.season_number.desc(), Season.created_at.desc())
         .first()
     )
     if season:
@@ -52,7 +52,7 @@ def _latest_running_season(db: Session, game_id: str) -> Optional[Season]:
     return (
         db.query(Season)
         .filter(Season.game_id == game_id)
-        .order_by(Season.created_at.desc())
+        .order_by(Season.season_number.desc(), Season.created_at.desc())
         .first()
     )
 
@@ -93,7 +93,15 @@ def create_season_core(db: Session, game: Game, year_label: str) -> Season:
     if existing:
         return existing
 
-    season = Season(game_id=game.id, year_label=year_label, status=SeasonStatus.running)
+    max_number = (
+        db.query(Season.season_number)
+        .filter(Season.game_id == game.id)
+        .order_by(Season.season_number.desc())
+        .first()
+    )
+    next_number = (max_number[0] if max_number else 0) + 1
+
+    season = Season(game_id=game.id, year_label=year_label, season_number=next_number, status=SeasonStatus.running)
     db.add(season)
     db.commit()
     db.refresh(season)

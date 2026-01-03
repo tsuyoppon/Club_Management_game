@@ -32,6 +32,7 @@ def _decision_to_response(decision: TurnDecision, turn: Turn) -> DecisionRead:
     return DecisionRead(
         turn_id=decision.turn_id,
         season_id=turn.season_id,
+        season_number=turn.season.season_number if turn.season else None,
         club_id=decision.club_id,
         month_index=turn.month_index,
         month_name=turn.month_name,

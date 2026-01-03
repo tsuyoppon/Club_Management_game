@@ -51,6 +51,7 @@ class SeasonCreate(BaseModel):
 class SeasonRead(BaseModel):
     id: UUID
     game_id: UUID
+    season_number: int
     year_label: str
     status: SeasonStatus
 
@@ -105,6 +106,7 @@ class DecisionRead(BaseModel):
     """ターン入力の参照用レスポンス"""
     turn_id: UUID
     season_id: UUID
+    season_number: Optional[int] = None
     club_id: UUID
     month_index: int
     month_name: str
@@ -122,6 +124,7 @@ class AckRequest(BaseModel):
 class TurnStateResponse(BaseModel):
     id: UUID
     season_id: UUID
+    season_number: Optional[int]
     month_index: int
     month_name: str
     month_number: int

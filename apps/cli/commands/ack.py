@@ -24,6 +24,18 @@ def _with_client(config: CliConfig, timeout: float, verbose: bool) -> ApiClient:
     return ApiClient(config.base_url, headers=headers, timeout=timeout, verbose=verbose)
 
 
+def _format_season_turn_label(turn: Optional[dict]) -> str:
+    if not isinstance(turn, dict):
+        return "-"
+    season_number = turn.get("season_number")
+    month_name = turn.get("month_name") or "-"
+    month_index = turn.get("month_index")
+    turn_label = month_index if month_index is not None else "?"
+    if season_number is None:
+        return f"{month_name}({turn_label})"
+    return f"season{season_number}-{month_name}({turn_label})"
+
+
 @click.command("ack")
 @click.option("--turn-id", help="Turn UUID (optional; defaults to current season turn)")
 @click.option("--season-id", help="Season UUID (defaults to config when turn-id omitted)")
@@ -60,9 +72,10 @@ def ack_cmd(
 
         month_name = turn_data.get("month_name") if isinstance(turn_data, dict) else None
         turn_state = turn_data.get("turn_state") if isinstance(turn_data, dict) else None
+        season_turn_label = _format_season_turn_label(turn_data)
 
         if not yes:
-            click.echo(f"Turn: {month_name or 'unknown'} (state={turn_state or 'unknown'})")
+            click.echo(f"Turn: {season_turn_label} (state={turn_state or 'unknown'})")
             if not click.confirm("ACK this turn for the club?"):
                 click.echo("Aborted.")
                 return

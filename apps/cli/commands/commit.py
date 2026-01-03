@@ -25,6 +25,18 @@ def _with_client(config: CliConfig, timeout: float, verbose: bool) -> ApiClient:
     return ApiClient(config.base_url, headers=headers, timeout=timeout, verbose=verbose)
 
 
+def _format_season_turn_label(turn: Optional[dict]) -> str:
+    if not isinstance(turn, dict):
+        return "-"
+    season_number = turn.get("season_number")
+    month_name = turn.get("month_name") or "-"
+    month_index = turn.get("month_index")
+    turn_label = month_index if month_index is not None else "?"
+    if season_number is None:
+        return f"{month_name}({turn_label})"
+    return f"season{season_number}-{month_name}({turn_label})"
+
+
 @click.command("commit")
 @click.option("--season-id", help="Season UUID (defaults to config)")
 @click.option("--club-id", help="Club UUID (defaults to config)")
@@ -62,7 +74,7 @@ def commit_cmd(
         if not payload:
             raise CliError("No input found to commit. Provide input first.")
 
-        click.echo(f"Turn: {turn_data.get('month_name')} (month_index={turn_data.get('month_index')})")
+        click.echo(f"Turn: {_format_season_turn_label(turn_data)}")
         click.echo(f"State: {decision_data.get('decision_state') if decision_data else 'unknown'}")
         source = "draft" if draft else "api"
         click.echo(f"Payload source: {source}")

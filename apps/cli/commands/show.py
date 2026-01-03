@@ -26,6 +26,18 @@ def _with_client(config: CliConfig, timeout: float, verbose: bool) -> ApiClient:
     return ApiClient(config.base_url, headers=headers, timeout=timeout, verbose=verbose)
 
 
+def _format_season_turn_label(turn: Optional[dict]) -> str:
+    if not isinstance(turn, dict):
+        return "-"
+    season_number = turn.get("season_number")
+    month_name = turn.get("month_name") or "-"
+    month_index = turn.get("month_index")
+    turn_label = month_index if month_index is not None else "?"
+    if season_number is None:
+        return f"{month_name}({turn_label})"
+    return f"season{season_number}-{month_name}({turn_label})"
+
+
 @click.group()
 @click.pass_context
 def show(ctx: click.Context) -> None:
@@ -106,9 +118,7 @@ def show_table(ctx: click.Context, season_id: Optional[str], json_output: bool) 
         return
 
     if isinstance(turn, dict):
-        click.echo(
-            f"As of season={season_id}, month_index={turn.get('month_index')} ({turn.get('month_name')})"
-        )
+        click.echo(f"As of {_format_season_turn_label(turn)}")
 
     rows = [
         {
