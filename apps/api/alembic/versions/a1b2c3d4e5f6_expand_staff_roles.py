@@ -51,7 +51,7 @@ def upgrade():
 
     # 3) Map existing values to new roles while column is text
     for old, new in ROLE_MAPPING_OLD_TO_NEW.items():
-        op.execute(sa.text("UPDATE club_staffs SET role = :new WHERE role = :old"), {"new": new, "old": old})
+        conn.execute(sa.text("UPDATE club_staffs SET role = :new WHERE role = :old"), {"new": new, "old": old})
 
     # 4) Apply new enum type
     op.execute("ALTER TABLE club_staffs ALTER COLUMN role TYPE staffrole USING role::staffrole")
@@ -110,4 +110,3 @@ def downgrade():
 
     # 5) Apply old enum type
     op.execute("ALTER TABLE club_staffs ALTER COLUMN role TYPE staffrole USING role::staffrole")
-*** End File
