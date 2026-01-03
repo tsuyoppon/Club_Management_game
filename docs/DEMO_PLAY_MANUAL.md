@@ -66,8 +66,25 @@ API_PREFIX=/api
 
 ### 2.3 Docker Composeで起動
 
+#### 初回起動またはクリーンスタート
+
 ```bash
-docker compose up --build
+# データベースを含めて完全にリセットして起動
+docker compose down -v
+docker compose up -d
+
+# データベース準備完了まで待機（5秒程度）
+sleep 5
+
+# マイグレーション実行
+docker compose exec api alembic upgrade head
+```
+
+#### 既存環境の再起動
+
+```bash
+# データを保持したまま起動
+docker compose up -d
 ```
 
 起動完了後、以下にアクセスできます。
@@ -78,9 +95,13 @@ docker compose up --build
 | APIドキュメント | http://localhost:8000/docs |
 | Web（オプション） | http://localhost:3000 |
 
-### 2.4 データベースマイグレーション
+### 2.4 マイグレーション状態の確認
 
 ```bash
+# 現在のマイグレーションバージョンを確認
+docker compose exec api alembic current
+
+# 最新版でない場合はアップグレード
 docker compose exec api alembic upgrade head
 ```
 
@@ -125,19 +146,32 @@ curl -X POST http://localhost:8000/api/games \
   -d '{"name":"研修リーグ2025"}'
 ```
 
+**レスポンス例**:
+```json
+{
+  "id": "44a889ca-eb9f-4d21-8bee-1ea8064694ef",
+  "name": "研修リーグ2025",
+  "status": "active",
+  "created_at": "2026-01-03T12:49:20.935269"
+}
+```
+
 レスポンスから `id`（game_id）をメモしてください。
 
 ### 3.2 クラブ追加（最大5クラブ）
 
 ```bash
+# 環境変数にゲームIDを設定
+export GAME_ID="<your_game_id>"
+
 # クラブ1
-curl -X POST http://localhost:8000/api/games/<game_id>/clubs \
+curl -X POST http://localhost:8000/api/games/$GAME_ID/clubs \
   -H 'Content-Type: application/json' \
   -H 'X-User-Email: gm@example.com' \
   -d '{"name":"大阪イレブン","short_name":"OSA"}'
 
 # クラブ2
-curl -X POST http://localhost:8000/api/games/<game_id>/clubs \
+curl -X POST http://localhost:8000/api/games/$GAME_ID/clubs \
   -H 'Content-Type: application/json' \
   -H 'X-User-Email: gm@example.com' \
   -d '{"name":"東京ユナイテッド","short_name":"TYO"}'
@@ -145,39 +179,92 @@ curl -X POST http://localhost:8000/api/games/<game_id>/clubs \
 # 必要に応じて3〜5クラブまで追加
 ```
 
+**レスポンス例**:
+```json
+{
+  "id": "586c6f92-ea66-4ebf-899a-ef3772333011",
+  "name": "大阪イレブン",
+  "short_name": "OSA",
+  "game_id": "44a889ca-eb9f-4d21-8bee-1ea8064694ef"
+}
+```
+
 各レスポンスから `id`（club_id）をメモしてください。
 
 ### 3.3 メンバーシップ追加（クラブオーナー設定）
 
-```bash
-curl -X POST http://localhost:8000/api/games/<game_id>/memberships \
-  -H 'Content-Type: application/json' \
-  -H 'X-User-Email: gm@example.com' \
-  -d '{"email":"owner1@example.com","role":"club_owner","club_id":"<club_id_1>"}'
+**重要**: `role` フィールドには `club_owner` を指定してください（`owner` ではありません）。
 
-curl -X POST http://localhost:8000/api/games/<game_id>/memberships \
+```bash
+# 環境変数にIDを設定
+export GAME_ID="<your_game_id>"
+export CLUB_ID_1="<club_1_id>"
+export CLUB_ID_2="<club_2_id>"
+
+# クラブ1のオーナー設定
+curl -X POST http://localhost:8000/api/games/$GAME_ID/memberships \
   -H 'Content-Type: application/json' \
   -H 'X-User-Email: gm@example.com' \
-  -d '{"email":"owner2@example.com","role":"club_owner","club_id":"<club_id_2>"}'
+  -d '{"email":"owner1@example.com","role":"club_owner","club_id":"'"$CLUB_ID_1"'"}'
+
+# クラブ2のオーナー設定
+curl -X POST http://localhost:8000/api/games/$GAME_ID/memberships \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Email: gm@example.com' \
+  -d '{"email":"owner2@example.com","role":"club_owner","club_id":"'"$CLUB_ID_2"'"}'
 ```
+
+**レスポンス例**:
+```json
+{
+  "id": "e4f049e3-ff6e-4c37-bf1a-0436b598acd3"
+}
+```
+
+### 旧 3.3 メンバーシップ追加（クラブオーナー設定）
+
+
 
 ### 3.4 シーズン作成
 
 ```bash
-curl -X POST http://localhost:8000/api/seasons/games/<game_id> \
+export GAME_ID="<your_game_id>"
+
+curl -X POST http://localhost:8000/api/seasons/games/$GAME_ID \
   -H 'Content-Type: application/json' \
   -H 'X-User-Email: gm@example.com' \
   -d '{"year_label":"2025"}'
+```
+
+**レスポンス例**:
+```json
+{
+  "id": "dc091eb3-2604-46eb-a3c5-f3c4524149a0",
+  "game_id": "44a889ca-eb9f-4d21-8bee-1ea8064694ef",
+  "season_number": 1,
+  "year_label": "2025",
+  "status": "running"
+}
 ```
 
 レスポンスから `id`（season_id）をメモしてください。
 
 ### 3.5 試合日程生成
 
+**重要**: このエンドポイントには `Content-Type: application/json` ヘッダーが必要です。
+
 ```bash
-curl -X POST http://localhost:8000/api/seasons/<season_id>/fixtures/generate \
+export SEASON_ID="<your_season_id>"
+
+curl -X POST http://localhost:8000/api/seasons/$SEASON_ID/fixtures/generate \
+  -H 'Content-Type: application/json' \
   -H 'X-User-Email: gm@example.com' \
   -d '{}'
+```
+
+**レスポンス例**:
+```json
+{"fixtures": 10}
 ```
 
 これで8月〜5月の10試合分の対戦表が生成されます。
@@ -194,21 +281,60 @@ pip install -r apps/cli/requirements.txt
 
 ### 4.2 設定ファイルの作成
 
-`~/.club-game/config` にJSON形式で作成します。
+複数のプレイヤー（GM、各クラブオーナー）用に、それぞれ設定ファイルを作成します。
+
+#### GM用設定（全クラブを操作可能）
 
 ```bash
 mkdir -p ~/.club-game
 cat > ~/.club-game/config << 'EOF'
 {
   "base_url": "http://localhost:8000",
-  "user_email": "owner1@example.com",
+  "user_email": "gm@example.com",
   "season_id": "<season_id>",
-  "club_id": "<club_id>"
+  "club_id": null
 }
 EOF
 ```
 
-**注意**: `<season_id>` と `<club_id>` は実際の値に置き換えてください。
+#### クラブオーナー用設定（各クラブごと）
+
+```bash
+# クラブ1オーナー用
+cat > ~/.club-game/config.club1 << 'EOF'
+{
+  "base_url": "http://localhost:8000",
+  "user_email": "owner1@example.com",
+  "season_id": "<season_id>",
+  "club_id": "<club_1_id>"
+}
+EOF
+
+# クラブ2オーナー用
+cat > ~/.club-game/config.club2 << 'EOF'
+{
+  "base_url": "http://localhost:8000",
+  "user_email": "owner2@example.com",
+  "season_id": "<season_id>",
+  "club_id": "<club_2_id>"
+}
+EOF
+```
+
+**注意**: `<season_id>`、`<club_1_id>`、`<club_2_id>` は実際の値に置き換えてください。
+
+#### 設定ファイルの使い方
+
+```bash
+# デフォルト設定（~/.club-game/config）を使用
+python -m apps.cli.main <command>
+
+# 特定の設定ファイルを指定
+python -m apps.cli.main --config ~/.club-game/config.club1 <command>
+
+# GMとして実行（club_idを明示的に指定）
+python -m apps.cli.main --club-id <club_id> <command>
+```
 
 ### 4.3 CLIの動作確認
 
@@ -592,11 +718,263 @@ docker compose exec api alembic upgrade head
 
 ---
 
-## Appendix A: 1人で2クラブをテストプレイする手順
+## Appendix A: 完全セットアップ例（2クラブでのテストプレイ）
 
-このセクションでは、1人が1つのターミナルから2つのクラブ（FCアルファ、FCベータ）を操作してテストプレイを行う詳細な手順を説明します。
+このセクションでは、実際に動作確認済みの完全なセットアップ例を示します。
 
-### A.1 前提条件
+### A.0 前提条件の確認
+
+```bash
+# Dockerサービスが起動していることを確認
+docker compose ps
+
+# 出力例:
+# NAME                         STATUS
+# club_management_game-api-1   Up
+# club_management_game-db-1    Up
+
+# ヘルスチェック
+curl http://localhost:8000/api/health
+
+# 期待される出力: {"status":"ok","app":"club-management-api"}
+```
+
+### A.1 データベースの初期化
+
+新規ゲームを開始する場合は、データベースを完全にリセットします。
+
+```bash
+# サービスを停止し、データベースボリュームを削除
+docker compose down -v
+
+# 再起動
+docker compose up -d
+
+# データベース準備完了まで待機
+sleep 5
+
+# マイグレーション実行
+docker compose exec api alembic upgrade head
+
+# マイグレーション状態の確認
+docker compose exec api alembic current
+# 最新のリビジョンID（例: a1b2c3d4e5f6）が表示されればOK
+```
+
+### A.2 ゲームとクラブの作成
+
+#### A.2.1 環境変数の設定
+
+実際のID値を環境変数に保存しておくと便利です。
+
+```bash
+# これらの値は後のステップで取得します
+export GAME_ID=""
+export SEASON_ID=""
+export CLUB_TOK=""  # FC東京
+export CLUB_NAG=""  # FC名古屋
+```
+
+#### A.2.2 ゲーム作成（GMとして）
+
+```bash
+curl -X POST http://localhost:8000/api/games \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Email: gm@example.com' \
+  -d '{"name":"テストリーグ"}' | python3 -m json.tool
+```
+
+**レスポンス例**:
+```json
+{
+  "id": "44a889ca-eb9f-4d21-8bee-1ea8064694ef",
+  "name": "テストリーグ",
+  "status": "active",
+  "created_at": "2026-01-03T12:49:20.935269"
+}
+```
+
+`id` フィールドの値を `GAME_ID` に設定:
+```bash
+export GAME_ID="44a889ca-eb9f-4d21-8bee-1ea8064694ef"
+```
+
+#### A.2.3 クラブの作成
+
+```bash
+# FC東京を作成
+curl -X POST http://localhost:8000/api/games/$GAME_ID/clubs \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Email: gm@example.com' \
+  -d '{"name":"FC東京","short_name":"TOK"}' | python3 -m json.tool
+
+# FC名古屋を作成
+curl -X POST http://localhost:8000/api/games/$GAME_ID/clubs \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Email: gm@example.com' \
+  -d '{"name":"FC名古屋","short_name":"NAG"}' | python3 -m json.tool
+```
+
+**レスポンス例（FC東京）**:
+```json
+{
+  "id": "586c6f92-ea66-4ebf-899a-ef3772333011",
+  "name": "FC東京",
+  "short_name": "TOK",
+  "game_id": "44a889ca-eb9f-4d21-8bee-1ea8064694ef"
+}
+```
+
+各クラブの `id` を環境変数に設定:
+```bash
+export CLUB_TOK="586c6f92-ea66-4ebf-899a-ef3772333011"
+export CLUB_NAG="b7d7d964-e72d-450d-bff3-19522e5c7b3f"
+```
+
+#### A.2.4 クラブオーナーの設定
+
+**重要**: `role` には `club_owner` を指定してください（`owner` ではありません）。
+
+```bash
+# FC東京のオーナーを設定
+curl -X POST http://localhost:8000/api/games/$GAME_ID/memberships \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Email: gm@example.com' \
+  -d '{"email":"owner_tokyo@example.com","role":"club_owner","club_id":"'"$CLUB_TOK"'"}'
+
+# FC名古屋のオーナーを設定
+curl -X POST http://localhost:8000/api/games/$GAME_ID/memberships \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Email: gm@example.com' \
+  -d '{"email":"owner_nagoya@example.com","role":"club_owner","club_id":"'"$CLUB_NAG"'"}'
+```
+
+**レスポンス例**:
+```json
+{"id": "e4f049e3-ff6e-4c37-bf1a-0436b598acd3"}
+```
+
+#### A.2.5 シーズンの作成
+
+```bash
+curl -X POST http://localhost:8000/api/seasons/games/$GAME_ID \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Email: gm@example.com' \
+  -d '{"year_label":"2025"}' | python3 -m json.tool
+```
+
+**レスポンス例**:
+```json
+{
+  "id": "dc091eb3-2604-46eb-a3c5-f3c4524149a0",
+  "game_id": "44a889ca-eb9f-4d21-8bee-1ea8064694ef",
+  "season_number": 1,
+  "year_label": "2025",
+  "status": "running"
+}
+```
+
+`id` を環境変数に設定:
+```bash
+export SEASON_ID="dc091eb3-2604-46eb-a3c5-f3c4524149a0"
+```
+
+#### A.2.6 試合日程の生成
+
+**重要**: このエンドポイントには `Content-Type: application/json` ヘッダーが必須です。
+
+```bash
+curl -X POST http://localhost:8000/api/seasons/$SEASON_ID/fixtures/generate \
+  -H 'Content-Type: application/json' \
+  -H 'X-User-Email: gm@example.com' \
+  -d '{}'
+```
+
+**レスポンス例**:
+```json
+{"fixtures": 10}
+```
+
+これで8月〜5月の10試合分の対戦表が生成されました。
+
+### A.3 CLI設定ファイルの作成
+
+3つの設定ファイルを作成します。環境変数を使用して自動的にIDを埋め込みます。
+
+#### A.3.1 CLI依存パッケージのインストール
+
+```bash
+cd /path/to/Club_Management_game/apps/cli
+pip install -r requirements.txt
+```
+
+#### A.3.2 GM用設定
+
+```bash
+mkdir -p ~/.club-game
+cat > ~/.club-game/config << EOF
+{
+  "base_url": "http://localhost:8000",
+  "user_email": "gm@example.com",
+  "season_id": "$SEASON_ID",
+  "club_id": null
+}
+EOF
+```
+
+#### A.3.3 FC東京オーナー用設定
+
+```bash
+cat > ~/.club-game/config.tokyo << EOF
+{
+  "base_url": "http://localhost:8000",
+  "user_email": "owner_tokyo@example.com",
+  "season_id": "$SEASON_ID",
+  "club_id": "$CLUB_TOK"
+}
+EOF
+```
+
+#### A.3.4 FC名古屋オーナー用設定
+
+```bash
+cat > ~/.club-game/config.nagoya << EOF
+{
+  "base_url": "http://localhost:8000",
+  "user_email": "owner_nagoya@example.com",
+  "season_id": "$SEASON_ID",
+  "club_id": "$CLUB_NAG"
+}
+EOF
+```
+
+### A.4 CLI動作確認
+
+```bash
+# FC東京オーナーとして現在のターン状況を確認
+python -m apps.cli.main --config ~/.club-game/config.tokyo show current_input
+```
+
+**期待される出力**:
+```
+Turn:
+season_number | month_index | month_name | decision_state | committed_at
+--------------+-------------+------------+----------------+-------------
+1             | 1           | Aug        | draft          | -           
+Available inputs this turn:
+- sales_expense
+- promo_expense
+- hometown_expense
+- sales_allocation_new
+```
+
+これでゲームのセットアップが完了しました！
+
+---
+
+## Appendix B: 旧セットアップ例（参考）
+
+### B.1 前提条件
 
 以下の3つの準備が完了している必要があります。
 
