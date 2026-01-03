@@ -396,9 +396,25 @@ def show_current_input(ctx: click.Context, season_id: Optional[str], club_id: Op
         return
 
     payload = data.get("payload") if isinstance(data, dict) else None
-    summary = {"month_index": data.get("month_index"), "month_name": data.get("month_name"), "decision_state": data.get("decision_state"), "committed_at": data.get("committed_at")}
+    summary = {
+        "season_number": data.get("season_number"),
+        "month_index": data.get("month_index"),
+        "month_name": data.get("month_name"),
+        "decision_state": data.get("decision_state"),
+        "committed_at": data.get("committed_at"),
+    }
     click.echo("Turn:")
-    print_table([summary], ["month_index", "month_name", "decision_state", "committed_at"])
+    print_table([summary], ["season_number", "month_index", "month_name", "decision_state", "committed_at"])
+    available = data.get("available_inputs") if isinstance(data, dict) else None
+    if available:
+        click.echo("Available inputs this turn:")
+        for val in available:
+            click.echo(f"- {val}")
+    actions = data.get("available_actions") if isinstance(data, dict) else None
+    if actions:
+        click.echo("Available actions this turn:")
+        for act in actions:
+            click.echo(f"- {act}")
     if payload:
         click.echo("Payload:")
         print_json(payload)

@@ -112,6 +112,8 @@ class DecisionRead(BaseModel):
     month_name: str
     decision_state: DecisionState
     payload: Optional[dict] = None
+    available_inputs: List[str] = []
+    available_actions: List[str] = []
     committed_at: Optional[datetime] = None
     committed_by_user_id: Optional[UUID] = None
 

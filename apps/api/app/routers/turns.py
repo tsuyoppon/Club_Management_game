@@ -17,6 +17,7 @@ from app.db.models import (
     TurnState,
 )
 from app.schemas import AckRequest, DecisionCommitRequest, DecisionPayload, DecisionRead, TurnStateResponse
+from app.services.decision_validation import get_available_inputs, get_available_actions
 
 router = APIRouter(prefix="/turns", tags=["turns"])
 
@@ -28,7 +29,7 @@ def _get_turn(db: Session, turn_id: str) -> Turn:
     return turn
 
 
-def _decision_to_response(decision: TurnDecision, turn: Turn) -> DecisionRead:
+def _decision_to_response(decision: TurnDecision, turn: Turn, available_inputs: Optional[list] = None, available_actions: Optional[list] = None) -> DecisionRead:
     return DecisionRead(
         turn_id=decision.turn_id,
         season_id=turn.season_id,
@@ -38,6 +39,8 @@ def _decision_to_response(decision: TurnDecision, turn: Turn) -> DecisionRead:
         month_name=turn.month_name,
         decision_state=decision.decision_state,
         payload=decision.payload_json,
+        available_inputs=available_inputs or [],
+        available_actions=available_actions or [],
         committed_at=decision.committed_at,
         committed_by_user_id=decision.committed_by_user_id,
     )
@@ -87,7 +90,9 @@ def get_current_decision(
     if not decision:
         return None
 
-    return _decision_to_response(decision, turn)
+    available_inputs = get_available_inputs(db, turn, club_id)
+    available_actions = get_available_actions(db, turn, club_id)
+    return _decision_to_response(decision, turn, available_inputs, available_actions)
 
 
 @router.post("/{turn_id}/open")
@@ -156,7 +161,9 @@ def get_decision(
     decision = db.query(TurnDecision).filter(TurnDecision.turn_id == turn_id, TurnDecision.club_id == club_id).first()
     if not decision:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Decision not found")
-    return _decision_to_response(decision, turn)
+    available_inputs = get_available_inputs(db, turn, club_id)
+    available_actions = get_available_actions(db, turn, club_id)
+    return _decision_to_response(decision, turn, available_inputs, available_actions)
 
 
 @router.post("/{turn_id}/lock")
