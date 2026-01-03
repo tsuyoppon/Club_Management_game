@@ -118,16 +118,14 @@ def process_reinforcement_cost(db: Session, club_id: UUID, season_id: UUID, turn
     base_monthly = plan.annual_budget / 12
     additional_monthly = 0
     
-    # Assuming additional budget starts from Dec (Month 5)
-    ADDITIONAL_START_MONTH = 5 # Dec
+    # 追加強化費は1月〜7月（month_index 6〜12）の7ヶ月に分割計上
+    # 12月（month_index 5）に入力されるが、費用は翌月から
+    ADDITIONAL_START_MONTH = 6  # 1月 (month_index 6)
+    ADDITIONAL_END_MONTH = 12   # 7月 (month_index 12)
+    ADDITIONAL_MONTHS = 7       # 1月〜7月の7ヶ月
     
-    if plan.additional_budget > 0 and month_index >= ADDITIONAL_START_MONTH:
-        # Remaining months including start month: 12 - 5 + 1 = 8 (Dec, Jan, Feb, Mar, Apr, May, Jun, Jul) -> Wait.
-        # Month indices: 1(Aug)..5(Dec)..12(Jul).
-        # Total months = 12.
-        # Remaining = 12 - 5 + 1 = 8.
-        remaining_months = 12 - ADDITIONAL_START_MONTH + 1
-        additional_monthly = plan.additional_budget / remaining_months
+    if plan.additional_budget > 0 and ADDITIONAL_START_MONTH <= month_index <= ADDITIONAL_END_MONTH:
+        additional_monthly = plan.additional_budget / ADDITIONAL_MONTHS
         
     total_cost = base_monthly + additional_monthly
     

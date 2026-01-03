@@ -60,30 +60,32 @@ def test_pr3_1_compliance_reinforcement(client, db, auth_headers):
     assert t5_curr["month_index"] == 5
     
     # Add 8M additional
-    # Remaining months: Dec..Jul = 8 months.
-    # Additional Monthly = 8M / 8 = 1M.
-    # Total Monthly = 1M (Base) + 1M (Add) = 2M.
+    # Additional budget is charged from Jan to Jul (7 months)
+    # Dec Monthly = Base only = 1M
+    # Jan-Jul Monthly = 1M (Base) + 8M/7 (Add) ≈ 2.14M
     client.put(f"/api/finance/clubs/{club_id}/reinforcement", json={"additional_budget": 8000000}, headers=auth_headers)
     
     # Resolve Dec
     t5 = advance_turn()
     
-    # Check Dec Cost
+    # Check Dec Cost (only base, additional starts from Jan)
     ledgers = db.query(models.ClubFinancialLedger).filter(
         models.ClubFinancialLedger.turn_id == t5["id"],
         models.ClubFinancialLedger.kind == "reinforcement_cost"
     ).all()
     assert len(ledgers) == 1
-    assert float(ledgers[0].amount) == -2000000.0
+    assert float(ledgers[0].amount) == -1000000.0  # Base only (no additional in Dec)
     
-    # 4. Jan (Month 6) - Should also be 2M
+    # 4. Jan (Month 6) - Should be Base + Additional/7 = 1M + 8M/7 ≈ 2.14M
     t6 = advance_turn()
     ledgers = db.query(models.ClubFinancialLedger).filter(
         models.ClubFinancialLedger.turn_id == t6["id"],
         models.ClubFinancialLedger.kind == "reinforcement_cost"
     ).all()
     assert len(ledgers) == 1
-    assert float(ledgers[0].amount) == -2000000.0
+    # 1000000 + 8000000/7 = 1000000 + 1142857.14... ≈ 2142857.14
+    expected_jan = -1000000.0 - 8000000.0 / 7
+    assert abs(float(ledgers[0].amount) - expected_jan) < 1  # Allow small float diff
 
 def test_pr3_1_compliance_staff(client, db, auth_headers):
     # 1. Setup
