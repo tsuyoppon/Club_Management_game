@@ -24,9 +24,7 @@ def test_pr3_structural_finance(client, db, auth_headers):
     client.put(f"/api/finance/clubs/{club_id}/reinforcement", json={"annual_budget": 12000000}, headers=auth_headers)
     
     # C. Staff (Default 1 each, let's keep default)
-    # Default: 3 roles * 1 person * 1M = 3M/month?
-    # Need to check default salary in service. I set it to 1,000,000.
-    # So 3M/month.
+    # Default: 7 roles * 1 person * 1M = 7M/month.
     
     # 3. Process Turn 1 (August - Month 1)
     resp = client.get(f"/api/turns/seasons/{season_id}/current", headers=auth_headers)
@@ -41,12 +39,12 @@ def test_pr3_structural_finance(client, db, auth_headers):
     # - Distribution: 50M (Aug one-time)
     # - Sponsor Revenue: 10 * 5M = 50M (Positive)
     # - Reinforcement: -1M (Negative)
-    # - Staff: -3M (Negative)
+    # - Staff: -7M (Negative)
     # - Base Sponsor/Cost (PR2): 0 (Default)
     
     state = client.get(f"/api/clubs/{club_id}/finance/state", headers=auth_headers).json()
-    # Balance = 50M (distribution) + 50M (sponsor) - 1M - 3M = 96M
-    assert state["balance"] == 96000000
+    # Balance = 50M (distribution) + 50M (sponsor) - 1M - 7M = 92M
+    assert state["balance"] == 92000000
     
     # 4. Process Turn 2 (September - Month 2)
     client.post(f"/api/turns/{turn1_id}/ack", json={"club_id": club_id, "ack": True}, headers=auth_headers)
@@ -63,17 +61,17 @@ def test_pr3_structural_finance(client, db, auth_headers):
     # Expected:
     # - Sponsor Revenue: 0 (Only in Aug)
     # - Reinforcement: -1M
-    # - Staff: -3M
-    # Total Change: -4M
-    # Balance = 96M - 4M = 92M
+    # - Staff: -7M
+    # Total Change: -8M
+    # Balance = 92M - 8M = 84M
 
     state = client.get(f"/api/clubs/{club_id}/finance/state", headers=auth_headers).json()
-    assert state["balance"] == 92000000
+    assert state["balance"] == 84000000
     
     # 5. Test Staff Change Constraint (Try in Sep -> Fail)
     resp = client.post(
         f"/api/finance/clubs/{club_id}/staff",
-        json={"role": StaffRole.coach, "new_count": 2},
+        json={"role": StaffRole.topteam, "new_count": 2},
         headers=auth_headers
     )
     assert resp.status_code == 400 # Only May
@@ -88,4 +86,4 @@ def test_pr3_structural_finance(client, db, auth_headers):
     # Re-resolve Turn 2 (Idempotency check)
     client.post(f"/api/turns/{turn2_id}/resolve", headers=auth_headers)
     state = client.get(f"/api/clubs/{club_id}/finance/state", headers=auth_headers).json()
-    assert state["balance"] == 92000000 # Unchanged
+    assert state["balance"] == 84000000 # Unchanged

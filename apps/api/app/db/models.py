@@ -495,10 +495,13 @@ class ClubReinforcementPlan(Base):
 
 
 class StaffRole(str, enum.Enum):
-    director = "director"
-    coach = "coach"
-    scout = "scout"
-    # Add others as needed
+    sales = "sales"
+    hometown = "hometown"
+    operations = "operations"
+    promotion = "promotion"
+    administration = "administration"
+    topteam = "topteam"
+    academy = "academy"
 
 
 class ClubStaff(Base):

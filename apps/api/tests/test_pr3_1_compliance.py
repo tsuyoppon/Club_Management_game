@@ -118,20 +118,20 @@ def test_pr3_1_compliance_staff(client, db, auth_headers):
     assert t10_curr["month_index"] == 10
     
     # 2. Fire Staff
-    # Default: 1 Coach. Fire to 0? No, min 1.
+    # Default: 1 Topteam. Fire to 0? No, min 1.
     # So we need to Hire first? Or assume we started with > 1?
     # We can't change staff except in May. So we are stuck with default 1.
     # Wait, we can Hire in May, but it reflects in August.
     # If we want to test Firing, we need to have > 1 staff.
     # But we can only change in May.
     # So:
-    # Year 1 May: Hire Coach -> 2.
-    # Year 2 May: Fire Coach -> 1.
+    # Year 1 May: Hire Topteam -> 2.
+    # Year 2 May: Fire Topteam -> 1.
     
     # Let's Hire now (Year 1 May)
     client.post(
         f"/api/finance/clubs/{club_id}/staff",
-        json={"role": StaffRole.coach, "new_count": 2},
+        json={"role": StaffRole.topteam, "new_count": 2},
         headers=auth_headers
     )
     
@@ -175,14 +175,14 @@ def test_pr3_1_compliance_staff(client, db, auth_headers):
     t1_s2 = advance_turn_s2()
     
     # Check Staff Cost
-    # 2 Coaches + 1 Director + 1 Scout = 4 Staff.
-    # Cost = 4 * 1M = 4M.
+    # Roles: sales/hometown/operations/promotion/administration/academy/topteam.
+    # After hiring: topteam=2, others=1 → total 8 staff → 8M.
     ledgers = db.query(models.ClubFinancialLedger).filter(
         models.ClubFinancialLedger.turn_id == t1_s2["id"],
         models.ClubFinancialLedger.kind == "staff_cost"
     ).all()
     assert len(ledgers) == 1
-    assert float(ledgers[0].amount) == -4000000.0
+    assert float(ledgers[0].amount) == -8000000.0
     
     # Advance to May (10) of Season 2
     # Current is Aug (1).
@@ -200,7 +200,7 @@ def test_pr3_1_compliance_staff(client, db, auth_headers):
     # Fire Coach (2 -> 1)
     resp = client.post(
         f"/api/finance/clubs/{club_id}/staff",
-        json={"role": StaffRole.coach, "new_count": 1},
+        json={"role": StaffRole.topteam, "new_count": 1},
         headers=auth_headers
     )
     assert resp.status_code == 200
@@ -208,7 +208,7 @@ def test_pr3_1_compliance_staff(client, db, auth_headers):
     # Idempotency Check: Call again with same value
     resp = client.post(
         f"/api/finance/clubs/{club_id}/staff",
-        json={"role": StaffRole.coach, "new_count": 1},
+        json={"role": StaffRole.topteam, "new_count": 1},
         headers=auth_headers
     )
     assert resp.status_code == 200
@@ -220,7 +220,7 @@ def test_pr3_1_compliance_staff(client, db, auth_headers):
     # Diff = 1. Salary = 12M. Factor = 0.75. Severance = 9M.
     ledgers = db.query(models.ClubFinancialLedger).filter(
         models.ClubFinancialLedger.turn_id == t10_s2["id"],
-        models.ClubFinancialLedger.kind == "staff_severance_coach"
+        models.ClubFinancialLedger.kind == "staff_severance_topteam"
     ).all()
     assert len(ledgers) == 1
     assert float(ledgers[0].amount) == -9000000.0

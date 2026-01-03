@@ -204,7 +204,7 @@ def get_sales_staff_count(db: Session, club_id: UUID) -> int:
     staff = db.execute(
         select(models.ClubStaff).where(
             models.ClubStaff.club_id == club_id,
-            models.ClubStaff.role == models.StaffRole.director  # 営業はdirectorで代用（v1）
+            models.ClubStaff.role == models.StaffRole.sales
         )
     ).scalar_one_or_none()
     

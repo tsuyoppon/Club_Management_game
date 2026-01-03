@@ -12,7 +12,15 @@ PENALTY_DECAY = Decimal("0.5") # Halves every year
 
 def ensure_staff_state(db: Session, club_id: UUID):
     # Ensure all roles exist
-    roles = [models.StaffRole.director, models.StaffRole.coach, models.StaffRole.scout]
+    roles = [
+        models.StaffRole.sales,
+        models.StaffRole.hometown,
+        models.StaffRole.operations,
+        models.StaffRole.promotion,
+        models.StaffRole.administration,
+        models.StaffRole.topteam,
+        models.StaffRole.academy,
+    ]
     for role in roles:
         staff = db.execute(select(models.ClubStaff).where(
             models.ClubStaff.club_id == club_id,
@@ -76,14 +84,8 @@ def resolve_hiring(db: Session, club_id: UUID, season_id: UUID):
         # 2. Handle Hiring (hiring_target > count)
         if staff.hiring_target is not None and staff.hiring_target > staff.count:
             needed = staff.hiring_target - staff.count
-            success_prob = max(0.0, BASE_HIRING_CHANCE - penalty)
-            
-            success_count = 0
-            for _ in range(needed):
-                if rng.random() < success_prob:
-                    success_count += 1
-            
-            staff.count += success_count
+            # v1 simplification: deterministically honor hiring target (probability modeled via penalty may be reintroduced later)
+            staff.count += needed
             staff.hiring_target = None # Reset
             db.add(staff)
             
