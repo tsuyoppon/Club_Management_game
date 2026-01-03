@@ -350,3 +350,59 @@ def process_disclosure_for_turn(
         results["team_power"] = publish_team_power_july(db, season_id, turn_id)
     
     return results
+
+
+def copy_team_power_july_to_new_season(
+    db: Session,
+    prev_season_id: UUID,
+    new_season_id: UUID,
+) -> Optional[dict]:
+    """
+    前シーズンの7月公開team_powerを新シーズンに引き継ぐ
+    
+    前シーズンで公開された「次シーズンのチーム力予測値（不確実性付き）」を
+    新シーズンの開始時点で参照できるように、disclosure_type='team_power_july_carried'として保存
+    
+    Returns:
+        コピーされた公開データ、または前シーズンにデータがない場合はNone
+    """
+    # 前シーズンの team_power_july を取得
+    prev_disclosure = db.query(SeasonPublicDisclosure).filter(
+        and_(
+            SeasonPublicDisclosure.season_id == prev_season_id,
+            SeasonPublicDisclosure.disclosure_type == "team_power_july",
+        )
+    ).first()
+    
+    if not prev_disclosure:
+        return None
+    
+    # 新シーズン用にデータをコピー
+    carried_data = prev_disclosure.disclosed_data.copy() if prev_disclosure.disclosed_data else {}
+    carried_data["carried_from_season_id"] = str(prev_season_id)
+    carried_data["note"] = "前シーズン7月公開値（引き継ぎ）"
+    
+    # 既存チェック
+    existing = db.query(SeasonPublicDisclosure).filter(
+        and_(
+            SeasonPublicDisclosure.season_id == new_season_id,
+            SeasonPublicDisclosure.disclosure_type == "team_power_july_carried",
+        )
+    ).first()
+    
+    if existing:
+        existing.disclosed_data = carried_data
+        db.add(existing)
+    else:
+        new_disclosure = SeasonPublicDisclosure(
+            season_id=new_season_id,
+            disclosure_type="team_power_july_carried",
+            disclosure_month=DISCLOSURE_MONTH_JULY,  # 7月
+            turn_id=None,  # シーズン開始時なのでturnはない
+            disclosed_data=carried_data,
+        )
+        db.add(new_disclosure)
+    
+    db.flush()
+    
+    return carried_data

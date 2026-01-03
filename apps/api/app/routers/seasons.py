@@ -28,6 +28,7 @@ from app.services.fixtures import generate_round_robin
 from app.services.standings import StandingsCalculator
 from app.services.season_finalize import SeasonFinalizer
 from app.services import reinforcement, sponsor, academy
+from app.services.public_disclosure import copy_team_power_july_to_new_season
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
@@ -149,6 +150,10 @@ def create_season_core(db: Session, game: Game, year_label: str) -> Season:
                 followers_public=prev_state.followers_public,
             )
             db.add(copied)
+        db.commit()
+
+        # Team Power July: 前シーズンの7月公開値を新シーズンに引き継ぐ
+        copy_team_power_july_to_new_season(db, prev_season.id, season.id)
         db.commit()
 
     # Sponsor state: inherit final next_count (or count) and keep pipelines consistent with Section 10
