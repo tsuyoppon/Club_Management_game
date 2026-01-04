@@ -283,14 +283,17 @@ pip install -r apps/cli/requirements.txt
 
 複数のプレイヤー（GM、各クラブオーナー）用に、それぞれ設定ファイルを作成します。
 
+**重要**: 各設定ファイルには `game_id` を含めてください。これにより、シーズンロールオーバー後の `config set-season --latest` コマンドが正常に動作します。
+
 #### GM用設定（全クラブを操作可能）
 
 ```bash
 mkdir -p ~/.club-game
-cat > ~/.club-game/config << 'EOF'
+cat > ~/.club-game/config-gm << 'EOF'
 {
   "base_url": "http://localhost:8000",
   "user_email": "gm@example.com",
+  "game_id": "<game_id>",
   "season_id": "<season_id>",
   "club_id": null
 }
@@ -301,27 +304,29 @@ EOF
 
 ```bash
 # クラブ1オーナー用
-cat > ~/.club-game/config.club1 << 'EOF'
+cat > ~/.club-game/config-club1 << 'EOF'
 {
   "base_url": "http://localhost:8000",
   "user_email": "owner1@example.com",
+  "game_id": "<game_id>",
   "season_id": "<season_id>",
   "club_id": "<club_1_id>"
 }
 EOF
 
 # クラブ2オーナー用
-cat > ~/.club-game/config.club2 << 'EOF'
+cat > ~/.club-game/config-club2 << 'EOF'
 {
   "base_url": "http://localhost:8000",
   "user_email": "owner2@example.com",
+  "game_id": "<game_id>",
   "season_id": "<season_id>",
   "club_id": "<club_2_id>"
 }
 EOF
 ```
 
-**注意**: `<season_id>`、`<club_1_id>`、`<club_2_id>` は実際の値に置き換えてください。
+**注意**: `<game_id>`、`<season_id>`、`<club_1_id>`、`<club_2_id>` は実際の値に置き換えてください。
 
 #### 設定ファイルの使い方
 
@@ -330,10 +335,10 @@ EOF
 python -m apps.cli.main <command>
 
 # 特定の設定ファイルを指定
-python -m apps.cli.main --config ~/.club-game/config.club1 <command>
+python -m apps.cli.main --config-path ~/.club-game/config-club1 <command>
 
 # GMとして実行（club_idを明示的に指定）
-python -m apps.cli.main --club-id <club_id> <command>
+python -m apps.cli.main --config-path ~/.club-game/config-gm --club-id <club_id> <command>
 ```
 
 ### 4.3 CLIの動作確認
@@ -910,12 +915,15 @@ pip install -r requirements.txt
 
 #### A.3.2 GM用設定
 
+**重要**: `game_id` を含めることで、後で `config set-season --latest` コマンドが使用できます。
+
 ```bash
 mkdir -p ~/.club-game
-cat > ~/.club-game/config << EOF
+cat > ~/.club-game/config-gm << EOF
 {
   "base_url": "http://localhost:8000",
   "user_email": "gm@example.com",
+  "game_id": "$GAME_ID",
   "season_id": "$SEASON_ID",
   "club_id": null
 }
@@ -925,10 +933,11 @@ EOF
 #### A.3.3 FC東京オーナー用設定
 
 ```bash
-cat > ~/.club-game/config.tokyo << EOF
+cat > ~/.club-game/config-tokyo << EOF
 {
   "base_url": "http://localhost:8000",
   "user_email": "owner_tokyo@example.com",
+  "game_id": "$GAME_ID",
   "season_id": "$SEASON_ID",
   "club_id": "$CLUB_TOK"
 }
@@ -938,10 +947,11 @@ EOF
 #### A.3.4 FC名古屋オーナー用設定
 
 ```bash
-cat > ~/.club-game/config.nagoya << EOF
+cat > ~/.club-game/config-nagoya << EOF
 {
   "base_url": "http://localhost:8000",
   "user_email": "owner_nagoya@example.com",
+  "game_id": "$GAME_ID",
   "season_id": "$SEASON_ID",
   "club_id": "$CLUB_NAG"
 }
@@ -952,7 +962,7 @@ EOF
 
 ```bash
 # FC東京オーナーとして現在のターン状況を確認
-python -m apps.cli.main --config ~/.club-game/config.tokyo show current_input
+python -m apps.cli.main --config-path ~/.club-game/config-tokyo show current_input
 ```
 
 **期待される出力**:
