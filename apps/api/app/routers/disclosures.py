@@ -84,7 +84,7 @@ def get_team_power(
     if not season:
         raise HTTPException(status_code=404, detail="Season not found")
     
-    # 7月公開を優先、なければ12月公開を返す
+    # 7月公開を優先、なければ12月公開、さらに引き継ぎ（7月公開値）を参照
     july_disclosure = disclosure_service.get_latest_disclosure(
         db, season_id, "team_power_july"
     )
@@ -96,6 +96,12 @@ def get_team_power(
     )
     if december_disclosure:
         return december_disclosure
+
+    carried_disclosure = disclosure_service.get_latest_disclosure(
+        db, season_id, "team_power_july_carried"
+    )
+    if carried_disclosure:
+        return carried_disclosure
     
     raise HTTPException(status_code=404, detail="Team power disclosure not found")
 
