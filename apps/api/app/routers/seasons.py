@@ -73,6 +73,23 @@ def get_latest_season(
     return season
 
 
+@router.get("/{season_id}", response_model=SeasonRead)
+def get_season(
+    season_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Get season details by ID."""
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+    
+    # Require at least viewer role for the game
+    require_role(user, db, str(season.game_id), MembershipRole.club_viewer)
+    
+    return season
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers (used by API routes and auto-season transition)
 # ---------------------------------------------------------------------------
