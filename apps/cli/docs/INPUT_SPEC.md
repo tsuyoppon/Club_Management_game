@@ -23,7 +23,7 @@
 |------|------------|----------|
 | 採用目標 | `hiring_target` | 5月（month_index=10）のみ |
 | 解雇 | `firing` | 5月（month_index=10）のみ |
-| アカデミー投資額（翌年度） | `academy_budget` | 5月（month_index=10）のみ |
+| アカデミー投資額（翌年度） | `academy_budget` | 5月（month_index=10）のみ（academy budgetコマンドで送信） |
 | 強化費（翌年度） | `reinforcement_budget` | 6月・7月（month_index=11,12）の合算 |
 
 ### 1.4 営業リソース配分（四半期開始月のみ）
@@ -90,6 +90,20 @@ club-game view [OPTIONS]
   --club-id UUID               クラブID（config優先）
   --json-output                JSON出力
 ```
+
+### 4.4 `academy budget` - アカデミー投資額（翌年度）
+
+```
+club-game academy budget [OPTIONS]
+  --annual-budget INT          年次アカデミー投資額（>=0）
+  --season-id UUID             シーズンID（config優先）
+  --club-id UUID               クラブID（config優先）
+  --turn-id UUID               ターンID（省略時はcurrentを使用）
+  --json-output                JSON出力
+```
+
+- 5月（month_index=10）のみ実行可（クライアント側チェック）
+- API: `POST /api/clubs/{club_id}/management/academy/budget` (params: season_id, payload: annual_budget)
 
 ## 5. 実装優先順位
 
