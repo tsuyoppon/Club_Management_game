@@ -42,7 +42,23 @@ def staff(ctx: click.Context) -> None:
 
 
 @staff.command("plan")
-@click.option("--role", required=True, type=click.Choice(["director", "coach", "scout"], case_sensitive=False), help="Staff role")
+@click.option(
+    "--role",
+    required=True,
+    type=click.Choice(
+        [
+            "sales",
+            "hometown",
+            "operations",
+            "promotion",
+            "administration",
+            "topteam",
+            "academy",
+        ],
+        case_sensitive=False,
+    ),
+    help="Staff role",
+)
 @click.option("--count", required=True, type=int, help="Target headcount (>=1)")
 @click.option("--club-id", help="Club UUID (defaults to config)")
 @click.option("--season-id", help="Season UUID (defaults to config)")

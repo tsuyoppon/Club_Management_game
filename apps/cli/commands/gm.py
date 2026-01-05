@@ -134,5 +134,24 @@ def advance_turn(ctx: click.Context, turn_id: Optional[str], season_id: Optional
 
     if json_output:
         print_json(result)
+        return
+
+    season_label = None
+    month_label = None
+    target_season_id = None
+    if isinstance(result, dict):
+        target_season_id = result.get("season_id")
+    if not target_season_id:
+        target_season_id = season_id or config.season_id
+
+    if target_season_id:
+        with _with_client(config, timeout, verbose) as client:
+            turn_data = client.get(f"/api/turns/seasons/{target_season_id}/current")
+        if isinstance(turn_data, dict):
+            season_label = turn_data.get("season_number")
+            month_label = turn_data.get("month_name")
+
+    if season_label is not None and month_label:
+        click.echo(f"Turn advanced (id={resolved_turn_id}, season:{season_label}-month:{month_label}).")
     else:
         click.echo(f"Turn advanced (id={resolved_turn_id}).")
