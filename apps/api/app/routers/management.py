@@ -163,6 +163,29 @@ def set_academy_budget(
 ):
     club = get_club_or_404(db, club_id)
     require_role(user, db, club.game_id, MembershipRole.club_owner, club_id=club_id)
+
+    season = db.query(models.Season).filter(models.Season.id == season_id).first()
+    if not season:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+    if season.game_id != club.game_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Season does not belong to club's game")
+
+    current_turn = (
+        db.query(models.Turn)
+        .filter(
+            models.Turn.season_id == season_id,
+            models.Turn.turn_state != models.TurnState.acked,
+        )
+        .order_by(models.Turn.month_index)
+        .first()
+    )
+    if not current_turn:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Current turn not found")
+    if current_turn.month_index != 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="academy_budget is only allowed in May (month_index=10)",
+        )
     
     academy.update_academy_plan(db, club_id, season_id, payload.annual_budget)
     db.commit()
