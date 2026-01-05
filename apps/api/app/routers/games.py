@@ -1,3 +1,5 @@
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -53,6 +55,18 @@ def create_club(
     return club
 
 
+@router.get("/{game_id}/clubs", response_model=List[ClubRead])
+def list_clubs(
+    game_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_role(user, db, game_id, MembershipRole.club_viewer)
+
+    clubs = db.query(Club).filter(Club.game_id == game_id).order_by(Club.name).all()
+    return clubs
+
+
 @router.post("/{game_id}/memberships", status_code=status.HTTP_201_CREATED)
 def create_membership(
     game_id: str,
@@ -86,4 +100,3 @@ def create_membership(
     db.commit()
     db.refresh(membership)
     return {"id": str(membership.id)}
-

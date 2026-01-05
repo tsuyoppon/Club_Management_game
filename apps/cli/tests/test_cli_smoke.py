@@ -103,6 +103,8 @@ def test_show_finance_smoke(tmp_path, monkeypatch):
             return state
         if path.endswith("/finance/ledger"):
             return ledger
+        if path == "/api/seasons/s1":
+            return {"season_number": 1}
         raise AssertionError(f"Unexpected path {path}")
 
     monkeypatch.setattr(ApiClient, "get", fake_get)
@@ -114,3 +116,62 @@ def test_show_finance_smoke(tmp_path, monkeypatch):
     assert "Balance" in result.output
     assert "sponsor" in result.output
     assert "cost" in result.output
+
+
+def test_show_final_standings_by_name(tmp_path, monkeypatch):
+    cfg = _write_config(tmp_path)
+    cfg.write_text(
+        json.dumps(
+            {
+                "base_url": "http://example.invalid",
+                "user_email": "user@example.com",
+                "season_id": "s1",
+                "club_id": "c1",
+                "game_id": "g1",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    clubs = [
+        {"id": "c1", "name": "Club Alpha", "short_name": "Alpha"},
+        {"id": "c2", "name": "Club Beta", "short_name": "Beta"},
+    ]
+    standings = [
+        {
+            "season_id": "s1",
+            "season_number": 1,
+            "year_label": "2024",
+            "finalized_at": "2025-05-31T00:00:00Z",
+            "club_id": "c2",
+            "club_name": "Club Beta",
+            "rank": 1,
+            "points": 24,
+            "played": 10,
+            "won": 7,
+            "drawn": 3,
+            "lost": 0,
+            "gf": 18,
+            "ga": 6,
+            "gd": 12,
+        }
+    ]
+
+    def fake_get(self, path, params=None):  # noqa: ANN001
+        if path == "/api/games/g1/clubs":
+            return clubs
+        if path == "/api/clubs/c2/final-standings":
+            return standings
+        raise AssertionError(f"Unexpected path {path}")
+
+    monkeypatch.setattr(ApiClient, "get", fake_get)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["--config-path", str(cfg), "show", "final_standings", "--club-name", "Beta"],
+    )
+
+    assert result.exit_code == 0
+    assert "Final standings history for Club Beta" in result.output
+    assert "2024" in result.output
