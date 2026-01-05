@@ -39,10 +39,21 @@ def test_show_table_smoke(tmp_path, monkeypatch):
             "points": 3,
         }
     ]
+    bankrupt_clubs = [
+        {
+            "club_id": "c1",
+            "club_name": "Alpha",
+            "is_bankrupt": True,
+            "bankrupt_since_month": "Sep",
+            "penalty_points": -6,
+        }
+    ]
 
     def fake_get(self, path, params=None):  # noqa: ANN001
         if path == "/api/turns/seasons/s1/current":
             return {"month_index": 1, "month_name": "Aug"}
+        if path == "/api/seasons/s1/bankrupt-clubs":
+            return bankrupt_clubs
         assert path == "/api/seasons/s1/standings"
         return standings
 
@@ -53,6 +64,7 @@ def test_show_table_smoke(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert "Alpha" in result.output
+    assert "Alphaチームは勝ち点を6点剥奪されている" in result.output
 
 
 def test_show_match_month_mapping(tmp_path, monkeypatch):
@@ -103,6 +115,8 @@ def test_show_finance_smoke(tmp_path, monkeypatch):
             return state
         if path.endswith("/finance/ledger"):
             return ledger
+        if path == "/api/seasons/s1":
+            return {"season_number": 1}
         raise AssertionError(f"Unexpected path {path}")
 
     monkeypatch.setattr(ApiClient, "get", fake_get)
