@@ -160,6 +160,7 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
     with _with_client(config, timeout, verbose) as client:
         state = client.get(f"/api/clubs/{club_id}/finance/state")
         ledger = client.get(f"/api/clubs/{club_id}/finance/ledger", params=params)
+        season = client.get(f"/api/seasons/{season_id}")
 
     if json_output:
         print_json({"state": state, "ledger": ledger})
@@ -167,10 +168,17 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
 
     balance = state.get("balance") if isinstance(state, dict) else None
     last_turn = state.get("last_applied_turn_id") if isinstance(state, dict) else None
+    season_index = season.get("season_number") if isinstance(season, dict) else None
+
+    def round_amount(value: Optional[float]) -> Optional[int]:
+        if value is None:
+            return None
+        return int(round(value))
 
     # Prepare ledger grouping
     if not ledger:
-        click.echo(f"Balance: {balance}")
+        click.echo(f"Season index: {season_index}")
+        click.echo(f"Balance: {round_amount(balance)}")
         click.echo(f"Last applied turn: {last_turn}")
         click.echo("No ledger entries found.")
         return
@@ -198,7 +206,8 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
     }
     month_label = month_name_lookup.get(target_month, "-") if target_month else "-"
 
-    click.echo(f"Balance: {balance}")
+    click.echo(f"Season index: {season_index}")
+    click.echo(f"Balance: {round_amount(balance)}")
     click.echo(f"Last applied turn: {last_turn}, month_index={target_month} ({month_label})")
 
     # Filter ledger for target month
@@ -215,16 +224,23 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
     for k, v in sorted(monthly_by_kind.items()):
         monthly_table.append({
             "kind": k,
-            "income": v if v > 0 else 0,
-            "expense": v if v < 0 else 0,
-            "net": v,
+            "income": round_amount(v) if v > 0 else 0,
+            "expense": round_amount(v) if v < 0 else 0,
+            "net": round_amount(v),
         })
 
     if monthly_table:
-        income_total = sum(r["income"] for r in monthly_table)
-        expense_total = sum(r["expense"] for r in monthly_table)
-        net_total = sum(r["net"] for r in monthly_table)
-        monthly_table.append({"kind": "TOTAL", "income": income_total, "expense": expense_total, "net": net_total})
+        income_total = sum(v for v in monthly_by_kind.values() if v > 0)
+        expense_total = sum(v for v in monthly_by_kind.values() if v < 0)
+        net_total = sum(monthly_by_kind.values())
+        monthly_table.append(
+            {
+                "kind": "TOTAL",
+                "income": round_amount(income_total),
+                "expense": round_amount(expense_total),
+                "net": round_amount(net_total),
+            }
+        )
         click.echo("Current month breakdown (by item):")
         print_table(monthly_table, ["kind", "income", "expense", "net"])
     else:
@@ -242,9 +258,9 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
     for k, v in sorted(kind_rows.items()):
         row = {
             "kind": k,
-            "income": v if v > 0 else 0,
-            "expense": v if v < 0 else 0,
-            "net": v,
+            "income": round_amount(v) if v > 0 else 0,
+            "expense": round_amount(v) if v < 0 else 0,
+            "net": round_amount(v),
         }
         if v > 0:
             income_rows.append(row)
@@ -256,10 +272,17 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
 
     cumulative_table = income_rows + expense_rows
     if cumulative_table:
-        income_total = sum(r["income"] for r in cumulative_table)
-        expense_total = sum(r["expense"] for r in cumulative_table)
-        net_total = sum(r["net"] for r in cumulative_table)
-        cumulative_table.append({"kind": "TOTAL", "income": income_total, "expense": expense_total, "net": net_total})
+        income_total = sum(v for v in kind_rows.values() if v > 0)
+        expense_total = sum(v for v in kind_rows.values() if v < 0)
+        net_total = sum(kind_rows.values())
+        cumulative_table.append(
+            {
+                "kind": "TOTAL",
+                "income": round_amount(income_total),
+                "expense": round_amount(expense_total),
+                "net": round_amount(net_total),
+            }
+        )
 
     click.echo("Season cumulative by item:")
     print_table(cumulative_table, ["kind", "income", "expense", "net"])
