@@ -212,9 +212,9 @@ def finalize_turn_finance(db: Session, season_id: UUID, turn_id: UUID):
         db.add(models.ClubFinancialLedger(
             club_id=club.id,
             turn_id=turn_id,
-            kind="cost",
+            kind="admin_cost",
             amount=-expense_fixed,
-            meta={"description": "Monthly Fixed Cost (Base)"}
+            meta={"description": "Monthly Administrative Cost"}
         ))
         
         db.flush()

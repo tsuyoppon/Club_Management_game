@@ -189,6 +189,10 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
 
     # Map for normalization of kinds (merge fixture-specific keys)
     def normalize_kind(kind: str) -> str:
+        # Hide internal marker entries
+        if kind == "additional_reinforcement_applied":
+            return None
+        
         prefixes = [
             "match_operation_cost",
             "merchandise_cost",
@@ -217,6 +221,8 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
     monthly_by_kind: Dict[str, float] = {}
     for entry in month_entries:
         kind = normalize_kind(entry.get("kind") or "(unknown)")
+        if kind is None:  # Skip hidden kinds
+            continue
         amt = entry.get("amount", 0)
         monthly_by_kind[kind] = monthly_by_kind.get(kind, 0) + amt
 
@@ -250,6 +256,8 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
     kind_rows: Dict[str, float] = {}
     for entry in ledger:
         kind = normalize_kind(entry.get("kind") or "(unknown)")
+        if kind is None:  # Skip hidden kinds
+            continue
         amount = entry.get("amount", 0)
         kind_rows[kind] = kind_rows.get(kind, 0) + amount
 

@@ -40,11 +40,12 @@ def test_pr3_structural_finance(client, db, auth_headers):
     # - Sponsor Revenue: 10 * 5M = 50M (Positive)
     # - Reinforcement: -1M (Negative)
     # - Staff: -7M (Negative)
+    # - Admin Cost: -5M (Negative, new default)
     # - Base Sponsor/Cost (PR2): 0 (Default)
     
     state = client.get(f"/api/clubs/{club_id}/finance/state", headers=auth_headers).json()
-    # Balance = 50M (distribution) + 50M (sponsor) - 1M - 7M = 92M
-    assert state["balance"] == 92000000
+    # Balance = 50M (distribution) + 50M (sponsor) - 1M - 7M - 5M = 87M
+    assert state["balance"] == 87000000
     
     # 4. Process Turn 2 (September - Month 2)
     client.post(f"/api/turns/{turn1_id}/ack", json={"club_id": club_id, "ack": True}, headers=auth_headers)
@@ -62,11 +63,12 @@ def test_pr3_structural_finance(client, db, auth_headers):
     # - Sponsor Revenue: 0 (Only in Aug)
     # - Reinforcement: -1M
     # - Staff: -7M
-    # Total Change: -8M
-    # Balance = 92M - 8M = 84M
+    # - Admin Cost: -5M
+    # Total Change: -13M
+    # Balance = 87M - 13M = 74M
 
     state = client.get(f"/api/clubs/{club_id}/finance/state", headers=auth_headers).json()
-    assert state["balance"] == 84000000
+    assert state["balance"] == 74000000
     
     # 5. Test Staff Change Constraint (Try in Sep -> Fail)
     resp = client.post(
@@ -86,4 +88,4 @@ def test_pr3_structural_finance(client, db, auth_headers):
     # Re-resolve Turn 2 (Idempotency check)
     client.post(f"/api/turns/{turn2_id}/resolve", headers=auth_headers)
     state = client.get(f"/api/clubs/{club_id}/finance/state", headers=auth_headers).json()
-    assert state["balance"] == 84000000 # Unchanged
+    assert state["balance"] == 74000000 # Unchanged
