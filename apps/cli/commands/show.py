@@ -138,6 +138,73 @@ def show_table(ctx: click.Context, season_id: Optional[str], json_output: bool) 
     print_table(rows, ["rank", "club", "played", "won", "drawn", "lost", "gf", "ga", "gd", "pts"])
 
 
+@show.command("final_standings")
+@click.option("--club-id", help="Club UUID (defaults to config)")
+@click.option("--club-name", help="Club name (resolved within the configured game)")
+@click.option("--json-output", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def show_final_standings(
+    ctx: click.Context,
+    club_id: Optional[str],
+    club_name: Optional[str],
+    json_output: bool,
+) -> None:
+    """Show finalized standings history for a club."""
+    config: CliConfig = ctx.obj["config"]
+    timeout: float = ctx.obj["timeout"]
+    verbose: bool = ctx.obj["verbose"]
+    resolved_club_id = club_id
+
+    with _with_client(config, timeout, verbose) as client:
+        if not resolved_club_id and club_name:
+            game_id = _resolve_required(config.game_id, None, "game_id")
+            clubs = client.get(f"/api/games/{game_id}/clubs")
+            matches = [
+                club for club in clubs
+                if club.get("name") == club_name or club.get("short_name") == club_name
+            ]
+            if not matches:
+                raise CliError(f"Club not found for name: {club_name}")
+            if len(matches) > 1:
+                raise CliError(f"Multiple clubs matched name: {club_name}; use --club-id")
+            resolved_club_id = matches[0].get("id")
+
+        if not resolved_club_id:
+            resolved_club_id = config.club_id
+
+        resolved_club_id = _resolve_required(resolved_club_id, None, "club_id")
+        data = client.get(f"/api/clubs/{resolved_club_id}/final-standings")
+
+    if json_output:
+        print_json(data)
+        return
+
+    if not data:
+        click.echo("No finalized seasons found for this club.")
+        return
+
+    club_name = data[0].get("club_name") if isinstance(data[0], dict) else None
+    if club_name:
+        click.echo(f"Final standings history for {club_name}")
+
+    rows = [
+        {
+            "season": f"{row.get('year_label')} (#{row.get('season_number')})",
+            "rank": row.get("rank"),
+            "pts": row.get("points"),
+            "played": row.get("played"),
+            "won": row.get("won"),
+            "drawn": row.get("drawn"),
+            "lost": row.get("lost"),
+            "gf": row.get("gf"),
+            "ga": row.get("ga"),
+            "gd": row.get("gd"),
+        }
+        for row in data
+    ]
+    print_table(rows, ["season", "rank", "pts", "played", "won", "drawn", "lost", "gf", "ga", "gd"])
+
+
 @show.command("finance")
 @click.option("--season-id", help="Season UUID (defaults to config)")
 @click.option("--club-id", help="Club UUID (defaults to config)")

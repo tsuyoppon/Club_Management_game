@@ -484,6 +484,25 @@ class ExtendedStandingsEntry(BaseModel):
     avg_home_attendance: Optional[int] = None
 
 
+class ClubFinalStandingRead(BaseModel):
+    """クラブ別の過去シーズン最終成績"""
+    season_id: UUID
+    season_number: int
+    year_label: str
+    finalized_at: Optional[datetime]
+    club_id: UUID
+    club_name: str
+    rank: int
+    points: int
+    played: int
+    won: int
+    drawn: int
+    lost: int
+    gf: int
+    ga: int
+    gd: int
+
+
 class GameFinalResultRead(BaseModel):
     """ゲーム最終結果レスポンス"""
     club_id: UUID
@@ -502,4 +521,3 @@ class GameFinalResultRead(BaseModel):
 
     class Config:
         from_attributes = True
-
