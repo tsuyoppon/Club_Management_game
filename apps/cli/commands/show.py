@@ -111,6 +111,7 @@ def show_table(ctx: click.Context, season_id: Optional[str], json_output: bool) 
 
     with _with_client(config, timeout, verbose) as client:
         turn = client.get(f"/api/turns/seasons/{season_id}/current")
+        bankrupt_clubs = client.get(f"/api/seasons/{season_id}/bankrupt-clubs")
         data = client.get(f"/api/seasons/{season_id}/standings")
 
     if json_output:
@@ -119,6 +120,17 @@ def show_table(ctx: click.Context, season_id: Optional[str], json_output: bool) 
 
     if isinstance(turn, dict):
         click.echo(f"As of {_format_season_turn_label(turn)}")
+
+    messages: List[str] = []
+    if isinstance(bankrupt_clubs, list):
+        for item in bankrupt_clubs:
+            penalty_points = item.get("penalty_points")
+            if item.get("is_bankrupt") and penalty_points is not None and penalty_points < 0:
+                club_name = item.get("club_name") or "-"
+                messages.append(f"{club_name}チームは勝ち点を{abs(penalty_points)}点剥奪されている")
+
+    for message in messages:
+        click.echo(message)
 
     rows = [
         {
