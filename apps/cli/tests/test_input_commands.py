@@ -52,6 +52,8 @@ class MockApiClient:
 
     def __exit__(self, *args):
         pass
+
+
 def test_input_updates_local_draft_and_merges_with_api(tmp_path, monkeypatch):
     cfg = _write_config(tmp_path)
 
@@ -255,3 +257,60 @@ def test_rho_new_validation(tmp_path, monkeypatch):
 
     assert result.exit_code != 0
     assert "between 0.0 and 1.0" in result.output
+
+
+def test_academy_budget_fails_outside_may(tmp_path, monkeypatch):
+    cfg = _write_config(tmp_path)
+
+    mock_client = MockApiClient()
+    mock_client.responses[("GET", "/api/turns/seasons/s1/current")] = {
+        "id": "turn-1",
+        "month_index": 9,
+        "month_name": "Apr",
+    }
+
+    def mock_with_client(*args, **kwargs):
+        return mock_client
+
+    monkeypatch.setattr("apps.cli.commands.academy._with_client", mock_with_client)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["--config-path", str(cfg), "academy", "budget", "--annual-budget", "15000"],
+    )
+
+    assert result.exit_code != 0
+    assert "month_index=10" in result.output
+    post_calls = [c for c in mock_client.calls if c[0] == "POST"]
+    assert len(post_calls) == 0
+
+
+def test_academy_budget_calls_api_in_may(tmp_path, monkeypatch):
+    cfg = _write_config(tmp_path)
+
+    mock_client = MockApiClient()
+    mock_client.responses[("GET", "/api/turns/seasons/s1/current")] = {
+        "id": "turn-10",
+        "month_index": 10,
+        "month_name": "May",
+    }
+    mock_client.responses[("POST", "/api/clubs/c1/management/academy/budget")] = {"status": "ok"}
+
+    def mock_with_client(*args, **kwargs):
+        return mock_client
+
+    monkeypatch.setattr("apps.cli.commands.academy._with_client", mock_with_client)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["--config-path", str(cfg), "academy", "budget", "--annual-budget", "25000"],
+    )
+
+    assert result.exit_code == 0
+    post_calls = [c for c in mock_client.calls if c[0] == "POST"]
+    assert len(post_calls) == 1
+    assert post_calls[0][1] == "/api/clubs/c1/management/academy/budget"
+    assert post_calls[0][2] == {"annual_budget": 25000}
+    assert post_calls[0][3] == {"season_id": "s1"}

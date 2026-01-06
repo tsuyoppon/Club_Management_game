@@ -15,6 +15,7 @@ from .commands.view import view_cmd
 from .commands.gm import gm
 from .commands.game import game
 from .commands.staff import staff
+from .commands.academy import academy
 from .commands.ack import ack_cmd
 from .commands.config_cmd import config_group
 
@@ -63,6 +64,7 @@ cli.add_command(view_cmd)
 cli.add_command(gm)
 cli.add_command(game)
 cli.add_command(staff)
+cli.add_command(academy)
 cli.add_command(ack_cmd)
 cli.add_command(config_group)
 
