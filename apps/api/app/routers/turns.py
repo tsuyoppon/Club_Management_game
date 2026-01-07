@@ -120,18 +120,25 @@ def commit_decision(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Decision not found")
     
     # PR6: バリデーション（オプショナル、エラーがあれば400返却）
-    if payload.payload:
+    normalized_payload = dict(payload.payload or {})
+    if normalized_payload:
         from app.services.decision_validation import validate_decision_payload, parse_decision_payload
-        validated = parse_decision_payload(payload.payload)
+        from app.services.sales_effort import get_quarter_from_month_index
+        from app.services import sales_effort
+        from decimal import Decimal
+
+        if "sales_allocation_new" not in normalized_payload and normalized_payload.get("rho_new") is not None:
+            normalized_payload["sales_allocation_new"] = normalized_payload["rho_new"]
+
+        validated = parse_decision_payload(normalized_payload)
         errors = validate_decision_payload(db, turn, club_id, validated)
         if errors:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"validation_errors": errors})
         
         # PR8: 債務超過時の追加強化費禁止チェック（12月: month_index=5）
         if turn.month_index == 5:  # 12月
-            additional = payload.payload.get("additional_reinforcement")
+            additional = normalized_payload.get("additional_reinforcement")
             if additional is not None:
-                from decimal import Decimal
                 additional_val = Decimal(str(additional))
                 if additional_val > 0:
                     from app.services.bankruptcy import can_add_reinforcement
@@ -140,11 +147,17 @@ def commit_decision(
                             status_code=status.HTTP_400_BAD_REQUEST, 
                             detail="債務超過クラブは追加強化費を入力できません"
                         )
+
+        if validated.sales_allocation_new is not None:
+            quarter = get_quarter_from_month_index(turn.month_index)
+            sales_effort.set_sales_allocation(
+                db, club_id, turn.season_id, quarter, Decimal(str(validated.sales_allocation_new))
+            )
     
     decision.decision_state = DecisionState.committed
     decision.committed_at = datetime.utcnow()
     decision.committed_by_user_id = user.id
-    decision.payload_json = payload.payload
+    decision.payload_json = normalized_payload or None
     db.commit()
     return {"state": decision.decision_state}
 
@@ -351,4 +364,3 @@ def advance_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_c
     if next_turn_info:
         response.update(next_turn_info)
     return response
-
