@@ -199,6 +199,7 @@ def process_pipeline_progress(db: Session, club_id: UUID, season_id: UUID, month
     
     月 m ∈ {4,5,6}: Δ(m) ~ Binomial(R(m), q_m), R(m) = N_next - C(m-1)
     7月: Δ(7) = R(7) → C(7) = N_next （強制確定）
+    ※仕様の4〜6月は month_index 9〜11 に対応
     """
     state = ensure_sponsor_state(db, club_id, season_id)
     
