@@ -98,15 +98,46 @@ def get_performance_metrics(db: Session, club_id: UUID, season_id: UUID):
     if total > 0:
         perf = (wins + 0.5 * draws) / total
         
-    # 2. Get Followers (Base Attendance)
-    profile = db.execute(select(models.ClubFinancialProfile).where(
-        models.ClubFinancialProfile.club_id == club_id
+    # 2. Get Followers (from fanbase state; July-updated value)
+    fanbase_state = db.execute(select(models.ClubFanbaseState).where(
+        models.ClubFanbaseState.club_id == club_id,
+        models.ClubFanbaseState.season_id == season_id
     )).scalar_one_or_none()
     
-    followers = float(profile.base_attendance) if profile else 10000.0
+    followers_value = None
+    if fanbase_state:
+        followers_value = fanbase_state.followers_public
+        if followers_value is None:
+            followers_value = fanbase_state.fb_count
     
-    # 3. Fan Growth (Assume 0 for now as we don't track history yet)
+    followers = float(followers_value) if followers_value is not None else 10000.0
+    
+    # 3. Fan Growth (delta vs previous season fanbase)
     fan_growth = 0.0
+    if fanbase_state:
+        current_followers = followers_value if followers_value is not None else 0
+        current_season = db.execute(select(models.Season).where(
+            models.Season.id == season_id
+        )).scalar_one_or_none()
+        
+        if current_season:
+            prev_season = db.execute(select(models.Season).where(
+                models.Season.game_id == current_season.game_id,
+                models.Season.created_at < current_season.created_at
+            ).order_by(desc(models.Season.created_at)).limit(1)).scalar_one_or_none()
+            
+            if prev_season:
+                prev_state = db.execute(select(models.ClubFanbaseState).where(
+                    models.ClubFanbaseState.club_id == club_id,
+                    models.ClubFanbaseState.season_id == prev_season.id
+                )).scalar_one_or_none()
+                
+                if prev_state:
+                    prev_followers = prev_state.followers_public
+                    if prev_followers is None:
+                        prev_followers = prev_state.fb_count
+                    if prev_followers and prev_followers > 0:
+                        fan_growth = (current_followers - prev_followers) / float(prev_followers)
     
     return perf, followers, fan_growth
 
