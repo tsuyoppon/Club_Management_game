@@ -321,7 +321,7 @@ class ClubFinancialProfile(Base):
     currency_code = Column(String, nullable=False, default="JPY")
     sponsor_base_monthly = Column(Numeric(14, 2), nullable=False, default=0)
     sponsor_per_point = Column(Numeric(14, 2), nullable=False, default=0)
-    monthly_cost = Column(Numeric(14, 2), nullable=False, default=5000000)
+    monthly_cost = Column(Numeric(14, 2), nullable=False, default=3000000)
     
     # PR4: Ticket Revenue
     base_attendance = Column(Integer, nullable=False, default=10000)

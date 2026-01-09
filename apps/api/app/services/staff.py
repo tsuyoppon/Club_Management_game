@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.db import models
+from app.config.constants import STAFF_SALARY_ANNUAL
 
 # Assumed v1Spec Constants
 BASE_HIRING_CHANCE = 0.8 # 80% base chance
@@ -11,6 +12,7 @@ FIRING_PENALTY_PER_PERSON = Decimal("0.1") # 10% penalty per fired person
 PENALTY_DECAY = Decimal("0.5") # Halves every year
 
 def ensure_staff_state(db: Session, club_id: UUID):
+    monthly_salary = STAFF_SALARY_ANNUAL / Decimal(12)
     # Ensure all roles exist
     roles = [
         models.StaffRole.sales,
@@ -32,7 +34,7 @@ def ensure_staff_state(db: Session, club_id: UUID):
                 club_id=club_id,
                 role=role,
                 count=1, # Min 1
-                salary_per_person=1000000 # Default placeholder
+                salary_per_person=monthly_salary # Set from annual constant
             )
             db.add(staff)
     db.flush()
