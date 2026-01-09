@@ -407,6 +407,50 @@ def show_team_power(ctx: click.Context, season_id: Optional[str], json_output: b
         print_json(data)
 
 
+@show.command("disclosure")
+@click.option("--season-id", help="Season UUID (defaults to config)")
+@click.option(
+    "--type",
+    "disclosure_type",
+    type=click.Choice(["financial_summary", "team_power_december", "team_power_july"], case_sensitive=False),
+    required=True,
+    help="Disclosure type",
+)
+@click.option("--json-output", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def show_disclosure(ctx: click.Context, season_id: Optional[str], disclosure_type: str, json_output: bool) -> None:
+    config: CliConfig = ctx.obj["config"]
+    timeout: float = ctx.obj["timeout"]
+    verbose: bool = ctx.obj["verbose"]
+    season_id = _resolve_required(season_id, config.season_id, "season_id")
+
+    with _with_client(config, timeout, verbose) as client:
+        data = client.get(f"/api/seasons/{season_id}/disclosures/{disclosure_type}")
+
+    if json_output:
+        print_json(data)
+        return
+
+    payload = data.get("disclosed_data") if isinstance(data, dict) else None
+    if payload is None:
+        print_json(data)
+        return
+
+    if isinstance(payload, list):
+        if payload and isinstance(payload[0], dict):
+            columns = list(payload[0].keys())
+            print_table(payload, columns)
+            return
+        print_json(payload)
+        return
+
+    if isinstance(payload, dict):
+        print_table([payload], list(payload.keys()))
+        return
+
+    print_json(payload)
+
+
 @show.command("staff")
 @click.option("--club-id", help="Club UUID (defaults to config)")
 @click.option("--json-output", is_flag=True, help="Print raw JSON")

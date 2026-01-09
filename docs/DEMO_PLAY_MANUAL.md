@@ -658,6 +658,7 @@ python -m apps.cli.main show sponsor_status
 | `show table` | 順位表 |
 | `show match` | 試合結果一覧 |
 | `show team_power` | チーム力指標 |
+| `show disclosure` | 情報開示 |
 | `show staff` | スタッフ状況 |
 | `show staff_history` | スタッフ変動履歴 |
 | `show current_input` | 当ターン入力内容 |
