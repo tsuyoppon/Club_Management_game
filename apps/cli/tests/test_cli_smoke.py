@@ -43,6 +43,8 @@ def test_show_table_smoke(tmp_path, monkeypatch):
     def fake_get(self, path, params=None):  # noqa: ANN001
         if path == "/api/turns/seasons/s1/current":
             return {"month_index": 1, "month_name": "Aug"}
+        if path == "/api/seasons/s1/bankrupt-clubs":
+            return []
         assert path == "/api/seasons/s1/standings"
         return standings
 

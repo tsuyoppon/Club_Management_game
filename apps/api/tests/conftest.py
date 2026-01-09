@@ -1,5 +1,7 @@
 import os
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 # Force DB host to localhost for local testing BEFORE importing app modules
 # This assumes the developer is running tests from the host machine against a port-forwarded DB
@@ -13,6 +15,11 @@ import app.db.models  # noqa: F401
 
 @pytest.fixture(autouse=True)
 def clean_database():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except OperationalError:
+        pytest.skip("PostgreSQL is not available for API tests.")
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     yield
