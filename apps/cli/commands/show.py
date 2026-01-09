@@ -254,16 +254,8 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
             return None
         return int(round(value))
 
-    # Prepare ledger grouping
-    if not ledger:
-        click.echo(f"Season index: {season_index}")
-        click.echo(f"Balance: {round_amount(balance)}")
-        click.echo(f"Last applied turn: {last_turn}")
-        click.echo("No ledger entries found.")
-        return
-
     # Latest month when not specified
-    all_months = sorted({e.get("month_index") for e in ledger if e.get("month_index") is not None})
+    all_months = sorted({e.get("month_index") for e in ledger or [] if e.get("month_index") is not None})
     target_month = month_index if month_index is not None else (all_months[-1] if all_months else None)
 
     # Map for normalization of kinds (merge fixture-specific keys)
@@ -289,9 +281,14 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
     }
     month_label = month_name_lookup.get(target_month, "-") if target_month else "-"
 
-    click.echo(f"Season index: {season_index}")
+    click.echo(f"Season : {season_index}")
+    click.echo(f"{month_label}(month_index={target_month})")
     click.echo(f"Balance: {round_amount(balance)}")
-    click.echo(f"Last applied turn: {last_turn}, month_index={target_month} ({month_label})")
+
+    # Prepare ledger grouping
+    if not ledger:
+        click.echo("No ledger entries found.")
+        return
 
     # Filter ledger for target month
     month_entries = [e for e in ledger if e.get("month_index") == target_month]
