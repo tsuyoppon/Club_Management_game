@@ -10,6 +10,7 @@ from app.db import models
 from app.services import weather as weather_service
 from app.services import attendance as attendance_service
 from app.services import standings as standings_service
+from app.services import historical_performance
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +258,8 @@ def process_matches_for_turn(db: Session, season_id: UUID, turn_id: UUID, month_
         models.Fixture.match_month_index == month_index
     )).scalars().all()
     
+    hist_perf_cache = {}
+
     for fixture in fixtures:
         if fixture.is_bye:
             continue
@@ -289,7 +292,13 @@ def process_matches_for_turn(db: Session, season_id: UUID, turn_id: UUID, month_
         
         # 3. Get Performance (Rank)
         perf_val = 0.5
-        hist_perf_val = 0.5
+        if fixture.home_club_id not in hist_perf_cache:
+            hist_perf_cache[fixture.home_club_id] = (
+                historical_performance.get_hist_perf_value(
+                    db, season_id, fixture.home_club_id
+                )
+            )
+        hist_perf_val = hist_perf_cache[fixture.home_club_id]
         
         if month_index > 1:
             # Calculate standings up to previous month

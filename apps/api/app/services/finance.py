@@ -71,6 +71,7 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
 from app.services import sponsor, reinforcement, staff, academy, ticket, fanbase, standings
 from app.services import distribution, decision_expense, merchandise, match_operation, prize
 from app.services import sales_effort
+from app.services import historical_performance
 from decimal import Decimal
 
 def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
@@ -98,6 +99,8 @@ def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
                 rank = s["rank"]
                 perf_map[s["club_id"]] = 1.0 - (rank - 1) / (num_clubs - 1)
     
+    hist_perf_cache = {}
+
     for club in clubs:
         profile, state = ensure_finance_initialized_for_club(db, club.id)
         
@@ -120,7 +123,11 @@ def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
             
         # Update FB
         perf = perf_map.get(club.id, 0.5)
-        hist_perf = 0.5 # Placeholder
+        if club.id not in hist_perf_cache:
+            hist_perf_cache[club.id] = historical_performance.get_hist_perf_value(
+                db, season_id, club.id
+            )
+        hist_perf = hist_perf_cache[club.id]
         fanbase.update_fanbase_for_turn(db, fb_state, promo_spend, ht_spend, perf, hist_perf)
         
         # PR7: 営業努力更新（毎月）
