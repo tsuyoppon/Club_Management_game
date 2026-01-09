@@ -207,14 +207,16 @@ def finalize_turn_finance(db: Session, season_id: UUID, turn_id: UUID):
         # Base Monthly Items (Legacy/Fixed)
         income_sponsor = profile.sponsor_base_monthly
         expense_fixed = profile.monthly_cost
-        
-        db.add(models.ClubFinancialLedger(
-            club_id=club.id,
-            turn_id=turn_id,
-            kind="sponsor",
-            amount=income_sponsor,
-            meta={"description": "Monthly Sponsor Income (Base)"}
-        ))
+
+        # Skip zero-value sponsor entries to avoid cluttering PL with meaningless rows.
+        if income_sponsor and income_sponsor != 0:
+            db.add(models.ClubFinancialLedger(
+                club_id=club.id,
+                turn_id=turn_id,
+                kind="sponsor",
+                amount=income_sponsor,
+                meta={"description": "Monthly Sponsor Income (Base)"}
+            ))
         
         db.add(models.ClubFinancialLedger(
             club_id=club.id,
