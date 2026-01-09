@@ -128,9 +128,9 @@ CONV_A1 = Decimal("0.55")
 CONV_A2 = Decimal("0.45")
 CONV_A3 = Decimal("0.10")
 
-# 内定進捗確率
-PIPELINE_PROB_EXISTING = {4: 0.40, 5: 0.35, 6: 0.30}  # month_index 9,10,11
-PIPELINE_PROB_NEW = {4: 0.15, 5: 0.25, 6: 0.35}
+# 内定進捗確率（仕様は4〜6月、実装の month_index では9〜11に対応）
+PIPELINE_PROB_EXISTING = {9: 0.40, 10: 0.35, 11: 0.30}
+PIPELINE_PROB_NEW = {9: 0.15, 10: 0.25, 11: 0.35}
 
 # =============================================================================
 # Section 8: 試合勝敗 - PR4.5で実装済み、参照用
