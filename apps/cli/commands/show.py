@@ -372,6 +372,46 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
     print_table(cumulative_table, ["kind", "income", "expense", "net"])
 
 
+@show.command("tax")
+@click.option("--season-id", help="Season UUID (defaults to config)")
+@click.option("--club-id", help="Club UUID (defaults to config)")
+@click.option("--json-output", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def show_tax(ctx: click.Context, season_id: Optional[str], club_id: Optional[str], json_output: bool) -> None:
+    """Show tax due for the current season (based on previous season profit)."""
+    config: CliConfig = ctx.obj["config"]
+    timeout: float = ctx.obj["timeout"]
+    verbose: bool = ctx.obj["verbose"]
+
+    season_id = _resolve_required(season_id, config.season_id, "season_id")
+    club_id = _resolve_required(club_id, config.club_id, "club_id")
+
+    with _with_client(config, timeout, verbose) as client:
+        data = client.get(f"/api/clubs/{club_id}/finance/tax-info", params={"season_id": season_id})
+
+    if json_output:
+        print_json(data)
+        return
+
+    if not isinstance(data, dict):
+        print_json(data)
+        return
+
+    rows = [
+        {
+            "season": data.get("season_number"),
+            "year_label": data.get("year_label"),
+            "prev_season": data.get("previous_season_number"),
+            "prev_year": data.get("previous_year_label"),
+            "prev_profit": data.get("previous_season_profit"),
+            "tax_rate": data.get("tax_rate"),
+            "tax_due": data.get("tax_due"),
+            "payment_month": f"{data.get('payment_month_name')}({data.get('payment_month_index')})",
+        }
+    ]
+    print_table(rows, ["season", "year_label", "prev_season", "prev_year", "prev_profit", "tax_rate", "tax_due", "payment_month"])
+
+
 @show.command("team_power")
 @click.option("--season-id", help="Season UUID (defaults to config)")
 @click.option("--json-output", is_flag=True, help="Print raw JSON")

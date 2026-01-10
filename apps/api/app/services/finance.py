@@ -1,8 +1,12 @@
 from uuid import UUID
+from decimal import Decimal
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.db import models
 from app.schemas import ClubFinancialProfileUpdate
+
+TAX_RATE = Decimal("0.33")
+TAX_PAYMENT_MONTH_INDEX = 2
 
 def ensure_finance_initialized_for_club(db: Session, club_id: UUID):
     """
@@ -50,6 +54,59 @@ def get_financial_snapshots(db: Session, club_id: UUID, season_id: UUID):
     ).order_by(models.ClubFinancialSnapshot.month_index)
     return db.execute(stmt).scalars().all()
 
+
+def _get_previous_season(db: Session, season: models.Season) -> models.Season | None:
+    if season.season_number <= 1:
+        return None
+    return db.execute(
+        select(models.Season).where(
+            models.Season.game_id == season.game_id,
+            models.Season.season_number == season.season_number - 1,
+        )
+    ).scalar_one_or_none()
+
+
+def _get_season_profit(db: Session, club_id: UUID, season_id: UUID) -> Decimal:
+    stmt = (
+        select(func.coalesce(func.sum(models.ClubFinancialLedger.amount), 0))
+        .join(models.Turn, models.Turn.id == models.ClubFinancialLedger.turn_id)
+        .where(
+            models.ClubFinancialLedger.club_id == club_id,
+            models.Turn.season_id == season_id,
+        )
+    )
+    total = db.execute(stmt).scalar_one()
+    return Decimal(total)
+
+
+def get_tax_info(db: Session, club_id: UUID, season_id: UUID) -> dict:
+    season = db.execute(select(models.Season).where(models.Season.id == season_id)).scalar_one_or_none()
+    if not season:
+        raise ValueError(f"Season {season_id} not found")
+
+    prev_season = _get_previous_season(db, season)
+    prev_profit = Decimal(0)
+    if prev_season:
+        prev_profit = _get_season_profit(db, club_id, prev_season.id)
+
+    taxable_profit = prev_profit if prev_profit > 0 else Decimal(0)
+    tax_due = (taxable_profit * TAX_RATE).quantize(Decimal("0.01")) if taxable_profit > 0 else Decimal(0)
+
+    month_lookup = {index: name for index, name, _ in models.month_mappings()}
+    return {
+        "season_id": season.id,
+        "season_number": season.season_number,
+        "year_label": season.year_label,
+        "previous_season_id": prev_season.id if prev_season else None,
+        "previous_season_number": prev_season.season_number if prev_season else None,
+        "previous_year_label": prev_season.year_label if prev_season else None,
+        "previous_season_profit": float(prev_profit),
+        "tax_rate": float(TAX_RATE),
+        "tax_due": float(tax_due),
+        "payment_month_index": TAX_PAYMENT_MONTH_INDEX,
+        "payment_month_name": month_lookup.get(TAX_PAYMENT_MONTH_INDEX, ""),
+    }
+
 def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
     """
     Calculate and apply finances for all clubs in the given turn.
@@ -72,7 +129,6 @@ from app.services import sponsor, reinforcement, staff, academy, ticket, fanbase
 from app.services import distribution, decision_expense, merchandise, match_operation, prize
 from app.services import sales_effort
 from app.services import historical_performance
-from decimal import Decimal
 
 def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
     """
@@ -203,6 +259,31 @@ def finalize_turn_finance(db: Session, season_id: UUID, turn_id: UUID):
         
         # PR6: 賞金（6月）
         prize.process_prize_revenue(db, club.id, season_id, turn_id, turn.month_index)
+
+        if turn.month_index == TAX_PAYMENT_MONTH_INDEX:
+            tax_info = get_tax_info(db, club.id, season_id)
+            tax_due = Decimal(str(tax_info["tax_due"]))
+            if tax_due > 0:
+                tax_existing = db.execute(
+                    select(models.ClubFinancialLedger).where(
+                        models.ClubFinancialLedger.club_id == club.id,
+                        models.ClubFinancialLedger.turn_id == turn_id,
+                        models.ClubFinancialLedger.kind == "tax",
+                    )
+                ).scalar_one_or_none()
+                if not tax_existing:
+                    db.add(
+                        models.ClubFinancialLedger(
+                            club_id=club.id,
+                            turn_id=turn_id,
+                            kind="tax",
+                            amount=-tax_due,
+                            meta={
+                                "description": "Tax payment for previous season profit",
+                                "previous_season_id": tax_info.get("previous_season_id"),
+                            },
+                        )
+                    )
         
         # Base Monthly Items (Legacy/Fixed)
         income_sponsor = profile.sponsor_base_monthly
