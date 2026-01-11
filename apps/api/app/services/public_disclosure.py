@@ -20,7 +20,7 @@ from app.config.constants import (
     DISCLOSURE_MONTH_DECEMBER,
     DISCLOSURE_MONTH_JULY,
 )
-from app.services.team_power import get_all_clubs_team_power
+from app.services.team_power import get_all_clubs_team_power, get_all_clubs_team_power_for_july
 
 
 def publish_financial_summary(
@@ -155,7 +155,7 @@ def publish_team_power_july(
     v1Spec Section 4.2:
     - 7月ターン終了時：次シーズンのチーム力指標を公開（不確実性付き）
     """
-    team_powers = get_all_clubs_team_power(db, season_id, with_uncertainty=True)
+    team_powers = get_all_clubs_team_power_for_july(db, season_id)
     
     # actual_team_powerは公開データから除外
     public_team_powers = []
