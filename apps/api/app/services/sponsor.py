@@ -153,64 +153,11 @@ def determine_next_sponsors(db: Session, club_id: UUID, season_id: UUID):
     if state.next_count is not None:
         return state
     
-    # Get Metrics
-    perf, followers, fan_growth = get_performance_metrics(db, club_id, season_id)
-    
-    # Use cumulative effort from EWMA (PR7)
-    c_ret = float(state.cumulative_effort_ret)
-    c_new = float(state.cumulative_effort_new)
-    
-    # Deterministic Seed
-    seed = f"{season_id}-{club_id}-sponsor"
-    rng = random.Random(seed)
-    
-    # -----------------------------------------------------
-    # 1. Existing Sponsors (Churn) - Section 10.5
-    # Churn = clip(c0 - c1*ln(1+C^ret(7月)) - c2*(Perf-0.5) - c3*FanGrowth, c_min, c_max)
-    # -----------------------------------------------------
-    term_c = float(CHURN_C1) * math.log(1 + c_ret)
-    term_p = float(CHURN_C2) * (perf - 0.5)
-    term_f = float(CHURN_C3) * fan_growth
-    
-    churn_raw = float(CHURN_C0) - term_c - term_p - term_f
-    churn = max(float(CHURN_MIN), min(float(CHURN_MAX), churn_raw))
-    
-    # N_exist_next = round(N_this * (1 - Churn))
-    n_exist_next = round(state.count * (1.0 - churn))
-    
-    # -----------------------------------------------------
-    # 2. New Sponsors - Section 10.6
-    # -----------------------------------------------------
-    # Leads L = round(L0 + l1*ln(1+C^new) + l2*ln(1+N) + l3*(Perf-0.5) + l4*ln(1+Followers))
-    term_l_c = float(LEADS_L1) * math.log(1 + c_new)
-    term_l_n = float(LEADS_L2) * math.log(1 + state.count)
-    term_l_p = float(LEADS_L3) * (perf - 0.5)
-    term_l_f = float(LEADS_L4) * math.log(1 + followers)
-    
-    leads_raw = float(LEADS_L0) + term_l_c + term_l_n + term_l_p + term_l_f
-    leads = max(0, round(leads_raw))
-    
-    # Conversion Rate p = sigmoid(a0 + a1*ln(1+C^new) + a2*(Perf-0.5) + a3*ln(1+Followers))
-    term_p_c = float(CONV_A1) * math.log(1 + c_new)
-    term_p_p = float(CONV_A2) * (perf - 0.5)
-    term_p_f = float(CONV_A3) * math.log(1 + followers)
-    
-    logit = float(CONV_A0) + term_p_c + term_p_p + term_p_f
-    # Sigmoid
-    try:
-        prob = 1.0 / (1.0 + math.exp(-logit))
-    except OverflowError:
-        prob = 0.0 if logit < 0 else 1.0
-        
-    # New Count ~ Binomial(L, p)
-    n_new_next = 0
-    for _ in range(leads):
-        if rng.random() < prob:
-            n_new_next += 1
-            
+    n_exist_next, n_new_next = _calculate_forecast_next_counts(db, state, season_id, club_id)
+    n_exist_next = max(n_exist_next, state.pipeline_confirmed_exist)
+    n_new_next = max(n_new_next, state.pipeline_confirmed_new)
     total_next = n_exist_next + n_new_next
     
-    # Store detailed breakdown (PR7)
     state.next_exist_count = n_exist_next
     state.next_new_count = n_new_next
     state.next_count = total_next
@@ -238,11 +185,10 @@ def process_pipeline_progress(db: Session, club_id: UUID, season_id: UUID, month
     if month_index not in [9, 10, 11]:
         return state
     
-    # Need to have calculated N_exist_next and N_new_next first
-    # This is typically done at start of Apr or by a prior calculation
-    if state.next_exist_count is None or state.next_new_count is None:
-        # Calculate tentative values based on current state
-        _calculate_tentative_next_counts(db, state, season_id, club_id)
+    # Update forecast using current cumulative effort without reducing confirmations.
+    n_exist_next, n_new_next = _calculate_forecast_next_counts(db, state, season_id, club_id)
+    state.next_exist_count = max(n_exist_next, state.pipeline_confirmed_exist)
+    state.next_new_count = max(n_new_next, state.pipeline_confirmed_new)
     
     # Deterministic seed per month
     seed = f"{season_id}-{club_id}-pipeline-{month_index}"
@@ -276,17 +222,22 @@ def process_pipeline_progress(db: Session, club_id: UUID, season_id: UUID, month
     }
 
 
-def _calculate_tentative_next_counts(db: Session, state: models.ClubSponsorState, season_id: UUID, club_id: UUID):
+def _calculate_forecast_next_counts(
+    db: Session,
+    state: models.ClubSponsorState,
+    season_id: UUID,
+    club_id: UUID,
+) -> tuple[int, int]:
     """
-    Calculate tentative N_exist_next and N_new_next based on current cumulative effort.
-    Called at start of Apr (month 9) if not already calculated.
+    Calculate forecast N_exist_next and N_new_next based on current cumulative effort.
+    Forecasts may fluctuate, but confirmations must remain non-decreasing.
     """
     perf, followers, fan_growth = get_performance_metrics(db, club_id, season_id)
     
     c_ret = float(state.cumulative_effort_ret)
     c_new = float(state.cumulative_effort_new)
     
-    seed = f"{season_id}-{club_id}-tentative"
+    seed = f"{season_id}-{club_id}-forecast"
     rng = random.Random(seed)
     
     # Churn calculation
@@ -317,12 +268,7 @@ def _calculate_tentative_next_counts(db: Session, state: models.ClubSponsorState
     
     n_new_next = sum(1 for _ in range(leads) if rng.random() < prob)
     
-    state.next_exist_count = n_exist_next
-    state.next_new_count = n_new_next
-    state.pipeline_confirmed_exist = 0
-    state.pipeline_confirmed_new = 0
-    db.add(state)
-    db.flush()
+    return n_exist_next, n_new_next
 
 
 def get_pipeline_status(db: Session, club_id: UUID, season_id: UUID) -> dict:
