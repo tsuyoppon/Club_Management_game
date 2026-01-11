@@ -13,10 +13,10 @@ from app.schemas import (
     ClubFinancialSnapshotRead,
     ClubFinancialStateRead,
     ClubFinancialLedgerRead,
+    ClubTaxInfoRead,
 )
 from app.services import finance as finance_service
 from sqlalchemy import select
-from app.db import models
 
 router = APIRouter(prefix="/clubs/{club_id}/finance", tags=["finance"])
 
@@ -115,3 +115,19 @@ def get_finance_ledger(
         }
         for r in rows
     ]
+
+
+@router.get("/tax-info", response_model=ClubTaxInfoRead)
+def get_tax_info(
+    club_id: UUID,
+    season_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    club = get_club_or_404(db, club_id)
+    require_role(user, db, club.game_id, MembershipRole.club_viewer, club_id=club_id)
+
+    try:
+        return finance_service.get_tax_info(db, club_id, season_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))

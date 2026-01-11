@@ -252,6 +252,21 @@ class ClubFinancialLedgerRead(BaseModel):
     class Config:
         orm_mode = True
 
+
+class ClubTaxInfoRead(BaseModel):
+    season_id: UUID
+    season_number: int
+    year_label: str
+    previous_season_id: Optional[UUID]
+    previous_season_number: Optional[int]
+    previous_year_label: Optional[str]
+    previous_season_profit: float
+    tax_rate: float
+    tax_due: float
+    payment_month_index: int
+    payment_month_name: str
+
+
 class StandingRead(BaseModel):
     rank: int
     club_id: UUID
