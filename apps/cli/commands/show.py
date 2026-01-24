@@ -63,6 +63,12 @@ def resolve_season_id(value: Optional[str], config: CliConfig, client: ApiClient
                 seen_ids.add(season_id)
 
     if not matches:
+        for season in seasons or []:
+            if isinstance(season, dict) and season.get("id") == candidate:
+                matches.append(season)
+                break
+
+    if not matches:
         raise CliError(f"No seasons matched '{candidate}'; use UUID")
     if len(matches) > 1:
         raise CliError("Multiple seasons matched; use UUID")
@@ -90,6 +96,11 @@ def resolve_club_id(value: Optional[str], config: CliConfig, client: ApiClient) 
         if isinstance(club, dict)
         and (club.get("name") == candidate or club.get("short_name") == candidate)
     ]
+    if not matches:
+        for club in clubs or []:
+            if isinstance(club, dict) and club.get("id") == candidate:
+                matches.append(club)
+                break
     if not matches:
         raise CliError(f"No clubs matched '{candidate}'; use UUID")
     if len(matches) > 1:

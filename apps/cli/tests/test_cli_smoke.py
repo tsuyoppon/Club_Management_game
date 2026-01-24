@@ -15,8 +15,8 @@ def _write_config(tmp_path: Path) -> Path:
                 "base_url": "http://example.invalid",
                 "user_email": "user@example.com",
                 "game_id": "g1",
-                "season_id": "1",
-                "club_id": "Alpha",
+                "season_id": "s1",
+                "club_id": "c1",
             }
         ),
         encoding="utf-8",
