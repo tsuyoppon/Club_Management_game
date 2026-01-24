@@ -73,6 +73,22 @@ def get_latest_season(
     return season
 
 
+@router.get("/games/{game_id}", response_model=List[SeasonRead])
+def list_seasons(
+    game_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    require_role(user, db, game_id, MembershipRole.club_viewer)
+    seasons = (
+        db.query(Season)
+        .filter(Season.game_id == game_id)
+        .order_by(Season.season_number.desc(), Season.created_at.desc())
+        .all()
+    )
+    return seasons
+
+
 @router.get("/{season_id}", response_model=SeasonRead)
 def get_season(
     season_id: str,
