@@ -105,6 +105,18 @@ club-game academy budget [OPTIONS]
 - 5月（month_index=10）のみ実行可（クライアント側チェック）
 - API: `POST /api/clubs/{club_id}/management/academy/budget` (params: season_id, payload: annual_budget)
 
+### 4.5 `show` - 参照系コマンド（識別子解決）
+
+```
+club-game show <subcommand> [OPTIONS]
+  --season-id UUID|season_number|year_label  シーズン識別子（config優先）
+  --club-id UUID|club名                      クラブ識別子（config優先）
+```
+
+- `show` 系は `--season-id` に UUID / season_number / year_label を指定可能。
+- `--club-id` には UUID 以外にクラブ名（name / short_name）も指定可能。
+- 解決には `game_id` が必要なため、UUID 以外を使う場合は config に `game_id` を設定する。
+
 ## 5. 実装優先順位
 
 1. `input` - 基本3項目（sales/promo/hometown）

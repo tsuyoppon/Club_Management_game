@@ -131,75 +131,75 @@ CLIまたは特定コマンドのヘルプを表示します。
 読み取り専用の参照系コマンド群です。
 
 - `club-game show match`（試合スケジュール）
-  - `--season-id <UUID>`
-  - `--club-id <UUID>`
+  - `--season-id <UUID|season_number|year_label>`
+  - `--club-id <UUID|club名>`
   - `--month <YYYY-MM>`: 月指定。
   - `--month-index <1-12>`: 月インデックス指定。
   - `--json-output`
 
 - `club-game show table`（順位表）
-  - `--season-id <UUID>`
+  - `--season-id <UUID|season_number|year_label>`
   - `--json-output`
 
 - `club-game show final_standings`（クラブの最終順位履歴）
-  - `--club-id <UUID>`
+  - `--club-id <UUID|club名>`: `--club-name`より優先。
   - `--club-name <NAME>`: ゲーム内でのクラブ名。
   - `--json-output`
 
 - `club-game show finance`（財務・台帳）
-  - `--season-id <UUID>`
-  - `--club-id <UUID>`
+  - `--season-id <UUID|season_number|year_label>`
+  - `--club-id <UUID|club名>`
   - `--month-index <1-12>`
   - `--json-output`
 
 - `club-game show tax`（税金情報）
-  - `--season-id <UUID>`
-  - `--club-id <UUID>`
+  - `--season-id <UUID|season_number|year_label>`
+  - `--club-id <UUID|club名>`
   - `--json-output`
 
 - `club-game show team_power`（チーム力開示）
-  - `--season-id <UUID>`
+  - `--season-id <UUID|season_number|year_label>`
   - `--json-output`
 
 - `club-game show disclosure`（開示データ）
-  - `--season-id <UUID>`
+  - `--season-id <UUID|season_number|year_label>`
   - `--type <financial_summary|team_power_december|team_power_july>`: 開示種別（必須）。
   - `--json-output`
 
 - `club-game show staff`（スタッフ構成）
-  - `--club-id <UUID>`
+  - `--club-id <UUID|club名>`
   - `--json-output`
 
 - `club-game show staff_history`（スタッフ履歴）
-  - `--club-id <UUID>`
-  - `--season-id <UUID>`: フィルタ。
+  - `--club-id <UUID|club名>`
+  - `--season-id <UUID|season_number|year_label>`: フィルタ。
   - `--from <YYYY-MM>`: 開始月。
   - `--to <YYYY-MM>`: 終了月。
   - `--json-output`
 
 - `club-game show current_input`（現在の入力状態）
-  - `--season-id <UUID>`
-  - `--club-id <UUID>`
+  - `--season-id <UUID|season_number|year_label>`
+  - `--club-id <UUID|club名>`
   - `--json-output`
 
 - `club-game show history`（入力履歴）
-  - `--season-id <UUID>`
-  - `--club-id <UUID>`
+  - `--season-id <UUID|season_number|year_label>`
+  - `--club-id <UUID|club名>`
   - `--from <YYYY-MM>`
   - `--to <YYYY-MM>`
   - `--json-output`
 
 - `club-game show fan_indicator`（ファン指標）
-  - `--club-id <UUID>`
-  - `--club <ID>`: 互換用エイリアス。
-  - `--season-id <UUID>`
+  - `--club-id <UUID|club名>`
+  - `--club <UUID|club名>`: 互換用エイリアス。
+  - `--season-id <UUID|season_number|year_label>`
   - `--from <YYYY-MM>`
   - `--to <YYYY-MM>`
   - `--json-output`
 
 - `club-game show sponsor_status`（スポンサー状況）
-  - `--club-id <UUID>`
-  - `--season-id <UUID>`
+  - `--club-id <UUID|club名>`
+  - `--season-id <UUID|season_number|year_label>`
   - `--pipeline`: パイプライン表示（デフォルト）。
   - `--next`: 次年度スポンサー情報を表示。
   - `--json-output`
@@ -211,4 +211,3 @@ CLIまたは特定コマンドのヘルプを表示します。
 - `club-game config set-season`
   - `--game-id <UUID>`: 対象ゲームID（未指定時は設定ファイル）。
   - `--latest`: 最新の実行中シーズンを自動取得して `season_id` に設定。
-
