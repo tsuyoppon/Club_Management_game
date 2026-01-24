@@ -13,3 +13,10 @@ coverage/
 .pytest_cache/
 dist/
 build/
+
+# Local game state files
+.club1.json
+.club2.json
+.fixtures.json
+.game.json
+.season.json
