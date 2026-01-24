@@ -14,8 +14,9 @@ def _write_config(tmp_path: Path) -> Path:
             {
                 "base_url": "http://example.invalid",
                 "user_email": "user@example.com",
-                "season_id": "s1",
-                "club_id": "c1",
+                "game_id": "g1",
+                "season_id": "1",
+                "club_id": "Alpha",
             }
         ),
         encoding="utf-8",
@@ -41,6 +42,8 @@ def test_show_table_smoke(tmp_path, monkeypatch):
     ]
 
     def fake_get(self, path, params=None):  # noqa: ANN001
+        if path == "/api/games/g1/seasons":
+            return [{"id": "s1", "season_number": 1, "year_label": "2024"}]
         if path == "/api/turns/seasons/s1/current":
             return {"month_index": 1, "month_name": "Aug"}
         if path == "/api/seasons/s1/bankrupt-clubs":
@@ -75,6 +78,10 @@ def test_show_match_month_mapping(tmp_path, monkeypatch):
     ]
 
     def fake_get(self, path, params=None):  # noqa: ANN001
+        if path == "/api/games/g1/seasons":
+            return [{"id": "s1", "season_number": 1, "year_label": "2024"}]
+        if path == "/api/games/g1/clubs":
+            return [{"id": "c1", "name": "Alpha", "short_name": "Alpha"}]
         assert path == "/api/seasons/s1/clubs/c1/schedule"
         assert params == {"month_index": 9}
         return schedule
@@ -101,6 +108,10 @@ def test_show_finance_smoke(tmp_path, monkeypatch):
     ]
 
     def fake_get(self, path, params=None):  # noqa: ANN001
+        if path == "/api/games/g1/seasons":
+            return [{"id": "s1", "season_number": 1, "year_label": "2024"}]
+        if path == "/api/games/g1/clubs":
+            return [{"id": "c1", "name": "Alpha", "short_name": "Alpha"}]
         if path.endswith("/finance/state"):
             return state
         if path.endswith("/finance/ledger"):

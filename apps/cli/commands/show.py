@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import wraps
+import uuid
 from typing import Any, Dict, List, Optional
 
 import click
@@ -9,16 +10,95 @@ import click
 from ..api_client import ApiClient
 from ..auth import build_headers
 from ..config import CliConfig
-from ..errors import ApiError, CliError, ValidationError
+from ..errors import CliError
 from ..output import print_json, print_table
 from ..parsing import ensure_month_bounds, parse_month_to_index
 
 
-def _resolve_required(option: Optional[str], fallback: Optional[str], label: str) -> str:
-    value = option or fallback
+def _is_uuid(value: Optional[str]) -> bool:
     if not value:
-        raise ValidationError(f"{label} is required; provide a flag or set it in config")
-    return value
+        return False
+    try:
+        uuid.UUID(str(value))
+    except (ValueError, TypeError):
+        return False
+    return True
+
+
+def _require_game_id(config: CliConfig) -> str:
+    if not config.game_id:
+        raise CliError(
+            "game_id is required to resolve season/club identifiers; set it with "
+            "`config set-game --id <game_uuid>` or use `config set-season --latest` "
+            "to store the latest season."
+        )
+    return config.game_id
+
+
+def resolve_season_id(value: Optional[str], config: CliConfig, client: ApiClient) -> str:
+    candidate = value or config.season_id
+    if not candidate:
+        raise CliError(
+            "season_id is required; provide --season-id or set it in config "
+            "(e.g. `config set-season --latest`)."
+        )
+    if _is_uuid(candidate):
+        return candidate
+
+    game_id = _require_game_id(config)
+    seasons = client.get(f"/api/games/{game_id}/seasons")
+    matches: List[Dict[str, Any]] = []
+    seen_ids = set()
+    for season in seasons or []:
+        if not isinstance(season, dict):
+            continue
+        season_number = season.get("season_number")
+        year_label = season.get("year_label")
+        if (year_label is not None and str(year_label) == str(candidate)) or (
+            season_number is not None and str(season_number) == str(candidate)
+        ):
+            season_id = season.get("id")
+            if season_id and season_id not in seen_ids:
+                matches.append(season)
+                seen_ids.add(season_id)
+
+    if not matches:
+        raise CliError(f"No seasons matched '{candidate}'; use UUID")
+    if len(matches) > 1:
+        raise CliError("Multiple seasons matched; use UUID")
+
+    resolved_id = matches[0].get("id")
+    if not resolved_id:
+        raise CliError(f"Season '{candidate}' matched but has no id; use UUID")
+    return resolved_id
+
+
+def resolve_club_id(value: Optional[str], config: CliConfig, client: ApiClient) -> str:
+    candidate = value or config.club_id
+    if not candidate:
+        raise CliError(
+            "club_id is required; provide --club-id/--club or set it in config."
+        )
+    if _is_uuid(candidate):
+        return candidate
+
+    game_id = _require_game_id(config)
+    clubs = client.get(f"/api/games/{game_id}/clubs")
+    matches = [
+        club
+        for club in clubs or []
+        if isinstance(club, dict)
+        and (club.get("name") == candidate or club.get("short_name") == candidate)
+    ]
+    if not matches:
+        raise CliError(f"No clubs matched '{candidate}'; use UUID")
+    if len(matches) > 1:
+        raise CliError("Multiple clubs matched; use UUID")
+
+    resolved_id = matches[0].get("id")
+    if not resolved_id:
+        raise CliError(f"Club '{candidate}' matched but has no id; use UUID")
+    return resolved_id
 
 
 def _with_client(config: CliConfig, timeout: float, verbose: bool) -> ApiClient:
@@ -57,9 +137,6 @@ def show_match(ctx: click.Context, season_id: Optional[str], club_id: Optional[s
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
 
-    season_id = _resolve_required(season_id, config.season_id, "season_id")
-    club_id = _resolve_required(club_id, config.club_id, "club_id")
-
     parsed_month_index = parse_month_to_index(month) if month else month_index
     parsed_month_index = ensure_month_bounds(parsed_month_index, "month_index")
 
@@ -68,6 +145,8 @@ def show_match(ctx: click.Context, season_id: Optional[str], club_id: Optional[s
         params["month_index"] = parsed_month_index
 
     with _with_client(config, timeout, verbose) as client:
+        season_id = resolve_season_id(season_id, config, client)
+        club_id = resolve_club_id(club_id, config, client)
         data = client.get(f"/api/seasons/{season_id}/clubs/{club_id}/schedule", params=params)
 
     if json_output:
@@ -107,9 +186,8 @@ def show_table(ctx: click.Context, season_id: Optional[str], json_output: bool) 
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
-    season_id = _resolve_required(season_id, config.season_id, "season_id")
-
     with _with_client(config, timeout, verbose) as client:
+        season_id = resolve_season_id(season_id, config, client)
         turn = client.get(f"/api/turns/seasons/{season_id}/current")
         bankrupt_clubs = client.get(f"/api/seasons/{season_id}/bankrupt-clubs")
         data = client.get(f"/api/seasons/{season_id}/standings")
@@ -165,26 +243,10 @@ def show_final_standings(
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
-    resolved_club_id = club_id
+    resolved_club_id = club_id or club_name
 
     with _with_client(config, timeout, verbose) as client:
-        if not resolved_club_id and club_name:
-            game_id = _resolve_required(config.game_id, None, "game_id")
-            clubs = client.get(f"/api/games/{game_id}/clubs")
-            matches = [
-                club for club in clubs
-                if club.get("name") == club_name or club.get("short_name") == club_name
-            ]
-            if not matches:
-                raise CliError(f"Club not found for name: {club_name}")
-            if len(matches) > 1:
-                raise CliError(f"Multiple clubs matched name: {club_name}; use --club-id")
-            resolved_club_id = matches[0].get("id")
-
-        if not resolved_club_id:
-            resolved_club_id = config.club_id
-
-        resolved_club_id = _resolve_required(resolved_club_id, None, "club_id")
+        resolved_club_id = resolve_club_id(resolved_club_id, config, client)
         data = client.get(f"/api/clubs/{resolved_club_id}/final-standings")
 
     if json_output:
@@ -229,14 +291,14 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
 
-    season_id = _resolve_required(season_id, config.season_id, "season_id")
-    club_id = _resolve_required(club_id, config.club_id, "club_id")
-
-    params = {"season_id": season_id}
+    params = {}
     if month_index is not None:
         params["month_index"] = month_index
 
     with _with_client(config, timeout, verbose) as client:
+        season_id = resolve_season_id(season_id, config, client)
+        club_id = resolve_club_id(club_id, config, client)
+        params["season_id"] = season_id
         state = client.get(f"/api/clubs/{club_id}/finance/state")
         ledger = client.get(f"/api/clubs/{club_id}/finance/ledger", params=params)
         season = client.get(f"/api/seasons/{season_id}")
@@ -383,10 +445,9 @@ def show_tax(ctx: click.Context, season_id: Optional[str], club_id: Optional[str
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
 
-    season_id = _resolve_required(season_id, config.season_id, "season_id")
-    club_id = _resolve_required(club_id, config.club_id, "club_id")
-
     with _with_client(config, timeout, verbose) as client:
+        season_id = resolve_season_id(season_id, config, client)
+        club_id = resolve_club_id(club_id, config, client)
         data = client.get(f"/api/clubs/{club_id}/finance/tax-info", params={"season_id": season_id})
 
     if json_output:
@@ -420,9 +481,8 @@ def show_team_power(ctx: click.Context, season_id: Optional[str], json_output: b
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
-    season_id = _resolve_required(season_id, config.season_id, "season_id")
-
     with _with_client(config, timeout, verbose) as client:
+        season_id = resolve_season_id(season_id, config, client)
         data = client.get(f"/api/seasons/{season_id}/team-power")
 
     if json_output:
@@ -459,9 +519,8 @@ def show_disclosure(ctx: click.Context, season_id: Optional[str], disclosure_typ
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
-    season_id = _resolve_required(season_id, config.season_id, "season_id")
-
     with _with_client(config, timeout, verbose) as client:
+        season_id = resolve_season_id(season_id, config, client)
         data = client.get(f"/api/seasons/{season_id}/disclosures/{disclosure_type}")
 
     if json_output:
@@ -496,9 +555,8 @@ def show_staff(ctx: click.Context, club_id: Optional[str], json_output: bool) ->
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
-    club_id = _resolve_required(club_id, config.club_id, "club_id")
-
     with _with_client(config, timeout, verbose) as client:
+        club_id = resolve_club_id(club_id, config, client)
         data = client.get(f"/api/clubs/{club_id}/management/staff")
 
     if json_output:
@@ -530,12 +588,7 @@ def show_staff_history(ctx: click.Context, club_id: Optional[str], season_id: Op
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
-    club_id = _resolve_required(club_id, config.club_id, "club_id")
-    season_id = season_id or config.season_id
-
     params: Dict[str, Any] = {}
-    if season_id:
-        params["season_id"] = season_id
     fm = ensure_month_bounds(parse_month_to_index(from_month) if from_month else None, "from_month")
     tm = ensure_month_bounds(parse_month_to_index(to_month) if to_month else None, "to_month")
     if fm is not None:
@@ -544,6 +597,12 @@ def show_staff_history(ctx: click.Context, club_id: Optional[str], season_id: Op
         params["to_month"] = tm
 
     with _with_client(config, timeout, verbose) as client:
+        club_id = resolve_club_id(club_id, config, client)
+        resolved_season_id = None
+        if season_id or config.season_id:
+            resolved_season_id = resolve_season_id(season_id, config, client)
+        if resolved_season_id:
+            params["season_id"] = resolved_season_id
         data = client.get(f"/api/clubs/{club_id}/management/staff/history", params=params)
 
     if json_output:
@@ -572,10 +631,9 @@ def show_current_input(ctx: click.Context, season_id: Optional[str], club_id: Op
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
-    season_id = _resolve_required(season_id, config.season_id, "season_id")
-    club_id = _resolve_required(club_id, config.club_id, "club_id")
-
     with _with_client(config, timeout, verbose) as client:
+        season_id = resolve_season_id(season_id, config, client)
+        club_id = resolve_club_id(club_id, config, client)
         data = client.get(f"/api/turns/seasons/{season_id}/decisions/{club_id}/current")
 
     if data is None:
@@ -622,9 +680,6 @@ def show_history(ctx: click.Context, season_id: Optional[str], club_id: Optional
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
-    season_id = _resolve_required(season_id, config.season_id, "season_id")
-    club_id = _resolve_required(club_id, config.club_id, "club_id")
-
     params: Dict[str, Any] = {}
     fm = ensure_month_bounds(parse_month_to_index(from_month) if from_month else None, "from_month")
     tm = ensure_month_bounds(parse_month_to_index(to_month) if to_month else None, "to_month")
@@ -634,6 +689,8 @@ def show_history(ctx: click.Context, season_id: Optional[str], club_id: Optional
         params["to_month"] = tm
 
     with _with_client(config, timeout, verbose) as client:
+        season_id = resolve_season_id(season_id, config, client)
+        club_id = resolve_club_id(club_id, config, client)
         data = client.get(f"/api/turns/seasons/{season_id}/decisions/{club_id}", params=params)
 
     if json_output:
@@ -664,11 +721,7 @@ def show_fan_indicator(ctx: click.Context, club_id: Optional[str], club_override
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
-    season_id = _resolve_required(season_id, config.season_id, "season_id")
-    resolved_club = club_override or club_id or config.club_id
-    resolved_club = _resolve_required(resolved_club, None, "club_id/club")
-
-    params: Dict[str, Any] = {"season_id": season_id}
+    params: Dict[str, Any] = {}
     fm = ensure_month_bounds(parse_month_to_index(from_month) if from_month else None, "from_month")
     tm = ensure_month_bounds(parse_month_to_index(to_month) if to_month else None, "to_month")
     if fm is not None:
@@ -677,6 +730,9 @@ def show_fan_indicator(ctx: click.Context, club_id: Optional[str], club_override
         params["to_month"] = tm
 
     with _with_client(config, timeout, verbose) as client:
+        season_id = resolve_season_id(season_id, config, client)
+        resolved_club = resolve_club_id(club_override or club_id, config, client)
+        params["season_id"] = season_id
         standings = client.get(f"/api/seasons/{season_id}/standings")
         data = client.get(f"/api/clubs/{resolved_club}/fan_indicator", params=params)
 
@@ -713,16 +769,13 @@ def show_sponsor_status(ctx: click.Context, club_id: Optional[str], season_id: O
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
     verbose: bool = ctx.obj["verbose"]
-    season_id = _resolve_required(season_id, config.season_id, "season_id")
-    club_id = _resolve_required(club_id, config.club_id, "club_id")
-
-    endpoint: str
-    if next_flag:
-        endpoint = f"/api/sponsors/seasons/{season_id}/clubs/{club_id}/next-sponsor"
-    else:
-        endpoint = f"/api/sponsors/seasons/{season_id}/clubs/{club_id}/pipeline"
-
     with _with_client(config, timeout, verbose) as client:
+        season_id = resolve_season_id(season_id, config, client)
+        club_id = resolve_club_id(club_id, config, client)
+        if next_flag:
+            endpoint = f"/api/sponsors/seasons/{season_id}/clubs/{club_id}/next-sponsor"
+        else:
+            endpoint = f"/api/sponsors/seasons/{season_id}/clubs/{club_id}/pipeline"
         data = client.get(endpoint)
 
     if json_output:
