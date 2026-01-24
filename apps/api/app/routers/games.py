@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.dependencies import get_current_user, get_db, require_role
-from app.db.models import Club, Game, GameStatus, Membership, MembershipRole, User
-from app.schemas import ClubCreate, ClubRead, GameCreate, GameRead, MembershipCreate
+from app.db.models import Club, Game, GameStatus, Membership, MembershipRole, Season, User
+from app.schemas import ClubCreate, ClubRead, GameCreate, GameRead, MembershipCreate, SeasonSummaryRead
 
 router = APIRouter(prefix="/games", tags=["games"])
 
@@ -100,3 +100,18 @@ def create_membership(
     db.commit()
     db.refresh(membership)
     return {"id": str(membership.id)}
+
+
+@router.get("/{game_id}/seasons", response_model=List[SeasonSummaryRead])
+def list_game_seasons(
+    game_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    require_role(user, db, game_id, MembershipRole.club_viewer)
+    return (
+        db.query(Season)
+        .filter(Season.game_id == game_id)
+        .order_by(Season.season_number.desc(), Season.created_at.desc())
+        .all()
+    )
