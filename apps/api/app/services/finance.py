@@ -280,7 +280,9 @@ def finalize_turn_finance(db: Session, season_id: UUID, turn_id: UUID):
                             amount=-tax_due,
                             meta={
                                 "description": "Tax payment for previous season profit",
-                                "previous_season_id": tax_info.get("previous_season_id"),
+                                "previous_season_id": str(tax_info.get("previous_season_id"))
+                                if tax_info.get("previous_season_id") is not None
+                                else None,
                             },
                         )
                     )
