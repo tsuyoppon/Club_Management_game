@@ -15,8 +15,9 @@ def _write_config(tmp_path: Path) -> Path:
             {
                 "base_url": "http://example.invalid",
                 "user_email": "user@example.com",
-                "season_id": "s1",
-                "club_id": "c1",
+                "game_id": "g1",
+                "season_id": "1",
+                "club_id": "Alpha",
             }
         ),
         encoding="utf-8",
@@ -82,6 +83,14 @@ def test_show_fan_indicator_with_filters(tmp_path, monkeypatch):
     cfg = _write_config(tmp_path)
 
     mock_client = MockApiClient()
+    mock_client.responses[("GET", "/api/games/g1/seasons")] = [{"id": "s1", "season_number": 1, "year_label": "2024"}]
+    mock_client.responses[("GET", "/api/games/g1/clubs")] = [
+        {"id": "c1", "name": "Alpha", "short_name": "Alpha"},
+        {"id": "c2", "name": "Club Two", "short_name": "c2"},
+    ]
+    mock_client.responses[("GET", "/api/seasons/s1/standings")] = [
+        {"club_id": "c2", "club_name": "Club Two"}
+    ]
     mock_client.responses[("GET", "/api/clubs/c2/fan_indicator")] = {"club_id": "c2", "followers": 12345}
 
     def mock_with_client(*args, **kwargs):
@@ -118,6 +127,13 @@ def test_show_fan_indicator_json_output(tmp_path, monkeypatch):
     cfg = _write_config(tmp_path)
 
     mock_client = MockApiClient()
+    mock_client.responses[("GET", "/api/games/g1/seasons")] = [{"id": "s1", "season_number": 1, "year_label": "2024"}]
+    mock_client.responses[("GET", "/api/games/g1/clubs")] = [
+        {"id": "c1", "name": "Alpha", "short_name": "Alpha"},
+    ]
+    mock_client.responses[("GET", "/api/seasons/s1/standings")] = [
+        {"club_id": "c1", "club_name": "Alpha"}
+    ]
     mock_client.responses[("GET", "/api/clubs/c1/fan_indicator")] = {"club_id": "c1", "followers": 999}
 
     def mock_with_client(*args, **kwargs):
