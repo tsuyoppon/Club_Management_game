@@ -492,10 +492,12 @@ def show_disclosure(ctx: click.Context, season_id: Optional[str], disclosure_typ
             else:
                 click.echo(f"対象シーズン: season{season_number}")
 
-        entry_keys = []
-        first_entry = clubs[0] if isinstance(clubs, list) and clubs else None
-        if isinstance(first_entry, dict):
-            entry_keys = [key for key in first_entry.keys() if key not in {"club_id", "club_name"}]
+        entry_keys_set = set()
+        for entry in clubs:
+            if isinstance(entry, dict):
+                entry_keys_set.update(entry.keys())
+        entry_keys_set.difference_update({"club_id", "club_name"})
+        entry_keys = list(entry_keys_set)
 
         preferred_order = ["fiscal_year", "total_revenue", "total_expense", "net_income", "ending_balance"]
         ordered_keys: List[str] = []

@@ -201,6 +201,7 @@ def test_show_disclosure_financial_summary_table(tmp_path, monkeypatch):
                     "total_expense": -520669163,
                     "total_revenue": 407698000,
                     "ending_balance": 213975395,
+                    "bonus_income": 12345,
                 },
             ]
         }
@@ -226,4 +227,5 @@ def test_show_disclosure_financial_summary_table(tmp_path, monkeypatch):
     assert "item" in result.output
     assert "FC_TOKYO" in result.output
     assert "FC_NAGOYA" in result.output
+    assert "bonus_income" in result.output
     assert "club_id" not in result.output
