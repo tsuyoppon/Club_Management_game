@@ -59,6 +59,17 @@ class SeasonRead(BaseModel):
         orm_mode = True
 
 
+class SeasonSummaryRead(BaseModel):
+    id: UUID
+    season_number: int
+    year_label: str
+    status: SeasonStatus
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+
+
 class FixtureGenerateRequest(BaseModel):
     force: bool = False
 
