@@ -463,6 +463,9 @@ def show_disclosure(ctx: click.Context, season_id: Optional[str], disclosure_typ
 
     with _with_client(config, timeout, verbose) as client:
         data = client.get(f"/api/seasons/{season_id}/disclosures/{disclosure_type}")
+        season_info = None
+        if not json_output and disclosure_type == "financial_summary":
+            season_info = client.get(f"/api/seasons/{season_id}")
 
     if json_output:
         print_json(data)
@@ -471,6 +474,53 @@ def show_disclosure(ctx: click.Context, season_id: Optional[str], disclosure_typ
     payload = data.get("disclosed_data") if isinstance(data, dict) else None
     if payload is None:
         print_json(data)
+        return
+
+    if disclosure_type == "financial_summary":
+        clubs = payload.get("clubs") if isinstance(payload, dict) else None
+        if not clubs:
+            print_json(payload)
+            return
+
+        season_label = season_info.get("year_label") if isinstance(season_info, dict) else None
+        season_number = season_info.get("season_number") if isinstance(season_info, dict) else None
+        if season_label or season_number is not None:
+            if season_label and season_number is not None:
+                click.echo(f"対象シーズン: {season_label} (season{season_number})")
+            elif season_label:
+                click.echo(f"対象シーズン: {season_label}")
+            else:
+                click.echo(f"対象シーズン: season{season_number}")
+
+        entry_keys = []
+        first_entry = clubs[0] if isinstance(clubs, list) and clubs else None
+        if isinstance(first_entry, dict):
+            entry_keys = [key for key in first_entry.keys() if key not in {"club_id", "club_name"}]
+
+        preferred_order = ["fiscal_year", "total_revenue", "total_expense", "net_income", "ending_balance"]
+        ordered_keys: List[str] = []
+        for key in preferred_order:
+            if key in entry_keys:
+                ordered_keys.append(key)
+        for key in entry_keys:
+            if key not in ordered_keys:
+                ordered_keys.append(key)
+
+        club_names = [
+            entry.get("club_name") or entry.get("club_id") or f"club_{idx + 1}"
+            for idx, entry in enumerate(clubs)
+            if isinstance(entry, dict)
+        ]
+        columns = ["item", *club_names]
+        rows: List[Dict[str, Any]] = []
+        for key in ordered_keys:
+            row: Dict[str, Any] = {"item": key}
+            for club_name, entry in zip(club_names, clubs):
+                if isinstance(entry, dict):
+                    row[club_name] = entry.get(key)
+            rows.append(row)
+
+        print_table(rows, columns)
         return
 
     if isinstance(payload, list):
