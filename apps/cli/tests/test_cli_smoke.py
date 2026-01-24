@@ -177,3 +177,55 @@ def test_show_final_standings_by_name(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "Final standings history for Club Beta" in result.output
     assert "2024" in result.output
+
+
+def test_show_disclosure_financial_summary_table(tmp_path, monkeypatch):
+    cfg = _write_config(tmp_path)
+    disclosure = {
+        "disclosed_data": {
+            "clubs": [
+                {
+                    "club_id": "e04b6e9a-2201-4ac4-8241-64f6dad18a13",
+                    "club_name": "FC_TOKYO",
+                    "net_income": 189041949,
+                    "fiscal_year": "2026",
+                    "total_expense": -390931251,
+                    "total_revenue": 579973200,
+                    "ending_balance": 331618107,
+                },
+                {
+                    "club_id": "bd5b3e4d-66e8-4f69-b96a-daed42c32f0f",
+                    "club_name": "FC_NAGOYA",
+                    "net_income": -112971163,
+                    "fiscal_year": "2026",
+                    "total_expense": -520669163,
+                    "total_revenue": 407698000,
+                    "ending_balance": 213975395,
+                    "bonus_income": 12345,
+                },
+            ]
+        }
+    }
+
+    def fake_get(self, path, params=None):  # noqa: ANN001
+        if path == "/api/seasons/s1/disclosures/financial_summary":
+            return disclosure
+        if path == "/api/seasons/s1":
+            return {"year_label": "2026", "season_number": 5}
+        raise AssertionError(f"Unexpected path {path}")
+
+    monkeypatch.setattr(ApiClient, "get", fake_get)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["--config-path", str(cfg), "show", "disclosure", "--type", "financial_summary"],
+    )
+
+    assert result.exit_code == 0
+    assert "対象シーズン: 2026 (season5)" in result.output
+    assert "item" in result.output
+    assert "FC_TOKYO" in result.output
+    assert "FC_NAGOYA" in result.output
+    assert "bonus_income" in result.output
+    assert "club_id" not in result.output
