@@ -9,16 +9,30 @@ def print_json(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=False))
 
 
-def _stringify(value: Any) -> str:
+def format_number(value: Any) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return f"{value:,}"
+    if isinstance(value, float):
+        return f"{value:,}"
+    return str(value)
+
+
+def _stringify(value: Any, *, format_numbers: bool) -> str:
+    if format_numbers:
+        return format_number(value)
     if value is None:
         return "-"
     return str(value)
 
 
-def print_table(rows: Sequence[Mapping[str, Any]], columns: List[str]) -> None:
+def print_table(rows: Sequence[Mapping[str, Any]], columns: List[str], *, format_numbers: bool = False) -> None:
     # Compute column widths
     headers = [col for col in columns]
-    str_rows = [[_stringify(row.get(col, "")) for col in columns] for row in rows]
+    str_rows = [[_stringify(row.get(col, ""), format_numbers=format_numbers) for col in columns] for row in rows]
     widths = [max(len(h), *(len(r[idx]) for r in str_rows) if str_rows else [0]) for idx, h in enumerate(headers)]
 
     def fmt_row(row: Iterable[str]) -> str:
@@ -28,4 +42,3 @@ def print_table(rows: Sequence[Mapping[str, Any]], columns: List[str]) -> None:
     print("-+-".join("-" * w for w in widths))
     for row in str_rows:
         print(fmt_row(row))
-
