@@ -127,6 +127,7 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
     
 from app.services import sponsor, reinforcement, staff, academy, ticket, fanbase, standings
 from app.services import distribution, decision_expense, merchandise, match_operation, prize
+from app.services import team_operation
 from app.services import sales_effort
 from app.services import historical_performance
 
@@ -204,6 +205,7 @@ def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
             sponsor.determine_next_sponsors(db, club.id, season_id)
             
         reinforcement.process_reinforcement_cost(db, club.id, season_id, turn_id, turn.month_index)
+        team_operation.process_team_operation_cost(db, club.id, turn_id)
         if turn.month_index in [11, 12]:
             # オフシーズン(6月・7月)の翌シーズン強化費を集計して次季プランに反映
             reinforcement.update_next_season_reinforcement_plan(db, club.id, season_id)
