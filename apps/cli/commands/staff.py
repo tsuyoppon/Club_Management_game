@@ -41,6 +41,37 @@ def staff(ctx: click.Context) -> None:
     pass
 
 
+def _resolve_current_staff_count(client: ApiClient, club_id: str, role: str) -> int:
+    staff_rows = client.get(f"/api/clubs/{club_id}/management/staff")
+    if not isinstance(staff_rows, list):
+        raise CliError("Failed to load current staff counts")
+    for row in staff_rows:
+        if isinstance(row, dict) and row.get("role") == role:
+            count = row.get("count")
+            if isinstance(count, int):
+                return count
+            break
+    raise CliError(f"Current staff count not found for role: {role}")
+
+
+def _parse_staff_count_input(count_input: str, current_count: Optional[int]) -> int:
+    trimmed = count_input.strip()
+    if not trimmed:
+        raise ValidationError("count is required")
+    if trimmed[0] in {"+", "-"}:
+        if current_count is None:
+            raise ValidationError("count delta requires current staff count")
+        try:
+            delta = int(trimmed)
+        except ValueError as exc:
+            raise ValidationError("count delta must be a signed integer like +1 or -2") from exc
+        return current_count + delta
+    try:
+        return int(trimmed)
+    except ValueError as exc:
+        raise ValidationError("count must be an integer or signed delta like +1") from exc
+
+
 @staff.command("plan")
 @click.option(
     "--role",
@@ -59,13 +90,13 @@ def staff(ctx: click.Context) -> None:
     ),
     help="Staff role",
 )
-@click.option("--count", required=True, type=int, help="Target headcount (>=1)")
+@click.option("--count", "count_input", required=True, type=str, help="Target headcount (>=1) or delta (+/-N)")
 @click.option("--club-id", help="Club UUID (defaults to config)")
 @click.option("--season-id", help="Season UUID (defaults to config)")
 @click.option("--turn-id", help="Turn UUID (defaults to current turn)")
 @click.option("--json-output", is_flag=True, help="Print raw JSON response")
 @click.pass_context
-def set_staff_plan(ctx: click.Context, role: str, count: int, club_id: Optional[str], season_id: Optional[str], turn_id: Optional[str], json_output: bool) -> None:
+def set_staff_plan(ctx: click.Context, role: str, count_input: str, club_id: Optional[str], season_id: Optional[str], turn_id: Optional[str], json_output: bool) -> None:
     """Request hiring/firing for next season (allowed in May only)."""
     config: CliConfig = ctx.obj["config"]
     timeout: float = ctx.obj["timeout"]
@@ -74,12 +105,15 @@ def set_staff_plan(ctx: click.Context, role: str, count: int, club_id: Optional[
     season_id = _resolve_required(season_id, config.season_id, "season_id")
     club_id = _resolve_required(club_id, config.club_id, "club_id")
 
-    if count < 1:
-        raise ValidationError("count must be >= 1")
-
-    payload = {"role": role.lower(), "count": count}
-
     with _with_client(config, timeout, verbose) as client:
+        current_count = None
+        if count_input.strip().startswith(("+", "-")):
+            current_count = _resolve_current_staff_count(client, club_id, role.lower())
+        count = _parse_staff_count_input(count_input, current_count)
+        if count < 1:
+            raise ValidationError("count must be >= 1")
+
+        payload = {"role": role.lower(), "count": count}
         resolved_turn_id = _resolve_turn_id(client, season_id, turn_id)
         result = client.post(
             f"/api/clubs/{club_id}/management/staff/plan",
