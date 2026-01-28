@@ -11,7 +11,7 @@ from ..api_client import ApiClient
 from ..auth import build_headers
 from ..config import CliConfig
 from ..errors import ApiError, CliError, ValidationError
-from ..output import print_json, print_table
+from ..output import format_number, print_json, print_table
 from ..parsing import ensure_month_bounds, parse_month_to_index
 
 
@@ -192,7 +192,7 @@ def show_match(ctx: click.Context, season_id: Optional[str], club_id: Optional[s
             }
         )
 
-    print_table(rows, ["month", "home", "opponent", "status", "score", "weather", "attendance"])
+    print_table(rows, ["month", "home", "opponent", "status", "score", "weather", "attendance"], format_numbers=True)
 
 
 @show.command("table")
@@ -222,7 +222,8 @@ def show_table(ctx: click.Context, season_id: Optional[str], json_output: bool) 
             penalty_points = item.get("penalty_points")
             if item.get("is_bankrupt") and penalty_points is not None and penalty_points < 0:
                 club_name = item.get("club_name") or "-"
-                messages.append(f"{club_name}チームは勝ち点を{abs(penalty_points)}点剥奪されている")
+                formatted_penalty = format_number(abs(penalty_points))
+                messages.append(f"{club_name}チームは勝ち点を{formatted_penalty}点剥奪されている")
 
     for message in messages:
         click.echo(message)
@@ -242,7 +243,7 @@ def show_table(ctx: click.Context, season_id: Optional[str], json_output: bool) 
         }
         for row in data
     ]
-    print_table(rows, ["rank", "club", "played", "won", "drawn", "lost", "gf", "ga", "gd", "pts"])
+    print_table(rows, ["rank", "club", "played", "won", "drawn", "lost", "gf", "ga", "gd", "pts"], format_numbers=True)
 
 
 @show.command("final_standings")
@@ -296,7 +297,7 @@ def show_final_standings(
         }
         for row in data
     ]
-    print_table(rows, ["season", "rank", "pts", "played", "won", "drawn", "lost", "gf", "ga", "gd"])
+    print_table(rows, ["season", "rank", "pts", "played", "won", "drawn", "lost", "gf", "ga", "gd"], format_numbers=True)
 
 
 @show.command("finance")
@@ -363,9 +364,9 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
     }
     month_label = month_name_lookup.get(target_month, "-") if target_month else "-"
 
-    click.echo(f"Season : {season_index}")
-    click.echo(f"{month_label}(month_index={target_month})")
-    click.echo(f"Balance: {round_amount(balance)}")
+    click.echo(f"Season : {format_number(season_index)}")
+    click.echo(f"{month_label}(month_index={format_number(target_month)})")
+    click.echo(f"Balance: {format_number(round_amount(balance))}")
 
     # Prepare ledger grouping
     if not ledger:
@@ -406,7 +407,7 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
             }
         )
         click.echo("Current month breakdown (by item):")
-        print_table(monthly_table, ["kind", "income", "expense", "net"])
+        print_table(monthly_table, ["kind", "income", "expense", "net"], format_numbers=True)
     else:
         click.echo("No entries for the target month.")
 
@@ -451,7 +452,7 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
         )
 
     click.echo("Season cumulative by item:")
-    print_table(cumulative_table, ["kind", "income", "expense", "net"])
+    print_table(cumulative_table, ["kind", "income", "expense", "net"], format_numbers=True)
 
 
 @show.command("tax")
@@ -490,7 +491,7 @@ def show_tax(ctx: click.Context, season_id: Optional[str], club_id: Optional[str
             "payment_month": f"{data.get('payment_month_name')}({data.get('payment_month_index')})",
         }
     ]
-    print_table(rows, ["season", "year_label", "prev_season", "prev_year", "prev_profit", "tax_rate", "tax_due", "payment_month"])
+    print_table(rows, ["season", "year_label", "prev_season", "prev_year", "prev_profit", "tax_rate", "tax_due", "payment_month"], format_numbers=True)
 
 
 @show.command("team_power")
@@ -519,7 +520,7 @@ def show_team_power(ctx: click.Context, season_id: Optional[str], json_output: b
             }
             for entry in clubs
         ]
-        print_table(rows, ["club", "team_power"])
+        print_table(rows, ["club", "team_power"], format_numbers=True)
     else:
         print_json(data)
 
@@ -601,19 +602,19 @@ def show_disclosure(ctx: click.Context, season_id: Optional[str], disclosure_typ
                     row[club_name] = entry.get(key)
             rows.append(row)
 
-        print_table(rows, columns)
+        print_table(rows, columns, format_numbers=True)
         return
 
     if isinstance(payload, list):
         if payload and isinstance(payload[0], dict):
             columns = list(payload[0].keys())
-            print_table(payload, columns)
+            print_table(payload, columns, format_numbers=True)
             return
         print_json(payload)
         return
 
     if isinstance(payload, dict):
-        print_table([payload], list(payload.keys()))
+        print_table([payload], list(payload.keys()), format_numbers=True)
         return
 
     print_json(payload)
@@ -646,7 +647,7 @@ def show_staff(ctx: click.Context, club_id: Optional[str], json_output: bool) ->
         }
         for row in data
     ]
-    print_table(rows, ["role", "count", "salary", "next", "hiring_target", "updated_at"])
+    print_table(rows, ["role", "count", "salary", "next", "hiring_target", "updated_at"], format_numbers=True)
 
 
 @show.command("staff_history")
@@ -690,7 +691,7 @@ def show_staff_history(ctx: click.Context, club_id: Optional[str], season_id: Op
         }
         for entry in data
     ]
-    print_table(rows, ["season", "month", "month_name", "total_cost", "created_at"])
+    print_table(rows, ["season", "month", "month_name", "total_cost", "created_at"], format_numbers=True)
 
 
 @show.command("current_input")
@@ -724,7 +725,7 @@ def show_current_input(ctx: click.Context, season_id: Optional[str], club_id: Op
         "committed_at": data.get("committed_at"),
     }
     click.echo("Turn:")
-    print_table([summary], ["season_number", "month_index", "month_name", "decision_state", "committed_at"])
+    print_table([summary], ["season_number", "month_index", "month_name", "decision_state", "committed_at"], format_numbers=True)
     available = data.get("available_inputs") if isinstance(data, dict) else None
     if available:
         click.echo("Available inputs this turn:")
@@ -778,7 +779,7 @@ def show_history(ctx: click.Context, season_id: Optional[str], club_id: Optional
         }
         for entry in data
     ]
-    print_table(rows, ["month", "month_name", "state", "committed_at"])
+    print_table(rows, ["month", "month_name", "state", "committed_at"], format_numbers=True)
 
 
 @show.command("fan_indicator")
@@ -828,7 +829,7 @@ def show_fan_indicator(ctx: click.Context, club_id: Optional[str], club_override
         return
 
     rows = [rendered] if rendered else []
-    print_table(rows, ["club", "followers"])
+    print_table(rows, ["club", "followers"], format_numbers=True)
 
 
 @show.command("sponsor_status")
@@ -867,7 +868,7 @@ def show_sponsor_status(ctx: click.Context, club_id: Optional[str], season_id: O
             "expected_revenue": data.get("expected_revenue"),
             "finalized": data.get("is_finalized"),
         }]
-        print_table(rows, ["next_total", "next_exist", "next_new", "unit_price", "expected_revenue", "finalized"])
+        print_table(rows, ["next_total", "next_exist", "next_new", "unit_price", "expected_revenue", "finalized"], format_numbers=True)
     else:
         rows = [{
             "current": data.get("current_sponsors"),
@@ -878,7 +879,7 @@ def show_sponsor_status(ctx: click.Context, club_id: Optional[str], season_id: O
             "next_new_target": data.get("next_new_target"),
             "next_total": data.get("next_total"),
         }]
-        print_table(rows, ["current", "confirmed_exist", "confirmed_new", "total_confirmed", "next_exist_target", "next_new_target", "next_total"])
+        print_table(rows, ["current", "confirmed_exist", "confirmed_new", "total_confirmed", "next_exist_target", "next_new_target", "next_total"], format_numbers=True)
 
 
 def dispatch_errors(func):
