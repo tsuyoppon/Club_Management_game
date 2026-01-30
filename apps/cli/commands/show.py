@@ -346,6 +346,9 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
         # Hide internal marker entries
         if kind == "additional_reinforcement_applied":
             return None
+
+        if kind == "next_home_promo_expense":
+            return "promo_expense"
         
         prefixes = [
             "match_operation_cost",
@@ -385,8 +388,34 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
         amt = entry.get("amount", 0)
         monthly_by_kind[kind] = monthly_by_kind.get(kind, 0) + amt
 
+    preferred_order = [
+        "sponsor_annual",
+        "sponsor",
+        "ticket_rev",
+        "merchandise_rev",
+        "distribution_revenue",
+        "prize_revenue",
+        "academy_transfer_fee",
+        "reinforcement_cost",
+        "team_operation_cost",
+        "academy_cost",
+        "match_operation_cost",
+        "sales_expense",
+        "promo_expense",
+        "merchandise_cost",
+        "hometown_expense",
+        "staff_cost",
+        "admin_cost",
+        "tax",
+    ]
+    preferred_index = {key: idx for idx, key in enumerate(preferred_order)}
+
+    def sort_key(item: tuple[str, float]) -> tuple[int, str]:
+        kind, _ = item
+        return (preferred_index.get(kind, len(preferred_order)), kind)
+
     monthly_table = []
-    for k, v in sorted(monthly_by_kind.items()):
+    for k, v in sorted(monthly_by_kind.items(), key=sort_key):
         monthly_table.append({
             "kind": k,
             "income": round_amount(v) if v > 0 else 0,
@@ -422,7 +451,7 @@ def show_finance(ctx: click.Context, season_id: Optional[str], club_id: Optional
 
     income_rows = []
     expense_rows = []
-    for k, v in sorted(kind_rows.items()):
+    for k, v in sorted(kind_rows.items(), key=sort_key):
         row = {
             "kind": k,
             "income": round_amount(v) if v > 0 else 0,
