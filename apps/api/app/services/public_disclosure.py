@@ -6,14 +6,15 @@ v1Spec Section 4
 """
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, List
+from collections import defaultdict
+from typing import Optional, List, Dict
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select, and_
 
 from app.db.models import (
-    Season, Turn, Club, ClubFinancialSnapshot,
+    Season, Turn, Club, ClubFinancialSnapshot, ClubFinancialLedger,
     SeasonPublicDisclosure, SeasonFinalStanding,
 )
 from app.config.constants import (
@@ -254,6 +255,96 @@ def get_all_disclosures(
     ]
 
 
+def _sum_ledger_amounts_by_kind(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+) -> Dict[str, int]:
+    ledgers = db.query(ClubFinancialLedger).join(
+        Turn,
+        ClubFinancialLedger.turn_id == Turn.id,
+    ).filter(
+        ClubFinancialLedger.club_id == club_id,
+        Turn.season_id == season_id,
+    ).all()
+
+    totals: Dict[str, int] = defaultdict(int)
+    for ledger in ledgers:
+        totals[ledger.kind] += int(ledger.amount or 0)
+    return totals
+
+
+def _build_financial_summary(
+    ledger_totals: Dict[str, int],
+    ending_balance: int,
+) -> dict:
+    def get_total(kind: str) -> int:
+        return int(ledger_totals.get(kind, 0) or 0)
+
+    def get_expense(kind: str) -> int:
+        return abs(get_total(kind))
+
+    ticket_keys = sorted(key for key in ledger_totals if key.startswith("ticket_rev_"))
+    merchandise_rev_keys = sorted(key for key in ledger_totals if key.startswith("merchandise_rev_"))
+    match_operation_keys = sorted(key for key in ledger_totals if key.startswith("match_operation_cost_"))
+    merchandise_cost_keys = sorted(key for key in ledger_totals if key.startswith("merchandise_cost_"))
+
+    sponsor_revenue = get_total("sponsor_annual") + get_total("sponsor")
+    distribution_revenue = get_total("distribution_revenue") + get_total("prize_revenue")
+    business_operation_cost = sum(
+        get_expense(kind)
+        for kind in ["sales_expense", "promo_expense", "next_home_promo_expense", "hometown_expense"]
+    )
+
+    total_revenue = (
+        sponsor_revenue
+        + sum(get_total(key) for key in ticket_keys)
+        + sum(get_total(key) for key in merchandise_rev_keys)
+        + distribution_revenue
+        + get_total("academy_transfer_fee")
+    )
+    total_expense = (
+        get_expense("reinforcement_cost")
+        + get_expense("team_operation_cost")
+        + sum(get_expense(key) for key in match_operation_keys)
+        + get_expense("academy_cost")
+        + business_operation_cost
+        + sum(get_expense(key) for key in merchandise_cost_keys)
+        + get_expense("staff_cost")
+        + get_expense("admin_cost")
+        + get_expense("tax")
+    )
+    net_income = total_revenue - total_expense
+
+    summary = {
+        "Sponsor_revenue": sponsor_revenue,
+        "Distribution_revenue": distribution_revenue,
+        "Business_operation_cost": business_operation_cost,
+        "academy_transfer_fee": get_total("academy_transfer_fee"),
+        "reinforcement_cost": get_expense("reinforcement_cost"),
+        "team_operation_cost": get_expense("team_operation_cost"),
+        "academy_cost": get_expense("academy_cost"),
+        "staff_cost": get_expense("staff_cost"),
+        "admin_cost": get_expense("admin_cost"),
+        "tax": get_expense("tax"),
+        "total_revenue": total_revenue,
+        "total expense": total_expense,
+        "net_income": net_income,
+        "ending_balance": ending_balance,
+    }
+
+    for key in ticket_keys:
+        summary[key] = get_total(key)
+    for key in merchandise_rev_keys:
+        summary[key] = get_total(key)
+    for key in match_operation_keys:
+        summary[key] = get_expense(key)
+    for key in merchandise_cost_keys:
+        summary[key] = get_expense(key)
+
+    return summary
+
+
 def _get_season_financial_summary(
     db: Session,
     club_id: UUID,
@@ -268,26 +359,10 @@ def _get_season_financial_summary(
             ClubFinancialSnapshot.season_id == season_id,
         )
     ).order_by(ClubFinancialSnapshot.month_index).all()
-    
-    if not snapshots:
-        return {
-            "total_revenue": 0,
-            "total_expense": 0,
-            "net_income": 0,
-            "ending_balance": 0,
-        }
-    
-    total_revenue = sum(int(s.income_total or 0) for s in snapshots)
-    total_expense = sum(int(s.expense_total or 0) for s in snapshots)
-    net_income = total_revenue + total_expense  # expense_total is negative
-    ending_balance = int(snapshots[-1].closing_balance or 0)
-    
-    return {
-        "total_revenue": total_revenue,
-        "total_expense": total_expense,
-        "net_income": net_income,
-        "ending_balance": ending_balance,
-    }
+
+    ending_balance = int(snapshots[-1].closing_balance or 0) if snapshots else 0
+    ledger_totals = _sum_ledger_amounts_by_kind(db, club_id, season_id)
+    return _build_financial_summary(ledger_totals, ending_balance)
 
 
 def _get_partial_season_summary(
@@ -305,25 +380,9 @@ def _get_partial_season_summary(
         )
     ).order_by(ClubFinancialSnapshot.month_index).all()
     
-    if not snapshots:
-        return {
-            "total_revenue": 0,
-            "total_expense": 0,
-            "net_income": 0,
-            "ending_balance": 0,
-        }
-    
-    total_revenue = sum(int(s.income_total or 0) for s in snapshots)
-    total_expense = sum(int(s.expense_total or 0) for s in snapshots)
-    net_income = total_revenue + total_expense  # expense_total is negative
-    ending_balance = int(snapshots[-1].closing_balance or 0)
-    
-    return {
-        "total_revenue": total_revenue,
-        "total_expense": total_expense,
-        "net_income": net_income,
-        "ending_balance": ending_balance,
-    }
+    ending_balance = int(snapshots[-1].closing_balance or 0) if snapshots else 0
+    ledger_totals = _sum_ledger_amounts_by_kind(db, club_id, season_id)
+    return _build_financial_summary(ledger_totals, ending_balance)
 
 
 def process_disclosure_for_turn(

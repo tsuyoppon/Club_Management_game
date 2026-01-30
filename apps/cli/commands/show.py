@@ -608,9 +608,45 @@ def show_disclosure(ctx: click.Context, season_id: Optional[str], disclosure_typ
         entry_keys_set.difference_update({"club_id", "club_name"})
         entry_keys = list(entry_keys_set)
 
-        preferred_order = ["fiscal_year", "total_revenue", "total_expense", "net_income", "ending_balance"]
+        preferred_order = [
+            "fiscal_year",
+            "Sponsor_revenue",
+            "ticket_rev",
+            "merchandise_rev",
+            "Distribution_revenue",
+            "academy_transfer_fee",
+            "total_revenue",
+            "reinforcement_cost",
+            "team_operation_cost",
+            "match_operation_cost",
+            "academy_cost",
+            "Business_operation_cost",
+            "merchandise_cost",
+            "staff_cost",
+            "admin_cost",
+            "tax",
+            "total expense",
+            "net_income",
+            "ending_balance",
+        ]
         ordered_keys: List[str] = []
         for key in preferred_order:
+            if key.endswith("_rev"):
+                ordered_keys.extend(
+                    sorted(
+                        entry for entry in entry_keys
+                        if entry.startswith(f"{key}_")
+                    )
+                )
+                continue
+            if key.endswith("_cost") and key not in entry_keys:
+                ordered_keys.extend(
+                    sorted(
+                        entry for entry in entry_keys
+                        if entry.startswith(f"{key}_")
+                    )
+                )
+                continue
             if key in entry_keys:
                 ordered_keys.append(key)
         for key in entry_keys:
