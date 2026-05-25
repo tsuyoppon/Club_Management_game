@@ -2,8 +2,8 @@ import './globals.css';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'J-League Club Training Game',
-  description: 'Internal training game prototype',
+  title: 'J-League Club Management Multiplayer',
+  description: 'Role-aware multiplayer club management console',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

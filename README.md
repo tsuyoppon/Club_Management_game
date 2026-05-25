@@ -19,6 +19,18 @@ This monorepo hosts a turn-based J-league club management business game for inte
   - API: http://localhost:8000 (docs at `/docs`, API prefix `/api`)
   - Web: http://localhost:3000
 
+The Web profile now serves the multiplayer browser console. Start it with:
+
+```bash
+docker compose --profile web up --build
+```
+
+The first screen creates or joins an invite-code room. A host creates club slots,
+players claim a club from their own browser, and the host advances each turn from
+the role-aware console after each club has committed input and acknowledged results.
+The V1 scope, role matrix, environment notes, and playtest checklist are in
+[`docs/WEB_MULTIPLAYER_V1.md`](docs/WEB_MULTIPLAYER_V1.md).
+
 ## Development
 - Run Alembic migrations (inside the API container):
   ```bash

@@ -1,10 +1,15 @@
+from datetime import datetime, timedelta
+from hashlib import sha256
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.db.models import Membership, MembershipRole, User
+from app.config import get_settings
+from app.db.models import Membership, MembershipRole, User, WebSession
 from app.db.session import SessionLocal, get_db
+
+settings = get_settings()
 
 
 def get_current_user(
@@ -22,6 +27,33 @@ def get_current_user(
         db.commit()
         db.refresh(user)
     return user
+
+
+def hash_session_token(token: str) -> str:
+    return sha256(token.encode("utf-8")).hexdigest()
+
+
+def get_web_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    token = request.cookies.get(settings.web_session_cookie)
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Browser session required")
+
+    session = (
+        db.query(WebSession)
+        .filter(
+            WebSession.token_hash == hash_session_token(token),
+            WebSession.expires_at > datetime.utcnow(),
+        )
+        .first()
+    )
+    if not session:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Browser session expired")
+
+    now = datetime.utcnow()
+    if session.last_seen_at < now - timedelta(minutes=1):
+        session.last_seen_at = now
+        db.commit()
+    return session.user
 
 
 def require_role(
@@ -54,4 +86,11 @@ def require_role(
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
 
 
-__all__ = ["get_db", "SessionLocal", "get_current_user", "require_role"]
+__all__ = [
+    "get_db",
+    "SessionLocal",
+    "get_current_user",
+    "get_web_current_user",
+    "hash_session_token",
+    "require_role",
+]

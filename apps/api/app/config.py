@@ -10,6 +10,9 @@ class Settings(BaseSettings):
         env="DATABASE_URL",
     )
     api_prefix: str = Field("/api", env="API_PREFIX")
+    web_session_cookie: str = Field("club_game_session", env="WEB_SESSION_COOKIE")
+    web_session_ttl_days: int = Field(14, env="WEB_SESSION_TTL_DAYS")
+    web_cookie_secure: bool = Field(False, env="WEB_COOKIE_SECURE")
 
     class Config:
         env_file = ".env"

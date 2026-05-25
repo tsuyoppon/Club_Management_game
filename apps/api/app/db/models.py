@@ -71,6 +71,7 @@ class Game(Base):
     clubs = relationship("Club", back_populates="game", cascade="all, delete-orphan")
     memberships = relationship("Membership", back_populates="game", cascade="all, delete-orphan")
     seasons = relationship("Season", back_populates="game", cascade="all, delete-orphan")
+    room = relationship("GameRoom", back_populates="game", uselist=False, cascade="all, delete-orphan")
 
 
 class Club(Base):
@@ -103,12 +104,15 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String, nullable=False, unique=True)
+    # Browser guests do not need an email. CLI/header users still use the email key.
+    email = Column(String, nullable=True, unique=True)
     display_name = Column(String, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     memberships = relationship("Membership", back_populates="user", cascade="all, delete-orphan")
+    room_memberships = relationship("GameRoomMember", back_populates="user", cascade="all, delete-orphan")
+    web_sessions = relationship("WebSession", back_populates="user", cascade="all, delete-orphan")
 
 
 class Membership(Base):
@@ -243,6 +247,78 @@ class TurnAck(Base):
 
     __table_args__ = (
         UniqueConstraint("turn_id", "club_id", "user_id", name="uniq_turn_ack"),
+    )
+
+
+class GameRoom(Base):
+    """Browser multiplayer lobby bound to the underlying game."""
+
+    __tablename__ = "game_rooms"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    game_id = Column(UUID(as_uuid=True), ForeignKey("games.id", ondelete="CASCADE"), nullable=False, unique=True)
+    host_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    invite_code = Column(String(24), nullable=False, unique=True)
+    status = Column(String(24), nullable=False, default="lobby")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+
+    game = relationship("Game", back_populates="room")
+    host = relationship("User", foreign_keys=[host_user_id])
+    members = relationship("GameRoomMember", back_populates="room", cascade="all, delete-orphan")
+
+
+class GameRoomMember(Base):
+    __tablename__ = "game_room_members"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    room_id = Column(UUID(as_uuid=True), ForeignKey("game_rooms.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True)
+    is_ready = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    room = relationship("GameRoom", back_populates="members")
+    user = relationship("User", back_populates="room_memberships")
+    club = relationship("Club")
+
+    __table_args__ = (
+        UniqueConstraint("room_id", "user_id", name="uq_room_member_user"),
+        UniqueConstraint("room_id", "club_id", name="uq_room_member_club"),
+    )
+
+
+class WebSession(Base):
+    __tablename__ = "web_sessions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True)
+    expires_at = Column(DateTime, nullable=False)
+    last_seen_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="web_sessions")
+
+
+class WebTurnDraft(Base):
+    __tablename__ = "web_turn_drafts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    turn_id = Column(UUID(as_uuid=True), ForeignKey("turns.id", ondelete="CASCADE"), nullable=False)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    payload_json = Column(JSONB, nullable=False, default=dict)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    turn = relationship("Turn")
+    club = relationship("Club")
+    user = relationship("User")
+
+    __table_args__ = (
+        UniqueConstraint("turn_id", "club_id", name="uq_web_turn_draft_club"),
     )
 
 
@@ -657,4 +733,3 @@ class GameFinalResult(Base):
     __table_args__ = (
         UniqueConstraint("game_id", "club_id", name="uq_game_club_result"),
     )
-

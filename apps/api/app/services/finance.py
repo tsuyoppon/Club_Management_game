@@ -159,6 +159,13 @@ def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
     hist_perf_cache = {}
 
     for club in clubs:
+        snapshot = db.execute(select(models.ClubFinancialSnapshot).where(
+            models.ClubFinancialSnapshot.club_id == club.id,
+            models.ClubFinancialSnapshot.turn_id == turn_id
+        )).scalar_one_or_none()
+        if snapshot:
+            continue
+
         profile, state = ensure_finance_initialized_for_club(db, club.id)
         
         # Ensure FB state

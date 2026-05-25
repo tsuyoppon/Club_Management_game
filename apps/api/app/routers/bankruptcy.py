@@ -8,7 +8,8 @@ from uuid import UUID
 from typing import List, Optional
 
 from app.db.session import get_db
-from app.db.models import Game, Club, Season, ClubPointPenalty
+from app.db.models import Game, Club, MembershipRole, Season
+from app.dependencies import get_current_user, require_role
 from app.schemas import (
     BankruptcyStatusRead, 
     PointPenaltyRead, 
@@ -25,7 +26,8 @@ router = APIRouter(prefix="/api", tags=["bankruptcy"])
 def get_bankruptcy_status(
     club_id: UUID, 
     season_id: UUID = Query(..., description="シーズンID（勝点剥奪合計計算用）"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """
     債務超過状態を取得
@@ -41,6 +43,9 @@ def get_bankruptcy_status(
     season = db.query(Season).filter(Season.id == season_id).first()
     if not season:
         raise HTTPException(status_code=404, detail="Season not found")
+    if season.game_id != club.game_id:
+        raise HTTPException(status_code=400, detail="Season does not belong to club's game")
+    require_role(user, db, club.game_id, MembershipRole.club_viewer, club_id)
     
     status = bankruptcy_service.get_bankruptcy_status(db, club_id, season_id)
     return status
@@ -49,7 +54,8 @@ def get_bankruptcy_status(
 @router.get("/seasons/{season_id}/bankrupt-clubs", response_model=List[BankruptClubSummary])
 def get_bankrupt_clubs(
     season_id: UUID, 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """
     シーズン内の債務超過クラブ一覧を取得
@@ -57,6 +63,7 @@ def get_bankrupt_clubs(
     season = db.query(Season).filter(Season.id == season_id).first()
     if not season:
         raise HTTPException(status_code=404, detail="Season not found")
+    require_role(user, db, season.game_id, MembershipRole.club_viewer)
     
     return bankruptcy_service.get_bankrupt_clubs_for_season(db, season_id)
 
@@ -65,7 +72,8 @@ def get_bankrupt_clubs(
 def get_point_penalties(
     club_id: UUID, 
     season_id: Optional[UUID] = Query(None, description="シーズンID（指定時はそのシーズンのみ）"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """
     勝点剥奪履歴を取得
@@ -77,6 +85,7 @@ def get_point_penalties(
     club = db.query(Club).filter(Club.id == club_id).first()
     if not club:
         raise HTTPException(status_code=404, detail="Club not found")
+    require_role(user, db, club.game_id, MembershipRole.club_viewer, club_id)
     
     penalties = bankruptcy_service.get_penalties_for_club(db, club_id, season_id)
     return penalties
@@ -86,7 +95,8 @@ def get_point_penalties(
 def update_last_place_penalty(
     game_id: UUID,
     update: LastPlacePenaltyUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """
     最下位ペナルティ設定を更新
@@ -94,6 +104,7 @@ def update_last_place_penalty(
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
+    require_role(user, db, game.id, MembershipRole.gm)
     
     game.last_place_penalty_enabled = update.enabled
     db.commit()
@@ -108,7 +119,8 @@ def update_last_place_penalty(
 @router.get("/games/{game_id}/settings/last-place-penalty", response_model=LastPlacePenaltyRead)
 def get_last_place_penalty(
     game_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
     """
     最下位ペナルティ設定を取得
@@ -116,6 +128,7 @@ def get_last_place_penalty(
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
+    require_role(user, db, game.id, MembershipRole.club_viewer)
     
     return {
         "game_id": game.id,

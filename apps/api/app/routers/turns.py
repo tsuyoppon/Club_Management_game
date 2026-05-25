@@ -29,6 +29,13 @@ def _get_turn(db: Session, turn_id: str) -> Turn:
     return turn
 
 
+def _state_conflict(turn: Turn, message: str):
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=f"{message}; current state is {turn.turn_state.value}",
+    )
+
+
 def _decision_to_response(decision: TurnDecision, turn: Turn, available_inputs: Optional[list] = None, available_actions: Optional[list] = None) -> DecisionRead:
     return DecisionRead(
         turn_id=decision.turn_id,
@@ -99,6 +106,8 @@ def get_current_decision(
 def open_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     turn = _get_turn(db, turn_id)
     require_role(user, db, turn.season.game_id, MembershipRole.gm)
+    if turn.turn_state not in (TurnState.open, TurnState.collecting):
+        _state_conflict(turn, "Only an unopened turn can collect decisions")
     turn.turn_state = TurnState.collecting
     turn.opened_at = datetime.utcnow()
     db.commit()
@@ -115,6 +124,8 @@ def commit_decision(
 ):
     turn = _get_turn(db, turn_id)
     require_role(user, db, turn.season.game_id, MembershipRole.club_owner, club_id)
+    if turn.turn_state not in (TurnState.open, TurnState.collecting):
+        _state_conflict(turn, "Decisions can only be committed while a turn is collecting")
     decision = db.query(TurnDecision).filter(TurnDecision.turn_id == turn_id, TurnDecision.club_id == club_id).first()
     if not decision:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Decision not found")
@@ -183,6 +194,8 @@ def get_decision(
 def lock_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     turn = _get_turn(db, turn_id)
     require_role(user, db, turn.season.game_id, MembershipRole.gm)
+    if turn.turn_state not in (TurnState.open, TurnState.collecting):
+        _state_conflict(turn, "Only a collecting turn can be locked")
     pending = (
         db.query(TurnDecision)
         .filter(TurnDecision.turn_id == turn_id, TurnDecision.decision_state != DecisionState.committed)
@@ -231,6 +244,10 @@ def get_decision_history(
 def resolve_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     turn = _get_turn(db, turn_id)
     require_role(user, db, turn.season.game_id, MembershipRole.gm)
+    if turn.turn_state == TurnState.resolved:
+        return {"state": turn.turn_state}
+    if turn.turn_state != TurnState.locked:
+        _state_conflict(turn, "Only a locked turn can be resolved")
 
     # Apply finance (Expenses & Updates)
     from app.services import finance as finance_service
@@ -262,6 +279,8 @@ def ack_turn(
 ):
     turn = _get_turn(db, turn_id)
     require_role(user, db, turn.season.game_id, MembershipRole.club_viewer, payload.club_id)
+    if turn.turn_state != TurnState.resolved:
+        _state_conflict(turn, "Only a resolved turn can be acknowledged")
     ack_record = (
         db.query(TurnAck)
         .filter(
@@ -291,6 +310,8 @@ def ack_turn(
 def advance_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     turn = _get_turn(db, turn_id)
     require_role(user, db, turn.season.game_id, MembershipRole.gm)
+    if turn.turn_state != TurnState.resolved:
+        _state_conflict(turn, "Only a resolved turn can advance")
 
     clubs = db.query(Club).filter(Club.game_id == turn.season.game_id).all()
     for club in clubs:
