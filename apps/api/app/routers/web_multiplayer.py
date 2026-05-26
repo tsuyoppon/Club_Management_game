@@ -39,6 +39,26 @@ DECISION_LABELS = {
     "sales_allocation_new": "新規スポンサー営業配分",
 }
 
+FINANCE_LABELS = {
+    "academy_cost": "アカデミー費",
+    "academy_transfer_fee": "アカデミー移籍金収入",
+    "admin_cost": "管理運営費",
+    "distribution_revenue": "配分金収入",
+    "hometown_expense": "ホームタウン活動費",
+    "match_operation_cost": "試合運営費",
+    "merchandise_cost": "物販原価",
+    "merchandise_revenue": "物販収入",
+    "next_home_promo_expense": "翌月ホーム向けプロモ費",
+    "prize_revenue": "賞金収入",
+    "promo_expense": "プロモーション費",
+    "reinforcement_cost": "強化費",
+    "sales_expense": "営業費",
+    "sponsor": "月次スポンサー収入",
+    "sponsor_annual": "年間スポンサー収入",
+    "staff_cost": "スタッフ人件費",
+    "tax": "税金",
+}
+
 
 class RoomCreate(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=80)
@@ -178,6 +198,93 @@ def _serialize_room(db: Session, room: models.GameRoom, viewer: models.User) -> 
             }
             for member in members
         ],
+    }
+
+
+def _finance_label(kind: str) -> str:
+    if kind.startswith("ticket_rev_"):
+        return "チケット収入"
+    if kind.startswith("staff_severance_"):
+        return "スタッフ退職金"
+    return FINANCE_LABELS.get(kind, kind)
+
+
+def _statement_from_ledgers(ledgers: list[models.ClubFinancialLedger]) -> dict[str, Any]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for ledger in ledgers:
+        amount = float(ledger.amount)
+        if amount == 0:
+            continue
+        item = grouped.setdefault(
+            ledger.kind,
+            {"kind": ledger.kind, "label": _finance_label(ledger.kind), "amount": 0.0},
+        )
+        item["amount"] += amount
+
+    items = sorted(grouped.values(), key=lambda item: (item["amount"] < 0, item["label"]))
+    income = [item for item in items if item["amount"] > 0]
+    expenses = [item for item in items if item["amount"] < 0]
+    income_total = sum(item["amount"] for item in income)
+    expense_total = sum(item["amount"] for item in expenses)
+    return {
+        "income": income,
+        "expenses": expenses,
+        "income_total": income_total,
+        "expense_total": expense_total,
+        "net": income_total + expense_total,
+    }
+
+
+def _finance_report(
+    db: Session,
+    club_id: UUID,
+    season: models.Season,
+    snapshot: Optional[models.ClubFinancialSnapshot],
+) -> dict[str, Any]:
+    if not snapshot:
+        return {
+            "period": {
+                "season_number": season.season_number,
+                "year_label": season.year_label,
+                "month_index": None,
+                "month_name": None,
+            },
+            "monthly": _statement_from_ledgers([]),
+            "cumulative": _statement_from_ledgers([]),
+            "opening_balance": None,
+            "closing_balance": None,
+        }
+
+    month_lookup = {index: name for index, name, _ in models.month_mappings()}
+    monthly_ledgers = (
+        db.query(models.ClubFinancialLedger)
+        .filter(
+            models.ClubFinancialLedger.club_id == club_id,
+            models.ClubFinancialLedger.turn_id == snapshot.turn_id,
+        )
+        .all()
+    )
+    cumulative_ledgers = (
+        db.query(models.ClubFinancialLedger)
+        .join(models.Turn, models.Turn.id == models.ClubFinancialLedger.turn_id)
+        .filter(
+            models.ClubFinancialLedger.club_id == club_id,
+            models.Turn.season_id == season.id,
+            models.Turn.month_index <= snapshot.month_index,
+        )
+        .all()
+    )
+    return {
+        "period": {
+            "season_number": season.season_number,
+            "year_label": season.year_label,
+            "month_index": snapshot.month_index,
+            "month_name": month_lookup.get(snapshot.month_index),
+        },
+        "monthly": _statement_from_ledgers(monthly_ledgers),
+        "cumulative": _statement_from_ledgers(cumulative_ledgers),
+        "opening_balance": float(snapshot.opening_balance),
+        "closing_balance": float(snapshot.closing_balance),
     }
 
 
@@ -492,7 +599,6 @@ def turn_console(
         db.query(models.Fixture)
         .filter(
             models.Fixture.season_id == season.id,
-            models.Fixture.match_month_index >= turn.month_index,
             (
                 (models.Fixture.home_club_id == club_id)
                 | (models.Fixture.away_club_id == club_id)
@@ -500,7 +606,6 @@ def turn_console(
             ),
         )
         .order_by(models.Fixture.match_month_index)
-        .limit(3)
         .all()
     )
     club_names = {club.id: club.name for club in db.query(models.Club).filter(models.Club.game_id == game_id).all()}
@@ -523,6 +628,7 @@ def turn_console(
             "latest_closing_balance": float(snapshot.closing_balance) if snapshot else None,
             "latest_income": float(snapshot.income_total) if snapshot else None,
             "latest_expense": float(snapshot.expense_total) if snapshot else None,
+            "report": _finance_report(db, club_id, season, snapshot),
         },
         "fanbase": {
             "followers": fanbase.followers_public if fanbase else None,
@@ -542,6 +648,7 @@ def turn_console(
         "fixtures": [
             {
                 "id": str(fixture.id),
+                "month_index": fixture.match_month_index,
                 "month": fixture.match_month_name,
                 "home": fixture.home_club_id == club_id,
                 "opponent": club_names.get(fixture.away_club_id if fixture.home_club_id == club_id else fixture.home_club_id),
@@ -551,6 +658,10 @@ def turn_console(
                     [fixture.match.home_goals, fixture.match.away_goals]
                     if fixture.match and fixture.match.home_goals is not None else None
                 ),
+                "weather": fixture.weather,
+                "home_attendance": fixture.home_attendance,
+                "away_attendance": fixture.away_attendance,
+                "total_attendance": fixture.total_attendance,
             }
             for fixture in fixtures
         ],

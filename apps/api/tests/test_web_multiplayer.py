@@ -129,3 +129,26 @@ def test_browser_multiplayer_full_turn_can_advance():
     assert play_state.json()["turn"]["month_index"] == 2
     assert play_state.json()["turn"]["state"] == "collecting"
     assert all(not club["committed"] and not club["acked"] for club in play_state.json()["clubs"])
+
+    turn_console = player.get(f"/api/games/{room['game_id']}/clubs/{player_club['id']}/turn-console")
+    assert turn_console.status_code == 200
+    fixtures = turn_console.json()["fixtures"]
+    assert len(fixtures) == 10
+    assert [fixture["month_index"] for fixture in fixtures] == list(range(1, 11))
+    played_fixture = fixtures[0]
+    assert played_fixture["status"] == "played"
+    assert played_fixture["score"] is not None
+    assert played_fixture["weather"] in {"sunny", "cloudy", "rain"}
+    assert played_fixture["total_attendance"] > 0
+
+    finance_report = turn_console.json()["finance"]["report"]
+    assert finance_report["period"]["season_number"] == 1
+    assert finance_report["period"]["month_index"] == 1
+    assert finance_report["period"]["month_name"] == "Aug"
+    assert finance_report["monthly"]["income"]
+    assert finance_report["monthly"]["expenses"]
+    assert finance_report["monthly"]["net"] == (
+        finance_report["monthly"]["income_total"] + finance_report["monthly"]["expense_total"]
+    )
+    assert finance_report["cumulative"]["net"] == finance_report["monthly"]["net"]
+    assert finance_report["closing_balance"] is not None

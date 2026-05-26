@@ -57,23 +57,57 @@ type ConsoleData = {
   draft: Record<string, unknown> | null;
   available_inputs: Array<{ key: string; label: string }>;
   available_actions: string[];
-  finance: { balance: number; latest_closing_balance: number | null; latest_income: number | null; latest_expense: number | null };
+  finance: {
+    balance: number;
+    latest_closing_balance: number | null;
+    latest_income: number | null;
+    latest_expense: number | null;
+    report: FinanceReport;
+  };
   fanbase: { followers: number | null; fb_count: number | null };
   sponsor: { count: number; confirmed_next: number };
   staff: Array<{ role: string; count: number; next_count: number | null }>;
   fixtures: Array<{
     id: string;
+    month_index: number;
     month: string;
     home: boolean;
     opponent: string | null;
     is_bye: boolean;
     status: string;
     score: [number, number] | null;
+    weather: string | null;
+    home_attendance: number | null;
+    away_attendance: number | null;
+    total_attendance: number | null;
   }>;
   standings: PlayState['standings'];
 };
 
+type ConsoleSection = 'Turn' | 'Matches' | 'Table' | 'Finance' | 'Fans' | 'Sponsors' | 'Staff' | 'Disclosures';
+type FinanceLine = { kind: string; label: string; amount: number };
+type FinanceStatement = {
+  income: FinanceLine[];
+  expenses: FinanceLine[];
+  income_total: number;
+  expense_total: number;
+  net: number;
+};
+type FinanceReport = {
+  period: {
+    season_number: number;
+    year_label: string | null;
+    month_index: number | null;
+    month_name: string | null;
+  };
+  monthly: FinanceStatement;
+  cumulative: FinanceStatement;
+  opening_balance: number | null;
+  closing_balance: number | null;
+};
+
 const defaultClubs = ['東京ユナイテッド', '大阪イレブン', '福岡アローズ'];
+const consoleSections: ConsoleSection[] = ['Turn', 'Matches', 'Table', 'Finance', 'Fans', 'Sponsors', 'Staff', 'Disclosures'];
 const moneyKeys = new Set([
   'sales_expense',
   'promo_expense',
@@ -100,6 +134,11 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 function amount(value: number | null | undefined) {
   if (value === null || value === undefined) return '-';
   return `JPY ${Math.round(value).toLocaleString('ja-JP')}`;
+}
+
+function count(value: number | null | undefined) {
+  if (value === null || value === undefined) return '-';
+  return Math.round(value).toLocaleString('ja-JP');
 }
 
 function statusText(state: string | null | undefined) {
@@ -562,6 +601,7 @@ function Console({
   onHostAction: (action: string) => void;
   onStaffPlan: (role: string, count: number) => void;
 }) {
+  const [activeSection, setActiveSection] = useState<ConsoleSection>('Turn');
   const turnState = play?.turn?.state || null;
   const clubs = play?.clubs || [];
   const selfClubId = play?.self.club_id || null;
@@ -597,62 +637,75 @@ function Console({
   return (
     <section className="consoleGrid">
       <nav className="pane rail" aria-label="Console sections">
-        {['Turn', 'Matches', 'Table', 'Finance', 'Fans', 'Sponsors', 'Staff', 'Disclosures'].map((item) => (
-          <span key={item} className={item === 'Turn' ? 'active' : ''}>{item}</span>
+        {consoleSections.map((item) => (
+          <button
+            key={item}
+            className={item === activeSection ? 'active' : ''}
+            type="button"
+            onClick={() => setActiveSection(item)}
+          >
+            {item}
+          </button>
         ))}
       </nav>
       <section className="centerStack">
-        <article className="pane turnPane">
-          <div className="paneTitle">
-            <div>
-              <p className="eyebrow">{play?.turn ? `Season ${play.turn.season_number} / ${play.turn.month_name}` : 'Season -'}</p>
-              <h2>ターン入力</h2>
-            </div>
-            <span className="saveState">{draftState}</span>
-          </div>
-          <p className="nextStep">{nextStep}</p>
-          {!play?.self.club_id ? <p>担当クラブがありません。ホスト操作と公開進捗のみ利用できます。</p> : null}
-          {consoleData ? (
-            <>
-              <div className="inputGrid">
-                {consoleData.available_inputs.map((input) => (
-                  <label key={input.key}>
-                    {input.label}
-                    <span className="moneyField">
-                      <input
-                        inputMode="decimal"
-                        min="0"
-                        step={input.key === 'sales_allocation_new' ? '0.01' : '100000'}
-                        type="number"
-                        value={formValues[input.key] || ''}
-                        onChange={(event) => onFormValue(input.key, event.target.value)}
-                      />
-                      <small>{moneyKeys.has(input.key) ? 'JPY' : '0..1'}</small>
-                    </span>
-                  </label>
-                ))}
+        {activeSection === 'Turn' ? (
+          <>
+            <article className="pane turnPane">
+              <div className="paneTitle">
+                <div>
+                  <p className="eyebrow">{play?.turn ? `Season ${play.turn.season_number} / ${play.turn.month_name}` : 'Season -'}</p>
+                  <h2>ターン入力</h2>
+                </div>
+                <span className="saveState">{draftState}</span>
               </div>
-              {consoleData.available_actions.includes('staff_hiring_firing_available') ? (
-                <MayActions
-                  busy={busy}
-                  staff={consoleData.staff}
-                  onAcademyBudget={onAcademyBudget}
-                  onStaffPlan={onStaffPlan}
-                />
-              ) : null}
-              <div className="actionRow">
-                <button className="primary" disabled={!canCommit} onClick={onCommit}>
-                  {committed ? '入力確定済み' : '入力を確定'}
-                </button>
-                <span>state: {consoleData.decision.state || 'draft'}</span>
-                {play?.turn?.state === 'resolved' ? (
-                  <button disabled={busy || acked} onClick={onAck}>{acked ? 'ack済み' : '結果を確認して ack'}</button>
-                ) : null}
-              </div>
-            </>
-          ) : <p className="muted">担当クラブの入力コンソールを待機中です。</p>}
-        </article>
-        <SummaryTables consoleData={consoleData} standings={play?.standings || []} />
+              <p className="nextStep">{nextStep}</p>
+              {!play?.self.club_id ? <p>担当クラブがありません。ホスト操作と公開進捗のみ利用できます。</p> : null}
+              {consoleData ? (
+                <>
+                  <div className="inputGrid">
+                    {consoleData.available_inputs.map((input) => (
+                      <label key={input.key}>
+                        {input.label}
+                        <span className="moneyField">
+                          <input
+                            inputMode="decimal"
+                            min="0"
+                            step={input.key === 'sales_allocation_new' ? '0.01' : '100000'}
+                            type="number"
+                            value={formValues[input.key] || ''}
+                            onChange={(event) => onFormValue(input.key, event.target.value)}
+                          />
+                          <small>{moneyKeys.has(input.key) ? 'JPY' : '0..1'}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  {consoleData.available_actions.includes('staff_hiring_firing_available') ? (
+                    <MayActions
+                      busy={busy}
+                      staff={consoleData.staff}
+                      onAcademyBudget={onAcademyBudget}
+                      onStaffPlan={onStaffPlan}
+                    />
+                  ) : null}
+                  <div className="actionRow">
+                    <button className="primary" disabled={!canCommit} onClick={onCommit}>
+                      {committed ? '入力確定済み' : '入力を確定'}
+                    </button>
+                    <span>state: {consoleData.decision.state || 'draft'}</span>
+                    {play?.turn?.state === 'resolved' ? (
+                      <button disabled={busy || acked} onClick={onAck}>{acked ? 'ack済み' : '結果を確認して ack'}</button>
+                    ) : null}
+                  </div>
+                </>
+              ) : <p className="muted">担当クラブの入力コンソールを待機中です。</p>}
+            </article>
+            <SummaryTables consoleData={consoleData} standings={play?.standings || []} />
+          </>
+        ) : (
+          <ConsoleSectionPanel consoleData={consoleData} section={activeSection} standings={play?.standings || []} />
+        )}
       </section>
       <aside className="rightStack">
         <article className="pane progressPane">
@@ -683,6 +736,168 @@ function Console({
           ) : <p className="muted">ホストが締切と解決を進めます。</p>}
         </article>
       </aside>
+    </section>
+  );
+}
+
+function ConsoleSectionPanel({
+  consoleData,
+  section,
+  standings,
+}: {
+  consoleData: ConsoleData | null;
+  section: Exclude<ConsoleSection, 'Turn'>;
+  standings: PlayState['standings'];
+}) {
+  const titleMap: Record<Exclude<ConsoleSection, 'Turn'>, string> = {
+    Matches: '試合',
+    Table: '順位表',
+    Finance: '財務',
+    Fans: 'ファン',
+    Sponsors: 'スポンサー',
+    Staff: 'スタッフ',
+    Disclosures: '公開情報',
+  };
+
+  return (
+    <article className="pane sectionPane">
+      <div className="paneTitle">
+        <div>
+          <p className="eyebrow">{section}</p>
+          <h2>{titleMap[section]}</h2>
+        </div>
+      </div>
+      {!consoleData ? <p className="muted">担当クラブの情報を待機中です。</p> : null}
+      {consoleData && section === 'Matches' ? (
+        <table>
+          <thead>
+            <tr><th>月</th><th>H/A</th><th>相手</th><th>状態</th><th>結果</th><th>入場者数</th><th>天気</th></tr>
+          </thead>
+          <tbody>
+            {consoleData.fixtures.map((fixture) => (
+              <tr key={fixture.id}>
+                <td>{fixture.month}</td>
+                <td>{fixture.is_bye ? 'bye' : fixture.home ? 'H' : 'A'}</td>
+                <td>{fixture.opponent || '-'}</td>
+                <td>{fixture.status}</td>
+                <td>{fixture.score ? fixture.score.join('-') : '-'}</td>
+                <td>{count(fixture.total_attendance)}</td>
+                <td>{fixture.weather || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      {section === 'Table' ? (
+        <table>
+          <thead>
+            <tr><th>順位</th><th>クラブ</th><th>試合</th><th>得失点</th><th>勝点</th></tr>
+          </thead>
+          <tbody>
+            {standings.map((row) => (
+              <tr key={row.club_id}>
+                <td>{row.rank}</td>
+                <td>{row.club_name}</td>
+                <td>{row.played}</td>
+                <td>{row.gd}</td>
+                <td>{row.points}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      {consoleData && section === 'Finance' ? (
+        <FinancePanel report={consoleData.finance.report} />
+      ) : null}
+      {consoleData && section === 'Fans' ? (
+        <dl className="detailList">
+          <dt>公開フォロワー</dt><dd>{consoleData.fanbase.followers?.toLocaleString('ja-JP') || '-'}</dd>
+          <dt>ファンベース count</dt><dd>{consoleData.fanbase.fb_count?.toLocaleString('ja-JP') || '-'}</dd>
+        </dl>
+      ) : null}
+      {consoleData && section === 'Sponsors' ? (
+        <dl className="detailList">
+          <dt>現スポンサー数</dt><dd>{consoleData.sponsor.count}</dd>
+          <dt>翌期確定見込み</dt><dd>{consoleData.sponsor.confirmed_next}</dd>
+        </dl>
+      ) : null}
+      {consoleData && section === 'Staff' ? (
+        <table>
+          <thead>
+            <tr><th>区分</th><th>現在人数</th><th>来季予定</th></tr>
+          </thead>
+          <tbody>
+            {consoleData.staff.map((staff) => (
+              <tr key={staff.role}>
+                <td>{staff.role}</td>
+                <td>{staff.count}</td>
+                <td>{staff.next_count ?? '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      {section === 'Disclosures' ? (
+        <p className="muted">公開情報ログは現在のWebコンソールAPIには未接続です。ゲーム進行に必要な公開状態は、対戦進捗と順位表に表示されます。</p>
+      ) : null}
+    </article>
+  );
+}
+
+function FinancePanel({ report }: { report: FinanceReport }) {
+  const period = report.period.month_name
+    ? `Season ${report.period.season_number} / ${report.period.month_name}`
+    : `Season ${report.period.season_number} / 未確定`;
+
+  return (
+    <section className="financePanel">
+      <div className="financePeriod">
+        <strong>{period}</strong>
+        <span>期首 {amount(report.opening_balance)} / 期末 {amount(report.closing_balance)}</span>
+      </div>
+      <div className="financeStatements">
+        <FinanceStatementTable statement={report.monthly} title="今月の収支" />
+        <FinanceStatementTable statement={report.cumulative} title="今シーズン累積の収支" />
+      </div>
+    </section>
+  );
+}
+
+function FinanceStatementTable({
+  statement,
+  title,
+}: {
+  statement: FinanceStatement;
+  title: string;
+}) {
+  return (
+    <section className="statementBlock">
+      <h3>{title}</h3>
+      <table>
+        <tbody>
+          <tr className="sectionRow"><th colSpan={2}>収入</th></tr>
+          {statement.income.length ? statement.income.map((line) => (
+            <tr key={line.kind}>
+              <td>{line.label}</td>
+              <td>{amount(line.amount)}</td>
+            </tr>
+          )) : (
+            <tr><td>収入なし</td><td>{amount(0)}</td></tr>
+          )}
+          <tr className="totalRow"><td>収入合計</td><td>{amount(statement.income_total)}</td></tr>
+          <tr className="sectionRow"><th colSpan={2}>費用</th></tr>
+          {statement.expenses.length ? statement.expenses.map((line) => (
+            <tr key={line.kind}>
+              <td>{line.label}</td>
+              <td>{amount(line.amount)}</td>
+            </tr>
+          )) : (
+            <tr><td>費用なし</td><td>{amount(0)}</td></tr>
+          )}
+          <tr className="totalRow"><td>費用合計</td><td>{amount(statement.expense_total)}</td></tr>
+          <tr className="netRow"><td>純収支</td><td>{amount(statement.net)}</td></tr>
+        </tbody>
+      </table>
     </section>
   );
 }
@@ -753,7 +968,10 @@ function SummaryTables({
         <h3>次の試合</h3>
         <table>
           <tbody>
-            {(consoleData?.fixtures || []).map((fixture) => (
+            {(consoleData?.fixtures || [])
+              .filter((fixture) => fixture.status !== 'played')
+              .slice(0, 3)
+              .map((fixture) => (
               <tr key={fixture.id}>
                 <td>{fixture.month}</td>
                 <td>{fixture.is_bye ? 'bye' : fixture.home ? 'H' : 'A'}</td>
