@@ -204,6 +204,12 @@ def _serialize_room(db: Session, room: models.GameRoom, viewer: models.User) -> 
 def _finance_label(kind: str) -> str:
     if kind.startswith("ticket_rev_"):
         return "チケット収入"
+    if kind.startswith("merchandise_rev_"):
+        return "物販収入"
+    if kind.startswith("merchandise_cost_"):
+        return "物販原価"
+    if kind.startswith("match_operation_cost_"):
+        return "試合運営費"
     if kind.startswith("staff_severance_"):
         return "スタッフ退職金"
     return FINANCE_LABELS.get(kind, kind)
@@ -657,6 +663,13 @@ def turn_console(
                 "score": (
                     [fixture.match.home_goals, fixture.match.away_goals]
                     if fixture.match and fixture.match.home_goals is not None else None
+                ),
+                "score_for_club": (
+                    [fixture.match.home_goals, fixture.match.away_goals]
+                    if fixture.match and fixture.match.home_goals is not None and fixture.home_club_id == club_id
+                    else [fixture.match.away_goals, fixture.match.home_goals]
+                    if fixture.match and fixture.match.home_goals is not None and fixture.away_club_id == club_id
+                    else None
                 ),
                 "weather": fixture.weather,
                 "home_attendance": fixture.home_attendance,

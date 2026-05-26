@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.routers.web_multiplayer import _finance_label
 
 
 def _create_room(client: TestClient):
@@ -37,6 +38,12 @@ def _save_and_commit(client: TestClient, room: dict, club: dict, payload: dict):
     assert saved.status_code == 200
     committed = client.post(f"/api/games/{room['game_id']}/clubs/{club['id']}/turn-commit")
     assert committed.status_code == 200
+
+
+def test_finance_label_dynamic_fixture_kinds_are_localized():
+    assert _finance_label("merchandise_rev_fixture-1") == "物販収入"
+    assert _finance_label("merchandise_cost_fixture-1") == "物販原価"
+    assert _finance_label("match_operation_cost_fixture-1") == "試合運営費"
 
 
 def test_browser_room_start_and_turn_console():
@@ -138,6 +145,10 @@ def test_browser_multiplayer_full_turn_can_advance():
     played_fixture = fixtures[0]
     assert played_fixture["status"] == "played"
     assert played_fixture["score"] is not None
+    if played_fixture["home"]:
+        assert played_fixture["score_for_club"] == played_fixture["score"]
+    else:
+        assert played_fixture["score_for_club"] == list(reversed(played_fixture["score"]))
     assert played_fixture["weather"] in {"sunny", "cloudy", "rain"}
     assert played_fixture["total_attendance"] > 0
 

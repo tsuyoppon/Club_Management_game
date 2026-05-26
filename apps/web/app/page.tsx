@@ -76,6 +76,7 @@ type ConsoleData = {
     is_bye: boolean;
     status: string;
     score: [number, number] | null;
+    score_for_club: [number, number] | null;
     weather: string | null;
     home_attendance: number | null;
     away_attendance: number | null;
@@ -780,7 +781,7 @@ function ConsoleSectionPanel({
                 <td>{fixture.is_bye ? 'bye' : fixture.home ? 'H' : 'A'}</td>
                 <td>{fixture.opponent || '-'}</td>
                 <td>{fixture.status}</td>
-                <td>{fixture.score ? fixture.score.join('-') : '-'}</td>
+                <td>{fixture.score_for_club ? fixture.score_for_club.join('-') : '-'}</td>
                 <td>{count(fixture.total_attendance)}</td>
                 <td>{fixture.weather || '-'}</td>
               </tr>
