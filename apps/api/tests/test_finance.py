@@ -47,6 +47,12 @@ def test_finance_flow(client, db, auth_headers):
     # 3. Resolve Turn (Trigger Finance)
     # Open
     client.post(f"/api/turns/{turn_id}/open", headers=auth_headers)
+    # Commit
+    client.post(
+        f"/api/turns/{turn_id}/decisions/{club_id}/commit",
+        json={"payload": {}},
+        headers=auth_headers,
+    )
     # Lock
     client.post(f"/api/turns/{turn_id}/lock", headers=auth_headers)
     

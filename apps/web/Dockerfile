@@ -9,6 +9,8 @@ RUN if [ -f package-lock.json ]; then npm ci; \
 
 # Stage 2: build
 FROM base AS builder
+ARG API_PROXY_ORIGIN=http://localhost:8000
+ENV API_PROXY_ORIGIN=$API_PROXY_ORIGIN
 COPY . .
 RUN npm run build
 
@@ -18,4 +20,4 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app .
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+CMD ["node", ".next/standalone/server.js"]

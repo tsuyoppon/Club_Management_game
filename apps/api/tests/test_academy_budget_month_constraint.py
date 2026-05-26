@@ -3,6 +3,11 @@ from app.db import models
 
 def _process_turn(client, auth_headers, turn_id, club_id):
     client.post(f"/api/turns/{turn_id}/open", headers=auth_headers)
+    client.post(
+        f"/api/turns/{turn_id}/decisions/{club_id}/commit",
+        json={"payload": {}},
+        headers=auth_headers,
+    )
     client.post(f"/api/turns/{turn_id}/lock", headers=auth_headers)
     client.post(f"/api/turns/{turn_id}/resolve", headers=auth_headers)
     client.post(

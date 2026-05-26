@@ -20,6 +20,12 @@ def test_pr4_dynamics(client, db, auth_headers):
     # Helper to process turn
     def process_turn(t_id):
         client.post(f"/api/turns/{t_id}/open", headers=auth_headers)
+        for target_club_id in (club_id, opponent_club_id):
+            client.post(
+                f"/api/turns/{t_id}/decisions/{target_club_id}/commit",
+                json={"payload": {}},
+                headers=auth_headers,
+            )
         client.post(f"/api/turns/{t_id}/lock", headers=auth_headers)
         client.post(f"/api/turns/{t_id}/resolve", headers=auth_headers)
         client.post(f"/api/turns/{t_id}/ack", json={"club_id": club_id, "ack": True}, headers=auth_headers)

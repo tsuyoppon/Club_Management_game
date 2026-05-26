@@ -26,6 +26,8 @@ services:
   web:
     build:
       context: ./apps/web
+      args:
+        API_PROXY_ORIGIN: http://api:8000
     environment:
       - API_PROXY_ORIGIN=http://api:8000
     depends_on:

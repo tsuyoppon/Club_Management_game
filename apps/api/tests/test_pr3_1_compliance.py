@@ -30,6 +30,11 @@ def test_pr3_1_compliance_reinforcement(client, db, auth_headers):
         t = client.get(f"/api/turns/seasons/{season_id}/current", headers=auth_headers).json()
         tid = t["id"]
         client.post(f"/api/turns/{tid}/open", headers=auth_headers)
+        client.post(
+            f"/api/turns/{tid}/decisions/{club_id}/commit",
+            json={"payload": {}},
+            headers=auth_headers,
+        )
         client.post(f"/api/turns/{tid}/lock", headers=auth_headers)
         client.post(f"/api/turns/{tid}/resolve", headers=auth_headers)
         client.post(f"/api/turns/{tid}/ack", json={"club_id": club_id, "ack": True}, headers=auth_headers)
@@ -102,6 +107,11 @@ def test_pr3_1_compliance_staff(client, db, auth_headers):
         t = client.get(f"/api/turns/seasons/{season_id}/current", headers=auth_headers).json()
         tid = t["id"]
         client.post(f"/api/turns/{tid}/open", headers=auth_headers)
+        client.post(
+            f"/api/turns/{tid}/decisions/{club_id}/commit",
+            json={"payload": {}},
+            headers=auth_headers,
+        )
         client.post(f"/api/turns/{tid}/lock", headers=auth_headers)
         client.post(f"/api/turns/{tid}/resolve", headers=auth_headers)
         client.post(f"/api/turns/{tid}/ack", json={"club_id": club_id, "ack": True}, headers=auth_headers)
@@ -164,6 +174,11 @@ def test_pr3_1_compliance_staff(client, db, auth_headers):
         t = client.get(f"/api/turns/seasons/{season2_id}/current", headers=auth_headers).json()
         tid = t["id"]
         client.post(f"/api/turns/{tid}/open", headers=auth_headers)
+        client.post(
+            f"/api/turns/{tid}/decisions/{club_id}/commit",
+            json={"payload": {}},
+            headers=auth_headers,
+        )
         client.post(f"/api/turns/{tid}/lock", headers=auth_headers)
         client.post(f"/api/turns/{tid}/resolve", headers=auth_headers)
         client.post(f"/api/turns/{tid}/ack", json={"club_id": club_id, "ack": True}, headers=auth_headers)
@@ -176,13 +191,13 @@ def test_pr3_1_compliance_staff(client, db, auth_headers):
     
     # Check Staff Cost
     # Roles: sales/hometown/operations/promotion/administration/academy/topteam.
-    # After hiring: topteam=2, others=1 → total 8 staff → 8M.
+    # After hiring: topteam=2, others=1 → total 8 staff → 3.2M.
     ledgers = db.query(models.ClubFinancialLedger).filter(
         models.ClubFinancialLedger.turn_id == t1_s2["id"],
         models.ClubFinancialLedger.kind == "staff_cost"
     ).all()
     assert len(ledgers) == 1
-    assert float(ledgers[0].amount) == -8000000.0
+    assert float(ledgers[0].amount) == -3200000.0
     
     # Advance to May (10) of Season 2
     # Current is Aug (1).
@@ -217,13 +232,13 @@ def test_pr3_1_compliance_staff(client, db, auth_headers):
     t10_s2 = advance_turn_s2()
     
     # Check Severance
-    # Diff = 1. Salary = 12M. Factor = 0.75. Severance = 9M.
+    # Diff = 1. Annual salary = 4.8M. Factor = 0.75. Severance = 3.6M.
     ledgers = db.query(models.ClubFinancialLedger).filter(
         models.ClubFinancialLedger.turn_id == t10_s2["id"],
         models.ClubFinancialLedger.kind == "staff_severance_topteam"
     ).all()
     assert len(ledgers) == 1
-    assert float(ledgers[0].amount) == -9000000.0
+    assert float(ledgers[0].amount) == -3600000.0
 
 def test_pr3_1_compliance_sponsor(client, db, auth_headers):
     # 1. Setup
@@ -243,6 +258,11 @@ def test_pr3_1_compliance_sponsor(client, db, auth_headers):
         t = client.get(f"/api/turns/seasons/{season_id}/current", headers=auth_headers).json()
         tid = t["id"]
         client.post(f"/api/turns/{tid}/open", headers=auth_headers)
+        client.post(
+            f"/api/turns/{tid}/decisions/{club_id}/commit",
+            json={"payload": {}},
+            headers=auth_headers,
+        )
         client.post(f"/api/turns/{tid}/lock", headers=auth_headers)
         client.post(f"/api/turns/{tid}/resolve", headers=auth_headers)
         client.post(f"/api/turns/{tid}/ack", json={"club_id": club_id, "ack": True}, headers=auth_headers)
@@ -284,6 +304,11 @@ def test_pr3_1_compliance_sponsor(client, db, auth_headers):
     t1_s2_curr = client.get(f"/api/turns/seasons/{season2_id}/current", headers=auth_headers).json()
     tid = t1_s2_curr["id"]
     client.post(f"/api/turns/{tid}/open", headers=auth_headers)
+    client.post(
+        f"/api/turns/{tid}/decisions/{club_id}/commit",
+        json={"payload": {}},
+        headers=auth_headers,
+    )
     client.post(f"/api/turns/{tid}/lock", headers=auth_headers)
     client.post(f"/api/turns/{tid}/resolve", headers=auth_headers)
     

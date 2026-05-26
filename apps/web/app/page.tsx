@@ -125,6 +125,8 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const restoredTurnId = useRef<string | null>(null);
+  const currentGameId = room?.game_id;
+  const currentClubId = play?.self.club_id;
 
   const report = (work: Promise<unknown>) => {
     setError('');
@@ -170,9 +172,17 @@ export default function Home() {
 
   useEffect(() => {
     if (!room || stage !== 'console') return undefined;
-    loadPlay(room.game_id).catch((cause: Error) => setError(cause.message));
+    let cancelled = false;
+    window.setTimeout(() => {
+      if (!cancelled) {
+        loadPlay(room.game_id).catch((cause: Error) => setError(cause.message));
+      }
+    }, 0);
     const interval = window.setInterval(() => loadPlay(room.game_id).catch(() => undefined), 3000);
-    return () => window.clearInterval(interval);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
   }, [loadPlay, room, stage]);
 
   useEffect(() => {
@@ -199,15 +209,15 @@ export default function Home() {
   }, [formValues]);
 
   const saveDraft = useCallback(async () => {
-    if (!room || !play?.self.club_id) return;
+    if (!currentGameId || !currentClubId) return;
     setDraftState('保存中');
-    await api(`/api/games/${room.game_id}/clubs/${play.self.club_id}/turn-draft`, {
+    await api(`/api/games/${currentGameId}/clubs/${currentClubId}/turn-draft`, {
       method: 'PUT',
       body: JSON.stringify({ payload: formPayload }),
     });
     setDraftDirty(false);
     setDraftState('下書き保存済み');
-  }, [formPayload, play?.self.club_id, room]);
+  }, [currentClubId, currentGameId, formPayload]);
 
   useEffect(() => {
     if (!draftDirty || stage !== 'console') return undefined;

@@ -30,6 +30,11 @@ def test_finance_integrity(client, db, auth_headers):
     turn1_id = resp.json()["id"]
     
     client.post(f"/api/turns/{turn1_id}/open", headers=auth_headers)
+    client.post(
+        f"/api/turns/{turn1_id}/decisions/{club_id}/commit",
+        json={"payload": {}},
+        headers=auth_headers,
+    )
     client.post(f"/api/turns/{turn1_id}/lock", headers=auth_headers)
     client.post(f"/api/turns/{turn1_id}/resolve", headers=auth_headers)
     
@@ -45,6 +50,11 @@ def test_finance_integrity(client, db, auth_headers):
     assert turn1_id != turn2_id
     
     client.post(f"/api/turns/{turn2_id}/open", headers=auth_headers)
+    client.post(
+        f"/api/turns/{turn2_id}/decisions/{club_id}/commit",
+        json={"payload": {}},
+        headers=auth_headers,
+    )
     client.post(f"/api/turns/{turn2_id}/lock", headers=auth_headers)
     client.post(f"/api/turns/{turn2_id}/resolve", headers=auth_headers)
     
@@ -84,4 +94,3 @@ def test_finance_integrity(client, db, auth_headers):
     # Also check that snapshot opening/closing logic holds
     for snap in snapshots:
         assert snap.closing_balance == snap.opening_balance + snap.income_total + snap.expense_total
-
