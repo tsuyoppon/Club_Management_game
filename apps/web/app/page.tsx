@@ -110,6 +110,18 @@ function statusText(state: string | null | undefined) {
   return state;
 }
 
+function friendlyError(message: string) {
+  if (message.includes('Not all decisions committed')) return '未確定のクラブがあります。全クラブが入力を確定してから締切できます。';
+  if (message.includes('Not all clubs acknowledged')) return '未ackのクラブがあります。全クラブが結果確認を終えてから次ターンへ進めます。';
+  if (message.includes('Host only')) return 'この操作はホストだけが実行できます。';
+  if (message.includes('Turn input is closed')) return 'このターンの入力は締め切られています。';
+  if (message.includes('Save input before committing')) return '確定前に入力を保存してください。';
+  if (message.includes('Inputs not available this turn')) return 'このターンでは入力できない項目が含まれています。画面を更新して再入力してください。';
+  if (message.includes('Only a resolved turn can be acknowledged')) return '結果確定前はackできません。ホストのresolveを待ってください。';
+  if (message.includes('Only a resolved turn can advance')) return '結果確定前は次ターンへ進めません。先にresolveしてください。';
+  return message;
+}
+
 export default function Home() {
   const [room, setRoom] = useState<Room | null>(null);
   const [play, setPlay] = useState<PlayState | null>(null);
@@ -131,7 +143,7 @@ export default function Home() {
   const report = (work: Promise<unknown>) => {
     setError('');
     setBusy(true);
-    return work.catch((cause: Error) => setError(cause.message)).finally(() => setBusy(false));
+    return work.catch((cause: Error) => setError(friendlyError(cause.message))).finally(() => setBusy(false));
   };
 
   const loadRoom = useCallback(async (roomId: string) => {
@@ -175,7 +187,7 @@ export default function Home() {
     let cancelled = false;
     window.setTimeout(() => {
       if (!cancelled) {
-        loadPlay(room.game_id).catch((cause: Error) => setError(cause.message));
+        loadPlay(room.game_id).catch((cause: Error) => setError(friendlyError(cause.message)));
       }
     }, 0);
     const interval = window.setInterval(() => loadPlay(room.game_id).catch(() => undefined), 3000);
@@ -221,7 +233,13 @@ export default function Home() {
 
   useEffect(() => {
     if (!draftDirty || stage !== 'console') return undefined;
-    const timer = window.setTimeout(() => saveDraft().catch((cause: Error) => setError(cause.message)), 700);
+    const timer = window.setTimeout(
+      () => saveDraft().catch((cause: Error) => {
+        setDraftState('保存失敗');
+        setError(friendlyError(cause.message));
+      }),
+      700,
+    );
     return () => window.clearTimeout(timer);
   }, [draftDirty, saveDraft, stage]);
 
@@ -544,6 +562,38 @@ function Console({
   onHostAction: (action: string) => void;
   onStaffPlan: (role: string, count: number) => void;
 }) {
+  const turnState = play?.turn?.state || null;
+  const clubs = play?.clubs || [];
+  const selfClubId = play?.self.club_id || null;
+  const ownClub = clubs.find((club) => club.id === selfClubId);
+  const allCommitted = Boolean(clubs.length) && clubs.every((club) => club.committed);
+  const allAcked = Boolean(clubs.length) && clubs.every((club) => club.acked);
+  const committed = Boolean(ownClub?.committed);
+  const acked = Boolean(ownClub?.acked);
+  const canCommit = Boolean(
+    consoleData
+    && selfClubId
+    && consoleData.available_inputs.length
+    && !committed
+    && (turnState === 'open' || turnState === 'collecting'),
+  );
+  const nextStep = (() => {
+    if (!play?.turn) return 'ゲーム開始または次ターンを待っています。';
+    if (!play.self.club_id) return play.self.is_host ? 'ホスト操作と公開進捗を確認できます。' : '担当クラブの割当を待っています。';
+    if (turnState === 'locked') return 'ホストが結果計算を実行するまで待機してください。';
+    if (turnState === 'resolved') return acked ? '全員のack後、ホストが次ターンへ進めます。' : '結果を確認してackしてください。';
+    if (committed) return '入力確定済みです。全クラブ確定後、ホストが締切できます。';
+    return '表示されている項目を入力し、入力を確定してください。';
+  })();
+  const hostActionDisabled = (action: string) => {
+    if (busy || !play?.self.is_host) return true;
+    if (action === 'open') return turnState !== 'open';
+    if (action === 'lock') return !(turnState === 'open' || turnState === 'collecting') || !allCommitted;
+    if (action === 'resolve') return turnState !== 'locked';
+    if (action === 'advance') return turnState !== 'resolved' || !allAcked;
+    return true;
+  };
+
   return (
     <section className="consoleGrid">
       <nav className="pane rail" aria-label="Console sections">
@@ -560,6 +610,7 @@ function Console({
             </div>
             <span className="saveState">{draftState}</span>
           </div>
+          <p className="nextStep">{nextStep}</p>
           {!play?.self.club_id ? <p>担当クラブがありません。ホスト操作と公開進捗のみ利用できます。</p> : null}
           {consoleData ? (
             <>
@@ -590,12 +641,12 @@ function Console({
                 />
               ) : null}
               <div className="actionRow">
-                <button className="primary" disabled={busy || !consoleData.available_inputs.length} onClick={onCommit}>
-                  入力を確定
+                <button className="primary" disabled={!canCommit} onClick={onCommit}>
+                  {committed ? '入力確定済み' : '入力を確定'}
                 </button>
                 <span>state: {consoleData.decision.state || 'draft'}</span>
                 {play?.turn?.state === 'resolved' ? (
-                  <button disabled={busy} onClick={onAck}>結果を確認して ack</button>
+                  <button disabled={busy || acked} onClick={onAck}>{acked ? 'ack済み' : '結果を確認して ack'}</button>
                 ) : null}
               </div>
             </>
@@ -606,6 +657,9 @@ function Console({
       <aside className="rightStack">
         <article className="pane progressPane">
           <h2>対戦進捗</h2>
+          <p className="muted progressHint">
+            {turnState === 'resolved' ? '全クラブのack後にadvanceできます。' : '全クラブのcommit後にlockできます。'}
+          </p>
           <table>
             <tbody>
               {(play?.clubs || []).map((club) => (
@@ -623,7 +677,7 @@ function Console({
           {play?.self.is_host ? (
             <div className="hostButtons">
               {['open', 'lock', 'resolve', 'advance'].map((action) => (
-                <button key={action} disabled={busy} onClick={() => onHostAction(action)}>{action}</button>
+                <button key={action} disabled={hostActionDisabled(action)} onClick={() => onHostAction(action)}>{action}</button>
               ))}
             </div>
           ) : <p className="muted">ホストが締切と解決を進めます。</p>}
