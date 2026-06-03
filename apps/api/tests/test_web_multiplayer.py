@@ -1,7 +1,8 @@
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.routers.web_multiplayer import _finance_label
+from app.db import models
+from app.routers.web_multiplayer import _finance_label, _statement_from_ledgers
 
 
 def _create_room(client: TestClient):
@@ -46,6 +47,18 @@ def test_finance_label_dynamic_fixture_kinds_are_localized():
     assert _finance_label("match_operation_cost_fixture-1") == "試合運営費"
 
 
+def test_finance_statement_groups_same_display_item():
+    statement = _statement_from_ledgers([
+        models.ClubFinancialLedger(kind="ticket_rev_fixture-1", amount=1000),
+        models.ClubFinancialLedger(kind="ticket_rev_fixture-2", amount=2500),
+        models.ClubFinancialLedger(kind="match_operation_cost_fixture-1", amount=-300),
+        models.ClubFinancialLedger(kind="match_operation_cost_fixture-2", amount=-700),
+    ])
+
+    assert statement["income"] == [{"kind": "income:チケット収入", "label": "チケット収入", "amount": 3500.0}]
+    assert statement["expenses"] == [{"kind": "expense:試合運営費", "label": "試合運営費", "amount": -1000.0}]
+
+
 def test_browser_room_start_and_turn_console():
     host = TestClient(app)
     player = TestClient(app)
@@ -72,6 +85,32 @@ def test_browser_room_start_and_turn_console():
     assert saved.status_code == 200
     committed = player.post(f"/api/games/{room['game_id']}/clubs/{player_club['id']}/turn-commit")
     assert committed.status_code == 200
+
+
+def test_host_can_uncommit_before_lock_for_corrections():
+    host = TestClient(app)
+    player = TestClient(app)
+    room, _, player_club = _ready_two_player_room(host, player)
+
+    assert host.post(f"/api/rooms/{room['id']}/start", json={"year_label": "2026"}).status_code == 200
+    _save_and_commit(player, room, player_club, {"sales_expense": 1000000})
+
+    committed_state = player.get(f"/api/games/{room['game_id']}/play-state")
+    assert committed_state.status_code == 200
+    assert next(club for club in committed_state.json()["clubs"] if club["id"] == player_club["id"])["committed"]
+
+    reopened = host.post(f"/api/games/{room['game_id']}/host/clubs/{player_club['id']}/turn-uncommit")
+    assert reopened.status_code == 200
+    assert reopened.json()["state"] == "draft"
+
+    play_state = player.get(f"/api/games/{room['game_id']}/play-state")
+    assert play_state.status_code == 200
+    assert not next(club for club in play_state.json()["clubs"] if club["id"] == player_club["id"])["committed"]
+
+    turn_console = player.get(f"/api/games/{room['game_id']}/clubs/{player_club['id']}/turn-console")
+    assert turn_console.status_code == 200
+    assert turn_console.json()["decision"]["state"] == "draft"
+    assert turn_console.json()["decision"]["payload"]["sales_expense"] == 1000000
 
 
 def test_host_turn_actions_and_private_console_are_role_aware():

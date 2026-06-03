@@ -66,7 +66,14 @@ type ConsoleData = {
   };
   fanbase: { followers: number | null; fb_count: number | null };
   sponsor: { count: number; confirmed_next: number };
-  staff: Array<{ role: string; count: number; next_count: number | null }>;
+  academy: { annual_budget: number; next_annual_budget: number | null };
+  staff: Array<{
+    role: string;
+    count: number;
+    next_count: number | null;
+    hiring_target: number | null;
+    input_count: number | null;
+  }>;
   fixtures: Array<{
     id: string;
     month_index: number;
@@ -134,7 +141,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 function amount(value: number | null | undefined) {
   if (value === null || value === undefined) return '-';
-  return `JPY ${Math.round(value).toLocaleString('ja-JP')}`;
+  return Math.round(value).toLocaleString('ja-JP');
 }
 
 function count(value: number | null | undefined) {
@@ -159,6 +166,7 @@ function friendlyError(message: string) {
   if (message.includes('Inputs not available this turn')) return 'このターンでは入力できない項目が含まれています。画面を更新して再入力してください。';
   if (message.includes('Only a resolved turn can be acknowledged')) return '結果確定前はackできません。ホストのresolveを待ってください。';
   if (message.includes('Only a resolved turn can advance')) return '結果確定前は次ターンへ進めません。先にresolveしてください。';
+  if (message.includes('Committed input can only be reopened before lock')) return '入力確定の解除は締切前だけ実行できます。';
   return message;
 }
 
@@ -342,6 +350,15 @@ export default function Home() {
     );
   }
 
+  async function hostUncommit(clubId: string) {
+    if (!room) return;
+    await report(
+      api(`/api/games/${room.game_id}/host/clubs/${clubId}/turn-uncommit`, {
+        method: 'POST',
+      }).then(() => loadPlay(room.game_id)),
+    );
+  }
+
   async function ackTurn() {
     if (!room || !play?.self.club_id) return;
     await report(
@@ -434,6 +451,7 @@ export default function Home() {
           }}
           onAcademyBudget={saveAcademyBudget}
           onHostAction={hostAction}
+          onHostUncommit={hostUncommit}
           onStaffPlan={saveStaffPlan}
         />
       ) : null}
@@ -588,6 +606,7 @@ function Console({
   onCommit,
   onFormValue,
   onHostAction,
+  onHostUncommit,
   onStaffPlan,
 }: {
   busy: boolean;
@@ -600,6 +619,7 @@ function Console({
   onCommit: () => void;
   onFormValue: (key: string, value: string) => void;
   onHostAction: (action: string) => void;
+  onHostUncommit: (clubId: string) => void;
   onStaffPlan: (role: string, count: number) => void;
 }) {
   const [activeSection, setActiveSection] = useState<ConsoleSection>('Turn');
@@ -634,6 +654,7 @@ function Console({
     if (action === 'advance') return turnState !== 'resolved' || !allAcked;
     return true;
   };
+  const canHostUncommit = Boolean(play?.self.is_host && (turnState === 'open' || turnState === 'collecting'));
 
   return (
     <section className="consoleGrid">
@@ -684,6 +705,7 @@ function Console({
                   </div>
                   {consoleData.available_actions.includes('staff_hiring_firing_available') ? (
                     <MayActions
+                      academy={consoleData.academy}
                       busy={busy}
                       staff={consoleData.staff}
                       onAcademyBudget={onAcademyBudget}
@@ -721,6 +743,17 @@ function Console({
                   <td>{club.name}</td>
                   <td className={club.committed ? 'ok' : 'pending'}>{club.committed ? 'commit' : 'input'}</td>
                   <td className={club.acked ? 'ok' : 'pending'}>{club.acked ? 'ack' : '-'}</td>
+                  {play?.self.is_host ? (
+                    <td>
+                      <button
+                        disabled={busy || !canHostUncommit || !club.committed}
+                        onClick={() => onHostUncommit(club.id)}
+                        type="button"
+                      >
+                        解除
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -832,7 +865,7 @@ function ConsoleSectionPanel({
               <tr key={staff.role}>
                 <td>{staff.role}</td>
                 <td>{staff.count}</td>
-                <td>{staff.next_count ?? '-'}</td>
+                <td>{staff.input_count ?? '-'}</td>
               </tr>
             ))}
           </tbody>
@@ -904,11 +937,13 @@ function FinanceStatementTable({
 }
 
 function MayActions({
+  academy,
   busy,
   staff,
   onAcademyBudget,
   onStaffPlan,
 }: {
+  academy: ConsoleData['academy'];
   busy: boolean;
   staff: ConsoleData['staff'];
   onAcademyBudget: (annualBudget: number) => void;
@@ -917,13 +952,36 @@ function MayActions({
   const [role, setRole] = useState(staff[0]?.role || 'sales');
   const [count, setCount] = useState('1');
   const [budget, setBudget] = useState('');
+
   return (
     <section className="mayActions">
       <p className="eventline">5月イベント: 来季スタッフ計画とアカデミー予算を設定できます。</p>
+      <table>
+        <thead>
+          <tr><th>ポジション</th><th>現在の人数</th><th>入力した人数</th></tr>
+        </thead>
+        <tbody>
+          {staff.map((item) => (
+            <tr key={item.role}>
+              <td>{item.role}</td>
+              <td>{item.count}</td>
+              <td>{item.input_count ?? '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <div className="inputGrid">
         <label>
           スタッフ区分
-          <select value={role} onChange={(event) => setRole(event.target.value)}>
+          <select
+            value={role}
+            onChange={(event) => {
+              const nextRole = event.target.value;
+              const nextStaff = staff.find((item) => item.role === nextRole);
+              setRole(nextRole);
+              if (nextStaff) setCount(String(nextStaff.input_count ?? nextStaff.count));
+            }}
+          >
             {['sales', 'hometown', 'operations', 'promotion', 'administration', 'topteam', 'academy'].map((item) => (
               <option key={item}>{item}</option>
             ))}
@@ -933,17 +991,21 @@ function MayActions({
           来季目標人数
           <span className="moneyField">
             <input min="1" type="number" value={count} onChange={(event) => setCount(event.target.value)} />
-            <button disabled={busy} onClick={() => onStaffPlan(role, Math.max(1, Number(count) || 1))}>保存</button>
+            <button disabled={busy} onClick={() => onStaffPlan(role, Math.max(1, Number(count) || 1))} type="button">保存</button>
           </span>
         </label>
         <label>
           翌年度アカデミー予算
           <span className="moneyField">
             <input min="0" step="100000" type="number" value={budget} onChange={(event) => setBudget(event.target.value)} />
-            <button disabled={busy} onClick={() => onAcademyBudget(Math.max(0, Number(budget) || 0))}>保存</button>
+            <button disabled={busy} onClick={() => onAcademyBudget(Math.max(0, Number(budget) || 0))} type="button">保存</button>
           </span>
         </label>
       </div>
+      <dl className="academyConfirm">
+        <dt>保存済み翌年度アカデミー予算</dt>
+        <dd>{amount(academy.next_annual_budget)}</dd>
+      </dl>
     </section>
   );
 }

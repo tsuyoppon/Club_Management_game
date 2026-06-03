@@ -221,10 +221,10 @@ def _statement_from_ledgers(ledgers: list[models.ClubFinancialLedger]) -> dict[s
         amount = float(ledger.amount)
         if amount == 0:
             continue
-        item = grouped.setdefault(
-            ledger.kind,
-            {"kind": ledger.kind, "label": _finance_label(ledger.kind), "amount": 0.0},
-        )
+        label = _finance_label(ledger.kind)
+        sign = "income" if amount > 0 else "expense"
+        key = f"{sign}:{label}"
+        item = grouped.setdefault(key, {"kind": key, "label": label, "amount": 0.0})
         item["amount"] += amount
 
     items = sorted(grouped.values(), key=lambda item: (item["amount"] < 0, item["label"]))
@@ -280,6 +280,16 @@ def _finance_report(
         )
         .all()
     )
+    first_snapshot = (
+        db.query(models.ClubFinancialSnapshot)
+        .filter(
+            models.ClubFinancialSnapshot.club_id == club_id,
+            models.ClubFinancialSnapshot.season_id == season.id,
+            models.ClubFinancialSnapshot.month_index <= snapshot.month_index,
+        )
+        .order_by(models.ClubFinancialSnapshot.month_index.asc())
+        .first()
+    )
     return {
         "period": {
             "season_number": season.season_number,
@@ -289,9 +299,18 @@ def _finance_report(
         },
         "monthly": _statement_from_ledgers(monthly_ledgers),
         "cumulative": _statement_from_ledgers(cumulative_ledgers),
-        "opening_balance": float(snapshot.opening_balance),
+        "opening_balance": float(first_snapshot.opening_balance if first_snapshot else snapshot.opening_balance),
         "closing_balance": float(snapshot.closing_balance),
     }
+
+
+def _next_academy_budget(row: Optional[models.ClubAcademy]) -> Optional[float]:
+    if not row or not row.transfer_fee_history:
+        return None
+    for entry in reversed(row.transfer_fee_history):
+        if isinstance(entry, dict) and "next_budget" in entry:
+            return float(entry["next_budget"])
+    return None
 
 
 def _current_turn(db: Session, season: Optional[models.Season]) -> Optional[models.Turn]:
@@ -600,6 +619,11 @@ def turn_console(
         .filter(models.ClubSponsorState.club_id == club_id, models.ClubSponsorState.season_id == season.id)
         .first()
     )
+    academy = (
+        db.query(models.ClubAcademy)
+        .filter(models.ClubAcademy.club_id == club_id, models.ClubAcademy.season_id == season.id)
+        .first()
+    )
     staffs = db.query(models.ClubStaff).filter(models.ClubStaff.club_id == club_id).order_by(models.ClubStaff.role).all()
     fixtures = (
         db.query(models.Fixture)
@@ -647,8 +671,18 @@ def turn_console(
                 if sponsor else 0
             ),
         },
+        "academy": {
+            "annual_budget": float(academy.annual_budget) if academy else 0,
+            "next_annual_budget": _next_academy_budget(academy),
+        },
         "staff": [
-            {"role": staff.role.value, "count": staff.count, "next_count": staff.next_count}
+            {
+                "role": staff.role.value,
+                "count": staff.count,
+                "next_count": staff.next_count,
+                "hiring_target": staff.hiring_target,
+                "input_count": staff.next_count if staff.next_count is not None else staff.hiring_target,
+            }
             for staff in staffs
         ],
         "fixtures": [
@@ -818,6 +852,39 @@ def commit_turn_draft(
         db.delete(draft)
         db.commit()
     return result
+
+
+@router.post("/games/{game_id}/host/clubs/{club_id}/turn-uncommit")
+def host_uncommit_turn(
+    game_id: UUID,
+    club_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _room_for_game_or_404(db, game_id)
+    _room_member(db, room, user)
+    _require_host(room, user)
+    season = _latest_running_season(db, str(game_id))
+    turn = _current_turn(db, season)
+    if not turn:
+        _not_found("Current turn not found")
+    if turn.turn_state not in (models.TurnState.open, models.TurnState.collecting):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Committed input can only be reopened before lock")
+    club = db.query(models.Club).filter(models.Club.id == club_id, models.Club.game_id == game_id).first()
+    if not club:
+        _not_found("Club not found")
+    decision = (
+        db.query(models.TurnDecision)
+        .filter(models.TurnDecision.turn_id == turn.id, models.TurnDecision.club_id == club_id)
+        .first()
+    )
+    if not decision:
+        _not_found("Decision not found")
+    decision.decision_state = models.DecisionState.draft
+    decision.committed_at = None
+    decision.committed_by_user_id = None
+    db.commit()
+    return {"state": decision.decision_state, "club_id": str(club_id)}
 
 
 @router.post("/games/{game_id}/clubs/{club_id}/turn-ack")
