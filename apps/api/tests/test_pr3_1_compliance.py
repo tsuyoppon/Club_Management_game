@@ -231,10 +231,20 @@ def test_pr3_1_compliance_staff(client, db, auth_headers):
     # Resolve May
     t10_s2 = advance_turn_s2()
     
-    # Check Severance
+    # Check Severance is not recorded in May.
     # Diff = 1. Annual salary = 4.8M. Factor = 0.75. Severance = 3.6M.
     ledgers = db.query(models.ClubFinancialLedger).filter(
         models.ClubFinancialLedger.turn_id == t10_s2["id"],
+        models.ClubFinancialLedger.kind == "staff_severance_topteam"
+    ).all()
+    assert len(ledgers) == 0
+
+    # Resolve Jun and Jul; severance should be recorded in July.
+    advance_turn_s2()
+    t12_s2 = advance_turn_s2()
+
+    ledgers = db.query(models.ClubFinancialLedger).filter(
+        models.ClubFinancialLedger.turn_id == t12_s2["id"],
         models.ClubFinancialLedger.kind == "staff_severance_topteam"
     ).all()
     assert len(ledgers) == 1

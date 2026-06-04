@@ -10,6 +10,7 @@ from app.config.constants import STAFF_SALARY_ANNUAL
 BASE_HIRING_CHANCE = 0.8 # 80% base chance
 FIRING_PENALTY_PER_PERSON = Decimal("0.1") # 10% penalty per fired person
 PENALTY_DECAY = Decimal("0.5") # Halves every year
+SEVERANCE_PAY_FACTOR = Decimal("0.75") # 75% of annual salary (v1Spec)
 
 def ensure_staff_state(db: Session, club_id: UUID):
     monthly_salary = STAFF_SALARY_ANNUAL / Decimal(12)
@@ -98,6 +99,48 @@ def resolve_hiring(db: Session, club_id: UUID, season_id: UUID):
         
     db.flush()
 
+def process_severance_pay(db: Session, club_id: UUID, turn_id: UUID):
+    """
+    Record severance pay in July for firing plans submitted in May.
+    """
+    staffs = db.execute(select(models.ClubStaff).where(models.ClubStaff.club_id == club_id)).scalars().all()
+
+    for staff in staffs:
+        if staff.next_count is None or staff.next_count >= staff.count:
+            continue
+
+        diff = staff.count - staff.next_count
+        annual_salary = staff.salary_per_person * 12
+        severance_total = diff * annual_salary * SEVERANCE_PAY_FACTOR
+        ledger_kind = f"staff_severance_{staff.role.value}"
+        meta = {
+            "description": f"Severance Pay for {staff.role.value}",
+            "fired_count": diff,
+            "factor": float(SEVERANCE_PAY_FACTOR),
+            "current_count": staff.count,
+            "next_count": staff.next_count,
+        }
+
+        existing = db.execute(select(models.ClubFinancialLedger).where(
+            models.ClubFinancialLedger.club_id == club_id,
+            models.ClubFinancialLedger.turn_id == turn_id,
+            models.ClubFinancialLedger.kind == ledger_kind
+        )).scalar_one_or_none()
+
+        if existing:
+            existing.amount = -severance_total
+            existing.meta = meta
+            db.add(existing)
+        else:
+            db.add(models.ClubFinancialLedger(
+                club_id=club_id,
+                turn_id=turn_id,
+                kind=ledger_kind,
+                amount=-severance_total,
+                meta=meta
+            ))
+
+
 def process_staff_cost(db: Session, club_id: UUID, turn_id: UUID, month_index: int, season_id: UUID = None):
     """
     Calculate monthly staff cost.
@@ -126,10 +169,7 @@ def process_staff_cost(db: Session, club_id: UUID, turn_id: UUID, month_index: i
         models.ClubFinancialLedger.kind == "staff_cost"
     )).scalar_one_or_none()
     
-    if existing:
-        return
-
-    if total_cost > 0:
+    if not existing and total_cost > 0:
         ledger = models.ClubFinancialLedger(
             club_id=club_id,
             turn_id=turn_id,
@@ -139,7 +179,8 @@ def process_staff_cost(db: Session, club_id: UUID, turn_id: UUID, month_index: i
         )
         db.add(ledger)
 
-SEVERANCE_PAY_FACTOR = Decimal("0.75") # 75% of annual salary (v1Spec)
+    if month_index == 12:
+        process_severance_pay(db, club_id, turn_id)
 
 def update_staff_plan(db: Session, club_id: UUID, role: models.StaffRole, new_count: int, turn_month: int, turn_id: UUID):
     """
@@ -157,47 +198,9 @@ def update_staff_plan(db: Session, club_id: UUID, role: models.StaffRole, new_co
     if new_count < 1:
         raise ValueError("Minimum 1 staff required")
             
-    # Severance Pay Logic
-    ledger_kind = f"staff_severance_{role.value}"
-    
     if new_count < staff.count:
         # Firing
-        # Record severance pay immediately (in May)
         diff = staff.count - new_count
-        annual_salary = staff.salary_per_person * 12
-        severance_total = diff * annual_salary * SEVERANCE_PAY_FACTOR
-                
-        # Check idempotency for severance ledger
-        existing = db.execute(select(models.ClubFinancialLedger).where(
-            models.ClubFinancialLedger.club_id == club_id,
-            models.ClubFinancialLedger.turn_id == turn_id,
-            models.ClubFinancialLedger.kind == ledger_kind
-        )).scalar_one_or_none()
-        
-        if existing:
-            # Update existing ledger (e.g. user changed firing count from 1 to 2)
-            existing.amount = -severance_total
-            existing.meta = {
-                "description": f"Severance Pay for {role.value}", 
-                "fired_count": diff, 
-                "factor": float(SEVERANCE_PAY_FACTOR)
-            }
-            db.add(existing)
-        else:
-            # Create new ledger
-            ledger = models.ClubFinancialLedger(
-                club_id=club_id,
-                turn_id=turn_id,
-                kind=ledger_kind,
-                amount=-severance_total,
-                meta={
-                    "description": f"Severance Pay for {role.value}", 
-                    "fired_count": diff, 
-                    "factor": float(SEVERANCE_PAY_FACTOR)
-                }
-            )
-            db.add(ledger)
-            
         # Update next_count (Deterministic Firing)
         staff.next_count = new_count
         staff.hiring_target = None # Clear hiring target if firing
@@ -222,18 +225,6 @@ def update_staff_plan(db: Session, club_id: UUID, role: models.StaffRole, new_co
         
     else:
         # Hiring or No Change
-        # If a severance ledger exists (e.g. user fired then cancelled), remove it.
-        existing = db.execute(select(models.ClubFinancialLedger).where(
-            models.ClubFinancialLedger.club_id == club_id,
-            models.ClubFinancialLedger.turn_id == turn_id,
-            models.ClubFinancialLedger.kind == ledger_kind
-        )).scalar_one_or_none()
-        
-        if existing:
-            # Revert penalty? (Complex)
-            # For now, ignore reverting penalty.
-            db.delete(existing)
-            
         if new_count > staff.count:
             # Hiring Request
             staff.hiring_target = new_count
@@ -246,4 +237,3 @@ def update_staff_plan(db: Session, club_id: UUID, role: models.StaffRole, new_co
     db.add(staff)
     # We need to return info to create ledger if needed
     return staff
-
