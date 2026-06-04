@@ -40,7 +40,7 @@ def validate_decision_payload(
         if turn.month_index != 5:  # 12月 = month_index 5
             errors.append("追加強化費は12月のみ入力可能です")
         # 債務超過チェック
-        if _is_in_debt(db, club_id):
+        if not can_add_reinforcement(db, club_id, turn.season_id):
             errors.append("債務超過中のため追加強化費は入力できません")
 
     # 2.5 翌シーズン強化費: 6月・7月（month_index=11,12）のみ入力可
@@ -74,7 +74,7 @@ def get_available_inputs(db: Session, turn: models.Turn, club_id: UUID) -> List[
         available.append("next_home_promo")
 
     # 追加強化費: 12月のみ、かつ債務超過クラブは不可
-    if turn.month_index == 5 and can_add_reinforcement(db, club_id):
+    if turn.month_index == 5 and can_add_reinforcement(db, club_id, turn.season_id):
         available.append("additional_reinforcement")
 
     # 翌シーズン強化費: 6月・7月のみ
@@ -103,22 +103,6 @@ def _has_home_fixture_in_month(db: Session, season_id: UUID, club_id: UUID, mont
         )
     ).scalar_one_or_none()
     return fixture is not None
-
-
-def _is_in_debt(db: Session, club_id: UUID) -> bool:
-    """
-    債務超過状態かチェック
-    現金残高がマイナスの場合はTrue
-    """
-    state = db.execute(
-        select(models.ClubFinancialState).where(
-            models.ClubFinancialState.club_id == club_id
-        )
-    ).scalar_one_or_none()
-    
-    if state and state.balance < 0:
-        return True
-    return False
 
 
 def parse_decision_payload(payload_dict: dict) -> DecisionPayload:

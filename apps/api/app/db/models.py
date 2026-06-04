@@ -678,6 +678,27 @@ class ClubPointPenalty(Base):
     )
 
 
+class ClubBankruptcyState(Base):
+    """Season-scoped bankruptcy state for a club."""
+    __tablename__ = "club_bankruptcy_states"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
+    season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
+    is_bankrupt = Column(Boolean, nullable=False, default=True)
+    bankrupt_since_turn_id = Column(UUID(as_uuid=True), ForeignKey("turns.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    club = relationship("Club")
+    season = relationship("Season")
+    bankrupt_since_turn = relationship("Turn", foreign_keys=[bankrupt_since_turn_id])
+
+    __table_args__ = (
+        UniqueConstraint("club_id", "season_id", name="uq_bankruptcy_state_club_season"),
+    )
+
+
 class SeasonPublicDisclosure(Base):
     """PR9: 公開情報履歴 - v1Spec Section 4"""
     __tablename__ = "season_public_disclosures"

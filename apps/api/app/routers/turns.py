@@ -153,7 +153,7 @@ def commit_decision(
                 additional_val = Decimal(str(additional))
                 if additional_val > 0:
                     from app.services.bankruptcy import can_add_reinforcement
-                    if not can_add_reinforcement(db, club_id):
+                    if not can_add_reinforcement(db, club_id, turn.season_id):
                         raise HTTPException(
                             status_code=status.HTTP_400_BAD_REQUEST, 
                             detail="債務超過クラブは追加強化費を入力できません"

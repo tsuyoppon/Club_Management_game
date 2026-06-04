@@ -12,9 +12,37 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 
 from app.db.models import (
-    Club, ClubFinancialState, ClubPointPenalty, Turn, Season
+    Club, ClubBankruptcyState, ClubFinancialState, ClubPointPenalty, Turn, Season
 )
 from app.config.constants import DEBT_POINT_DEDUCTION
+
+
+def _get_turn(db: Session, turn_id: UUID) -> Turn | None:
+    return db.query(Turn).filter(Turn.id == turn_id).first()
+
+
+def _get_penalty(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+    reason: str = "bankruptcy",
+) -> ClubPointPenalty | None:
+    return db.query(ClubPointPenalty).filter(
+        ClubPointPenalty.club_id == club_id,
+        ClubPointPenalty.season_id == season_id,
+        ClubPointPenalty.reason == reason,
+    ).first()
+
+
+def get_bankruptcy_state(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+) -> ClubBankruptcyState | None:
+    return db.query(ClubBankruptcyState).filter(
+        ClubBankruptcyState.club_id == club_id,
+        ClubBankruptcyState.season_id == season_id,
+    ).first()
 
 
 def check_bankruptcy(db: Session, club_id: UUID, turn_id: UUID) -> bool:
@@ -30,6 +58,10 @@ def check_bankruptcy(db: Session, club_id: UUID, turn_id: UUID) -> bool:
     Returns:
         True if club is now bankrupt (newly or already)
     """
+    turn = _get_turn(db, turn_id)
+    if not turn:
+        return False
+
     fin_state = db.query(ClubFinancialState).filter(
         ClubFinancialState.club_id == club_id
     ).first()
@@ -38,12 +70,10 @@ def check_bankruptcy(db: Session, club_id: UUID, turn_id: UUID) -> bool:
         return False
     
     if fin_state.balance < Decimal("0"):
-        if not fin_state.is_bankrupt:
-            # 新規に債務超過になった
-            mark_bankrupt(db, club_id, turn_id)
+        mark_bankrupt(db, club_id, turn_id)
         return True
     
-    return fin_state.is_bankrupt
+    return is_bankrupt(db, club_id, turn.season_id)
 
 
 def mark_bankrupt(db: Session, club_id: UUID, turn_id: UUID) -> None:
@@ -55,17 +85,30 @@ def mark_bankrupt(db: Session, club_id: UUID, turn_id: UUID) -> None:
         club_id: クラブID
         turn_id: 債務超過発生ターンID
     """
-    fin_state = db.query(ClubFinancialState).filter(
-        ClubFinancialState.club_id == club_id
-    ).first()
-    
-    if fin_state and not fin_state.is_bankrupt:
-        fin_state.is_bankrupt = True
-        fin_state.bankrupt_since_turn_id = turn_id
-        db.flush()
+    turn = _get_turn(db, turn_id)
+    if not turn:
+        return
+
+    state = get_bankruptcy_state(db, club_id, turn.season_id)
+    if state:
+        if not state.is_bankrupt:
+            state.is_bankrupt = True
+        if state.bankrupt_since_turn_id is None:
+            state.bankrupt_since_turn_id = turn_id
+        db.add(state)
+    else:
+        state = ClubBankruptcyState(
+            club_id=club_id,
+            season_id=turn.season_id,
+            is_bankrupt=True,
+            bankrupt_since_turn_id=turn_id,
+        )
+        db.add(state)
+
+    db.flush()
 
 
-def is_bankrupt(db: Session, club_id: UUID) -> bool:
+def is_bankrupt(db: Session, club_id: UUID, season_id: Optional[UUID] = None) -> bool:
     """
     債務超過状態を確認
     
@@ -76,11 +119,14 @@ def is_bankrupt(db: Session, club_id: UUID) -> bool:
     Returns:
         True if club is bankrupt
     """
-    fin_state = db.query(ClubFinancialState).filter(
-        ClubFinancialState.club_id == club_id
-    ).first()
-    
-    return fin_state.is_bankrupt if fin_state else False
+    query = db.query(ClubBankruptcyState).filter(
+        ClubBankruptcyState.club_id == club_id,
+        ClubBankruptcyState.is_bankrupt == True,  # noqa: E712
+    )
+    if season_id is not None:
+        query = query.filter(ClubBankruptcyState.season_id == season_id)
+
+    return query.first() is not None
 
 
 def apply_point_penalty(
@@ -101,14 +147,10 @@ def apply_point_penalty(
     Returns:
         剥奪された点数（負の値）、既に適用済みなら0
     """
-    fin_state = db.query(ClubFinancialState).filter(
-        ClubFinancialState.club_id == club_id
-    ).first()
-    
-    if not fin_state or not fin_state.is_bankrupt:
+    if not is_bankrupt(db, club_id, season_id):
         return 0
     
-    if fin_state.point_penalty_applied:
+    if _get_penalty(db, club_id, season_id):
         return 0  # 既に適用済み
     
     # 勝点剥奪記録を作成
@@ -121,8 +163,6 @@ def apply_point_penalty(
     )
     db.add(penalty)
     
-    # 適用済みフラグを立てる
-    fin_state.point_penalty_applied = True
     db.flush()
     
     return DEBT_POINT_DEDUCTION
@@ -148,7 +188,7 @@ def get_point_penalty_for_club(db: Session, club_id: UUID, season_id: UUID) -> i
     return sum(p.points_deducted for p in penalties)
 
 
-def can_add_reinforcement(db: Session, club_id: UUID) -> bool:
+def can_add_reinforcement(db: Session, club_id: UUID, season_id: UUID) -> bool:
     """
     追加強化費を入力可能かチェック
     債務超過クラブは追加強化費禁止
@@ -160,7 +200,7 @@ def can_add_reinforcement(db: Session, club_id: UUID) -> bool:
     Returns:
         True if club can add reinforcement
     """
-    return not is_bankrupt(db, club_id)
+    return not is_bankrupt(db, club_id, season_id)
 
 
 def get_bankruptcy_status(db: Session, club_id: UUID, season_id: UUID) -> Dict[str, Any]:
@@ -175,38 +215,27 @@ def get_bankruptcy_status(db: Session, club_id: UUID, season_id: UUID) -> Dict[s
     Returns:
         債務超過状態の詳細辞書
     """
-    fin_state = db.query(ClubFinancialState).filter(
-        ClubFinancialState.club_id == club_id
-    ).first()
-    
-    if not fin_state:
-        return {
-            "club_id": str(club_id),
-            "is_bankrupt": False,
-            "bankrupt_since_turn_id": None,
-            "bankrupt_since_month": None,
-            "point_penalty_applied": False,
-            "total_penalty_points": 0,
-            "can_add_reinforcement": True
-        }
+    state = get_bankruptcy_state(db, club_id, season_id)
     
     # 債務超過発生月を取得
     bankrupt_month = None
-    if fin_state.bankrupt_since_turn_id:
-        turn = db.query(Turn).filter(Turn.id == fin_state.bankrupt_since_turn_id).first()
+    if state and state.bankrupt_since_turn_id:
+        turn = db.query(Turn).filter(Turn.id == state.bankrupt_since_turn_id).first()
         if turn:
             bankrupt_month = turn.month_name
     
     total_penalty = get_point_penalty_for_club(db, club_id, season_id)
+    point_penalty_applied = _get_penalty(db, club_id, season_id) is not None
+    is_season_bankrupt = bool(state and state.is_bankrupt)
     
     return {
         "club_id": str(club_id),
-        "is_bankrupt": fin_state.is_bankrupt,
-        "bankrupt_since_turn_id": str(fin_state.bankrupt_since_turn_id) if fin_state.bankrupt_since_turn_id else None,
+        "is_bankrupt": is_season_bankrupt,
+        "bankrupt_since_turn_id": str(state.bankrupt_since_turn_id) if state and state.bankrupt_since_turn_id else None,
         "bankrupt_since_month": bankrupt_month,
-        "point_penalty_applied": fin_state.point_penalty_applied,
+        "point_penalty_applied": point_penalty_applied,
         "total_penalty_points": total_penalty,
-        "can_add_reinforcement": not fin_state.is_bankrupt
+        "can_add_reinforcement": not is_season_bankrupt
     }
 
 
@@ -230,26 +259,25 @@ def get_bankrupt_clubs_for_season(db: Session, season_id: UUID) -> List[Dict[str
     
     result = []
     for club in clubs:
-        fin_state = db.query(ClubFinancialState).filter(
-            ClubFinancialState.club_id == club.id
-        ).first()
-        
-        if fin_state and fin_state.is_bankrupt:
-            bankrupt_month = None
-            if fin_state.bankrupt_since_turn_id:
-                turn = db.query(Turn).filter(Turn.id == fin_state.bankrupt_since_turn_id).first()
-                if turn:
-                    bankrupt_month = turn.month_name
-            
-            penalty = get_point_penalty_for_club(db, club.id, season_id)
-            
-            result.append({
-                "club_id": str(club.id),
-                "club_name": club.name,
-                "is_bankrupt": True,
-                "bankrupt_since_month": bankrupt_month,
-                "penalty_points": penalty
-            })
+        state = get_bankruptcy_state(db, club.id, season_id)
+        if not state or not state.is_bankrupt:
+            continue
+
+        bankrupt_month = None
+        if state.bankrupt_since_turn_id:
+            turn = db.query(Turn).filter(Turn.id == state.bankrupt_since_turn_id).first()
+            if turn:
+                bankrupt_month = turn.month_name
+
+        penalty = get_point_penalty_for_club(db, club.id, season_id)
+
+        result.append({
+            "club_id": str(club.id),
+            "club_name": club.name,
+            "is_bankrupt": True,
+            "bankrupt_since_month": bankrupt_month,
+            "penalty_points": penalty
+        })
     
     return result
 
