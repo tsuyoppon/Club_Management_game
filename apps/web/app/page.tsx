@@ -64,8 +64,24 @@ type ConsoleData = {
     latest_expense: number | null;
     report: FinanceReport;
   };
-  fanbase: { followers: number | null; fb_count: number | null };
+  fanbase: {
+    followers: number | null;
+    fb_count: number | null;
+    comparison: Array<{
+      club_id: string;
+      club_name: string;
+      is_self: boolean;
+      followers: number | null;
+      fb_count: number | null;
+    }>;
+  };
   sponsor: { count: number; confirmed_next: number };
+  event_budget: {
+    key: string;
+    title: string;
+    input_label: string;
+    saved_amount: number | null;
+  } | null;
   academy: { annual_budget: number; next_annual_budget: number | null };
   staff: Array<{
     role: string;
@@ -388,6 +404,16 @@ export default function Home() {
     );
   }
 
+  async function saveBudgetEvent(key: string, budgetAmount: number) {
+    if (!room || !play?.self.club_id) return;
+    await report(
+      api(`/api/games/${room.game_id}/clubs/${play.self.club_id}/turn-budget-event`, {
+        method: 'POST',
+        body: JSON.stringify({ key, amount: budgetAmount }),
+      }).then(() => loadPlay(room.game_id)),
+    );
+  }
+
   return (
     <main className="shell">
       <header className="masthead">
@@ -450,6 +476,7 @@ export default function Home() {
             setDraftDirty(true);
           }}
           onAcademyBudget={saveAcademyBudget}
+          onBudgetEvent={saveBudgetEvent}
           onHostAction={hostAction}
           onHostUncommit={hostUncommit}
           onStaffPlan={saveStaffPlan}
@@ -603,6 +630,7 @@ function Console({
   play,
   onAck,
   onAcademyBudget,
+  onBudgetEvent,
   onCommit,
   onFormValue,
   onHostAction,
@@ -616,6 +644,7 @@ function Console({
   play: PlayState | null;
   onAck: () => void;
   onAcademyBudget: (annualBudget: number) => void;
+  onBudgetEvent: (key: string, amount: number) => void;
   onCommit: () => void;
   onFormValue: (key: string, value: string) => void;
   onHostAction: (action: string) => void;
@@ -710,6 +739,13 @@ function Console({
                       staff={consoleData.staff}
                       onAcademyBudget={onAcademyBudget}
                       onStaffPlan={onStaffPlan}
+                    />
+                  ) : null}
+                  {consoleData.event_budget ? (
+                    <BudgetEventActions
+                      busy={busy}
+                      event={consoleData.event_budget}
+                      onBudgetEvent={onBudgetEvent}
                     />
                   ) : null}
                   <div className="actionRow">
@@ -844,10 +880,20 @@ function ConsoleSectionPanel({
         <FinancePanel report={consoleData.finance.report} />
       ) : null}
       {consoleData && section === 'Fans' ? (
-        <dl className="detailList">
-          <dt>公開フォロワー</dt><dd>{consoleData.fanbase.followers?.toLocaleString('ja-JP') || '-'}</dd>
-          <dt>ファンベース count</dt><dd>{consoleData.fanbase.fb_count?.toLocaleString('ja-JP') || '-'}</dd>
-        </dl>
+        <table>
+          <thead>
+            <tr><th>クラブ</th><th>公開フォロワー</th><th>ファンベース count</th></tr>
+          </thead>
+          <tbody>
+            {consoleData.fanbase.comparison.map((row) => (
+              <tr key={row.club_id} className={row.is_self ? 'selfRow' : ''}>
+                <td>{row.club_name}</td>
+                <td>{count(row.followers)}</td>
+                <td>{count(row.fb_count)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       ) : null}
       {consoleData && section === 'Sponsors' ? (
         <dl className="detailList">
@@ -1005,6 +1051,51 @@ function MayActions({
       <dl className="academyConfirm">
         <dt>保存済み翌年度アカデミー予算</dt>
         <dd>{amount(academy.next_annual_budget)}</dd>
+      </dl>
+    </section>
+  );
+}
+
+function BudgetEventActions({
+  busy,
+  event,
+  onBudgetEvent,
+}: {
+  busy: boolean;
+  event: NonNullable<ConsoleData['event_budget']>;
+  onBudgetEvent: (key: string, amount: number) => void;
+}) {
+  const [budget, setBudget] = useState('');
+
+  return (
+    <section className="eventActions">
+      <p className="eventline">{event.title}: {event.input_label}を設定できます。</p>
+      <div className="inputGrid">
+        <label>
+          {event.input_label}
+          <span className="moneyField">
+            <input
+              min="0"
+              step="100000"
+              type="number"
+              value={budget}
+              onChange={(changeEvent) => setBudget(changeEvent.target.value)}
+            />
+            <button
+              disabled={busy}
+              onClick={() => onBudgetEvent(event.key, Math.max(0, Number(budget) || 0))}
+              type="button"
+            >
+              保存
+            </button>
+          </span>
+        </label>
+      </div>
+      <dl className="savedEventValue">
+        <dt>入力中の数値</dt>
+        <dd>{budget.trim() === '' ? '-' : amount(Number(budget))}</dd>
+        <dt>保存済みの数値</dt>
+        <dd>{amount(event.saved_amount)}</dd>
       </dl>
     </section>
   );

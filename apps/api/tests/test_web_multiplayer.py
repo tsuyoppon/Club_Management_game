@@ -1,8 +1,15 @@
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.db import models
-from app.routers.web_multiplayer import _finance_label, _statement_from_ledgers
+from app.routers.web_multiplayer import (
+    _budget_event_for_turn,
+    _finance_label,
+    _saved_payload_value,
+    _statement_from_ledgers,
+)
 
 
 def _create_room(client: TestClient):
@@ -57,6 +64,27 @@ def test_finance_statement_groups_same_display_item():
 
     assert statement["income"] == [{"kind": "income:チケット収入", "label": "チケット収入", "amount": 3500.0}]
     assert statement["expenses"] == [{"kind": "expense:試合運営費", "label": "試合運営費", "amount": -1000.0}]
+
+
+def test_budget_event_metadata_by_month():
+    assert _budget_event_for_turn(SimpleNamespace(month_index=5), 1200) == {
+        "key": "additional_reinforcement",
+        "title": "12月イベント",
+        "input_label": "追加強化費",
+        "saved_amount": 1200,
+    }
+    assert _budget_event_for_turn(SimpleNamespace(month_index=11), None)["title"] == "6月イベント"
+    assert _budget_event_for_turn(SimpleNamespace(month_index=12), None)["title"] == "7月イベント"
+    assert _budget_event_for_turn(SimpleNamespace(month_index=10), None) is None
+
+
+def test_saved_payload_value_prefers_draft_over_decision():
+    draft = SimpleNamespace(payload_json={"reinforcement_budget": 3000})
+    decision = SimpleNamespace(payload_json={"reinforcement_budget": 1000})
+
+    assert _saved_payload_value(draft, decision, "reinforcement_budget") == 3000.0
+    assert _saved_payload_value(None, decision, "reinforcement_budget") == 1000.0
+    assert _saved_payload_value(None, decision, "additional_reinforcement") is None
 
 
 def test_browser_room_start_and_turn_console():

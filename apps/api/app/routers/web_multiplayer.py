@@ -39,6 +39,8 @@ DECISION_LABELS = {
     "sales_allocation_new": "新規スポンサー営業配分",
 }
 
+EVENT_INPUT_KEYS = {"additional_reinforcement", "reinforcement_budget"}
+
 FINANCE_LABELS = {
     "academy_cost": "アカデミー費",
     "academy_transfer_fee": "アカデミー移籍金収入",
@@ -93,6 +95,11 @@ class WebStaffPlan(BaseModel):
 
 class WebAcademyBudget(BaseModel):
     annual_budget: int = Field(..., ge=0)
+
+
+class WebBudgetEvent(BaseModel):
+    key: str
+    amount: int = Field(..., ge=0)
 
 
 def _not_found(detail: str):
@@ -310,6 +317,51 @@ def _next_academy_budget(row: Optional[models.ClubAcademy]) -> Optional[float]:
     for entry in reversed(row.transfer_fee_history):
         if isinstance(entry, dict) and "next_budget" in entry:
             return float(entry["next_budget"])
+    return None
+
+
+def _budget_event_for_turn(turn: models.Turn, saved_amount: Optional[float]) -> Optional[dict[str, Any]]:
+    if turn.month_index == 5:
+        return {
+            "key": "additional_reinforcement",
+            "title": "12月イベント",
+            "input_label": "追加強化費",
+            "saved_amount": saved_amount,
+        }
+    if turn.month_index == 11:
+        return {
+            "key": "reinforcement_budget",
+            "title": "6月イベント",
+            "input_label": "来期強化費",
+            "saved_amount": saved_amount,
+        }
+    if turn.month_index == 12:
+        return {
+            "key": "reinforcement_budget",
+            "title": "7月イベント",
+            "input_label": "来期強化費",
+            "saved_amount": saved_amount,
+        }
+    return None
+
+
+def _event_key_for_turn(turn: models.Turn) -> Optional[str]:
+    if turn.month_index == 5:
+        return "additional_reinforcement"
+    if turn.month_index in (11, 12):
+        return "reinforcement_budget"
+    return None
+
+
+def _saved_payload_value(
+    draft: Optional[models.WebTurnDraft],
+    decision: Optional[models.TurnDecision],
+    key: str,
+) -> Optional[float]:
+    for payload in (draft.payload_json if draft else None, decision.payload_json if decision else None):
+        if isinstance(payload, dict) and key in payload:
+            value = payload.get(key)
+            return float(value) if value is not None else None
     return None
 
 
@@ -638,8 +690,24 @@ def turn_console(
         .order_by(models.Fixture.match_month_index)
         .all()
     )
-    club_names = {club.id: club.name for club in db.query(models.Club).filter(models.Club.game_id == game_id).all()}
+    clubs_for_game = db.query(models.Club).filter(models.Club.game_id == game_id).order_by(models.Club.name).all()
+    club_names = {club.id: club.name for club in clubs_for_game}
+    fanbase_states = {
+        state.club_id: state
+        for state in (
+            db.query(models.ClubFanbaseState)
+            .filter(models.ClubFanbaseState.season_id == season.id)
+            .all()
+        )
+    }
     available_inputs = get_available_inputs(db, turn, club_id)
+    normal_available_inputs = [key for key in available_inputs if key not in EVENT_INPUT_KEYS]
+    event_key = _event_key_for_turn(turn)
+    event_budget = (
+        _budget_event_for_turn(turn, _saved_payload_value(draft, decision, event_key))
+        if event_key in available_inputs
+        else None
+    )
     return {
         "turn": _turn_label(turn),
         "decision": {
@@ -650,9 +718,10 @@ def turn_console(
         "draft": draft.payload_json if draft else None,
         "available_inputs": [
             {"key": key, "label": DECISION_LABELS.get(key, key)}
-            for key in available_inputs
+            for key in normal_available_inputs
         ],
         "available_actions": get_available_actions(db, turn, club_id),
+        "event_budget": event_budget,
         "finance": {
             "balance": float(state.balance) if state else 0,
             "latest_closing_balance": float(snapshot.closing_balance) if snapshot else None,
@@ -663,6 +732,20 @@ def turn_console(
         "fanbase": {
             "followers": fanbase.followers_public if fanbase else None,
             "fb_count": fanbase.fb_count if fanbase else None,
+            "comparison": [
+                {
+                    "club_id": str(club.id),
+                    "club_name": club.name,
+                    "is_self": club.id == club_id,
+                    "followers": (
+                        fan_state.followers_public
+                        if (fan_state := fanbase_states.get(club.id)) and fan_state.followers_public is not None
+                        else None
+                    ),
+                    "fb_count": fan_state.fb_count if (fan_state := fanbase_states.get(club.id)) else None,
+                }
+                for club in clubs_for_game
+            ],
         },
         "sponsor": {
             "count": sponsor.count if sponsor else 0,
@@ -734,31 +817,95 @@ def save_turn_draft(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Turn input is closed")
 
     normalized = dict(payload.payload)
-    available = set(get_available_inputs(db, turn, club_id))
+    available = set(key for key in get_available_inputs(db, turn, club_id) if key not in EVENT_INPUT_KEYS)
     invalid_fields = sorted(set(normalized) - available)
     if invalid_fields:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Inputs not available this turn: {', '.join(invalid_fields)}",
         )
-    parsed = parse_decision_payload(normalized)
+    decision = (
+        db.query(models.TurnDecision)
+        .filter(models.TurnDecision.turn_id == turn.id, models.TurnDecision.club_id == club_id)
+        .first()
+    )
+    existing_payload = (
+        dict(draft.payload_json)
+        if (draft := db.query(models.WebTurnDraft)
+            .filter(models.WebTurnDraft.turn_id == turn.id, models.WebTurnDraft.club_id == club_id)
+            .first())
+        else dict(decision.payload_json)
+        if decision and decision.payload_json
+        else {}
+    )
+    preserved_events = {key: existing_payload[key] for key in EVENT_INPUT_KEYS if key in existing_payload}
+    merged_payload = {**preserved_events, **normalized}
+    parsed = parse_decision_payload(merged_payload)
     errors = validate_decision_payload(db, turn, club_id, parsed)
     if errors:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"validation_errors": errors})
 
+    if not draft:
+        draft = models.WebTurnDraft(turn_id=turn.id, club_id=club_id, user_id=user.id, payload_json=merged_payload)
+        db.add(draft)
+    else:
+        draft.user_id = user.id
+        draft.payload_json = merged_payload
+    db.commit()
+    return {"payload": draft.payload_json, "updated_at": draft.updated_at}
+
+
+@router.post("/games/{game_id}/clubs/{club_id}/turn-budget-event")
+def save_web_budget_event(
+    game_id: UUID,
+    club_id: UUID,
+    payload: WebBudgetEvent,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _room_for_game_or_404(db, game_id)
+    _web_club_access(db, room, user, club_id)
+    season = _latest_running_season(db, str(game_id))
+    turn = _current_turn(db, season)
+    if not turn:
+        _not_found("Current turn not found")
+    if turn.turn_state not in (models.TurnState.open, models.TurnState.collecting):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Turn input is closed")
+    expected_key = _event_key_for_turn(turn)
+    if payload.key != expected_key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Budget event is not available this turn")
+
+    decision = (
+        db.query(models.TurnDecision)
+        .filter(models.TurnDecision.turn_id == turn.id, models.TurnDecision.club_id == club_id)
+        .first()
+    )
     draft = (
         db.query(models.WebTurnDraft)
         .filter(models.WebTurnDraft.turn_id == turn.id, models.WebTurnDraft.club_id == club_id)
         .first()
     )
+    merged_payload = (
+        dict(draft.payload_json)
+        if draft
+        else dict(decision.payload_json)
+        if decision and decision.payload_json
+        else {}
+    )
+    merged_payload[payload.key] = payload.amount
+    parsed = parse_decision_payload(merged_payload)
+    errors = validate_decision_payload(db, turn, club_id, parsed)
+    if errors:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"validation_errors": errors})
+
     if not draft:
-        draft = models.WebTurnDraft(turn_id=turn.id, club_id=club_id, user_id=user.id, payload_json=normalized)
+        draft = models.WebTurnDraft(turn_id=turn.id, club_id=club_id, user_id=user.id, payload_json=merged_payload)
         db.add(draft)
     else:
         draft.user_id = user.id
-        draft.payload_json = normalized
+        draft.payload_json = merged_payload
     db.commit()
-    return {"payload": draft.payload_json, "updated_at": draft.updated_at}
+    return {"key": payload.key, "amount": payload.amount, "payload": draft.payload_json}
 
 
 @router.post("/games/{game_id}/clubs/{club_id}/turn-staff-plan")
