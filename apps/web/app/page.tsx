@@ -108,6 +108,32 @@ type ConsoleData = {
   standings: PlayState['standings'];
 };
 
+type FinancialSummaryClub = {
+  club_id: string;
+  club_name: string;
+  fiscal_year?: string;
+  total_revenue?: number;
+  total_expense?: number;
+  'total expense'?: number;
+  net_income?: number;
+  ending_balance?: number;
+  Sponsor_revenue?: number;
+  Distribution_revenue?: number;
+  Business_operation_cost?: number;
+  staff_cost?: number;
+  admin_cost?: number;
+  [key: string]: string | number | undefined;
+};
+
+type PublicDisclosure = {
+  id: string;
+  season_id: string;
+  disclosure_type: string;
+  disclosure_month: number;
+  disclosed_data: { clubs?: FinancialSummaryClub[] };
+  created_at: string;
+};
+
 type ConsoleSection = 'Turn' | 'Matches' | 'Table' | 'Finance' | 'Fans' | 'Sponsors' | 'Staff' | 'Disclosures';
 type FinanceLine = { kind: string; label: string; amount: number };
 type FinanceStatement = {
@@ -190,6 +216,7 @@ export default function Home() {
   const [room, setRoom] = useState<Room | null>(null);
   const [play, setPlay] = useState<PlayState | null>(null);
   const [consoleData, setConsoleData] = useState<ConsoleData | null>(null);
+  const [financialDisclosure, setFinancialDisclosure] = useState<PublicDisclosure | null>(null);
   const [stage, setStage] = useState<'entry' | 'lobby' | 'console'>('entry');
   const [displayName, setDisplayName] = useState('');
   const [roomName, setRoomName] = useState('研修リーグ');
@@ -217,9 +244,22 @@ export default function Home() {
     return nextRoom;
   }, []);
 
+  const loadFinancialDisclosure = useCallback(async (seasonId: string) => {
+    try {
+      return await api<PublicDisclosure>(`/api/seasons/${seasonId}/disclosures/financial_summary`);
+    } catch {
+      return null;
+    }
+  }, []);
+
   const loadPlay = useCallback(async (gameId: string) => {
     const nextPlay = await api<PlayState>(`/api/games/${gameId}/play-state`);
     setPlay(nextPlay);
+    if (nextPlay.season) {
+      setFinancialDisclosure(await loadFinancialDisclosure(nextPlay.season.id));
+    } else {
+      setFinancialDisclosure(null);
+    }
     if (nextPlay.self.club_id) {
       const nextConsole = await api<ConsoleData>(
         `/api/games/${gameId}/clubs/${nextPlay.self.club_id}/turn-console`,
@@ -228,7 +268,7 @@ export default function Home() {
     } else {
       setConsoleData(null);
     }
-  }, []);
+  }, [loadFinancialDisclosure]);
 
   useEffect(() => {
     api<{ rooms: Array<{ id: string; status: string }> }>('/api/me')
@@ -466,6 +506,7 @@ export default function Home() {
         <Console
           busy={busy}
           consoleData={consoleData}
+          financialDisclosure={financialDisclosure}
           draftState={draftState}
           formValues={formValues}
           play={play}
@@ -625,6 +666,7 @@ function Lobby({
 function Console({
   busy,
   consoleData,
+  financialDisclosure,
   draftState,
   formValues,
   play,
@@ -639,6 +681,7 @@ function Console({
 }: {
   busy: boolean;
   consoleData: ConsoleData | null;
+  financialDisclosure: PublicDisclosure | null;
   draftState: string;
   formValues: Record<string, string>;
   play: PlayState | null;
@@ -763,7 +806,13 @@ function Console({
             <SummaryTables consoleData={consoleData} standings={play?.standings || []} />
           </>
         ) : (
-          <ConsoleSectionPanel consoleData={consoleData} section={activeSection} standings={play?.standings || []} />
+          <ConsoleSectionPanel
+            consoleData={consoleData}
+            financialDisclosure={financialDisclosure}
+            section={activeSection}
+            selfClubId={selfClubId}
+            standings={play?.standings || []}
+          />
         )}
       </section>
       <aside className="rightStack">
@@ -812,11 +861,15 @@ function Console({
 
 function ConsoleSectionPanel({
   consoleData,
+  financialDisclosure,
   section,
+  selfClubId,
   standings,
 }: {
   consoleData: ConsoleData | null;
+  financialDisclosure: PublicDisclosure | null;
   section: Exclude<ConsoleSection, 'Turn'>;
+  selfClubId: string | null;
   standings: PlayState['standings'];
 }) {
   const titleMap: Record<Exclude<ConsoleSection, 'Turn'>, string> = {
@@ -837,7 +890,7 @@ function ConsoleSectionPanel({
           <h2>{titleMap[section]}</h2>
         </div>
       </div>
-      {!consoleData ? <p className="muted">担当クラブの情報を待機中です。</p> : null}
+      {!consoleData && section !== 'Disclosures' ? <p className="muted">担当クラブの情報を待機中です。</p> : null}
       {consoleData && section === 'Matches' ? (
         <table>
           <thead>
@@ -918,9 +971,95 @@ function ConsoleSectionPanel({
         </table>
       ) : null}
       {section === 'Disclosures' ? (
-        <p className="muted">公開情報ログは現在のWebコンソールAPIには未接続です。ゲーム進行に必要な公開状態は、対戦進捗と順位表に表示されます。</p>
+        <FinancialDisclosurePanel disclosure={financialDisclosure} selfClubId={selfClubId} />
       ) : null}
     </article>
+  );
+}
+
+function disclosureValue(row: FinancialSummaryClub, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+      const numeric = Number(value);
+      if (!Number.isNaN(numeric)) return numeric;
+    }
+  }
+  return null;
+}
+
+function seasonMonthLabel(monthIndex: number) {
+  const labels: Record<number, string> = {
+    1: '8月',
+    2: '9月',
+    3: '10月',
+    4: '11月',
+    5: '12月',
+    6: '1月',
+    7: '2月',
+    8: '3月',
+    9: '4月',
+    10: '5月',
+    11: '6月',
+    12: '7月',
+  };
+  return labels[monthIndex] || `${monthIndex}`;
+}
+
+function FinancialDisclosurePanel({
+  disclosure,
+  selfClubId,
+}: {
+  disclosure: PublicDisclosure | null;
+  selfClubId: string | null;
+}) {
+  const clubs = disclosure?.disclosed_data?.clubs || [];
+  const fiscalYear = clubs.find((club) => club.fiscal_year)?.fiscal_year;
+
+  if (!disclosure || clubs.length === 0) {
+    return <p className="muted">12月ターン終了後に、前シーズン末の全クラブ財務概要が公開されます。</p>;
+  }
+
+  return (
+    <section className="disclosurePanel">
+      <div className="financePeriod">
+        <strong>{fiscalYear ? `対象年度 ${fiscalYear}` : '財務概要'}</strong>
+        <span>公開月 {seasonMonthLabel(disclosure.disclosure_month)} / {new Date(disclosure.created_at).toLocaleString('ja-JP')}</span>
+      </div>
+      <div className="disclosureTableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>クラブ</th>
+              <th>収入合計</th>
+              <th>費用合計</th>
+              <th>純利益</th>
+              <th>期末残高</th>
+              <th>スポンサー</th>
+              <th>配分・賞金</th>
+              <th>事業運営費</th>
+              <th>人件費</th>
+            </tr>
+          </thead>
+          <tbody>
+            {clubs.map((club) => (
+              <tr key={club.club_id} className={club.club_id === selfClubId ? 'selfRow' : ''}>
+                <td>{club.club_name}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['total_revenue']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['total_expense', 'total expense']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['net_income']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['ending_balance']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['Sponsor_revenue']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['Distribution_revenue']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['Business_operation_cost']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['staff_cost']))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

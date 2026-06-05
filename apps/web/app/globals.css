@@ -361,6 +361,7 @@ h3 {
 }
 
 .financePanel,
+.disclosurePanel,
 .statementBlock {
   display: grid;
   gap: 14px;
@@ -396,9 +397,18 @@ h3 {
 
 .statementBlock td:last-child,
 .statementBlock .totalRow td:last-child,
-.statementBlock .netRow td:last-child {
+.statementBlock .netRow td:last-child,
+.numeric {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   text-align: right;
+}
+
+.disclosureTableWrap {
+  overflow-x: auto;
+}
+
+.disclosureTableWrap table {
+  min-width: 980px;
 }
 
 .sectionRow th {
