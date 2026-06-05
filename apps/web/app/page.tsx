@@ -51,6 +51,28 @@ type PlayState = {
   }>;
 };
 
+type SeasonOption = {
+  id: string;
+  game_id: string;
+  season_number: number;
+  year_label: string;
+  status: string;
+};
+
+type StandingRow = {
+  rank: number;
+  club_id: string;
+  club_name: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  gf: number;
+  ga: number;
+  gd: number;
+  points: number;
+};
+
 type ConsoleData = {
   turn: PlayState['turn'];
   decision: { state: string | null; payload: Record<string, unknown> | null; committed_at: string | null };
@@ -156,8 +178,17 @@ type FinanceReport = {
   closing_balance: number | null;
 };
 
+type FinanceLedgerEntry = {
+  turn_id: string;
+  month_index: number;
+  kind: string;
+  amount: number;
+  meta?: Record<string, unknown> | null;
+};
+
 const defaultClubs = ['東京ユナイテッド', '大阪イレブン', '福岡アローズ'];
 const consoleSections: ConsoleSection[] = ['Turn', 'Matches', 'Table', 'Finance', 'Fans', 'Sponsors', 'Staff', 'Disclosures'];
+const seasonMonthIndexes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const moneyKeys = new Set([
   'sales_expense',
   'promo_expense',
@@ -809,8 +840,10 @@ function Console({
           <ConsoleSectionPanel
             consoleData={consoleData}
             financialDisclosure={financialDisclosure}
+            gameId={play?.game_id || null}
             section={activeSection}
             selfClubId={selfClubId}
+            seasonId={play?.season?.id || null}
             standings={play?.standings || []}
           />
         )}
@@ -862,14 +895,18 @@ function Console({
 function ConsoleSectionPanel({
   consoleData,
   financialDisclosure,
+  gameId,
   section,
   selfClubId,
+  seasonId,
   standings,
 }: {
   consoleData: ConsoleData | null;
   financialDisclosure: PublicDisclosure | null;
+  gameId: string | null;
   section: Exclude<ConsoleSection, 'Turn'>;
   selfClubId: string | null;
+  seasonId: string | null;
   standings: PlayState['standings'];
 }) {
   const titleMap: Record<Exclude<ConsoleSection, 'Turn'>, string> = {
@@ -912,25 +949,10 @@ function ConsoleSectionPanel({
         </table>
       ) : null}
       {section === 'Table' ? (
-        <table>
-          <thead>
-            <tr><th>順位</th><th>クラブ</th><th>試合</th><th>得失点</th><th>勝点</th></tr>
-          </thead>
-          <tbody>
-            {standings.map((row) => (
-              <tr key={row.club_id}>
-                <td>{row.rank}</td>
-                <td>{row.club_name}</td>
-                <td>{row.played}</td>
-                <td>{row.gd}</td>
-                <td>{row.points}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <StandingsPanel gameId={gameId} standings={standings} />
       ) : null}
       {consoleData && section === 'Finance' ? (
-        <FinancePanel report={consoleData.finance.report} />
+        <FinancePanel clubId={selfClubId} report={consoleData.finance.report} seasonId={seasonId} />
       ) : null}
       {consoleData && section === 'Fans' ? (
         <table>
@@ -987,6 +1009,155 @@ function disclosureValue(row: FinancialSummaryClub, keys: string[]) {
     }
   }
   return null;
+}
+
+function StandingsPanel({
+  gameId,
+  standings,
+}: {
+  gameId: string | null;
+  standings: PlayState['standings'];
+}) {
+  return (
+    <section className="stackedPanel">
+      <section className="subSection">
+        <h3>現シーズン順位表</h3>
+        <table>
+          <thead>
+            <tr><th>順位</th><th>クラブ</th><th>試合</th><th>得失点</th><th>勝点</th></tr>
+          </thead>
+          <tbody>
+            {standings.map((row) => (
+              <tr key={row.club_id}>
+                <td>{row.rank}</td>
+                <td>{row.club_name}</td>
+                <td>{row.played}</td>
+                <td>{row.gd}</td>
+                <td>{row.points}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      <FinalStandingsPanel gameId={gameId} />
+    </section>
+  );
+}
+
+function FinalStandingsPanel({ gameId }: { gameId: string | null }) {
+  const [seasons, setSeasons] = useState<SeasonOption[]>([]);
+  const [selectedSeasonId, setSelectedSeasonId] = useState('');
+  const [rows, setRows] = useState<StandingRow[]>([]);
+  const [loadedSeasonId, setLoadedSeasonId] = useState('');
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    if (!gameId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    api<SeasonOption[]>(`/api/seasons/games/${gameId}`)
+      .then((data) => {
+        if (cancelled) return;
+        setLoadError('');
+        const finalized = data.filter((season) => season.status === 'finished');
+        setSeasons(finalized);
+        setSelectedSeasonId((current) => (
+          current && finalized.some((season) => season.id === current)
+            ? current
+            : finalized[0]?.id || ''
+        ));
+      })
+      .catch((cause: Error) => {
+        if (!cancelled) setLoadError(friendlyError(cause.message));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId]);
+
+  useEffect(() => {
+    if (!selectedSeasonId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    api<StandingRow[]>(`/api/seasons/${selectedSeasonId}/standings`)
+      .then((data) => {
+        if (!cancelled) {
+          setLoadError('');
+          setLoadedSeasonId(selectedSeasonId);
+          setRows(data);
+        }
+      })
+      .catch((cause: Error) => {
+        if (!cancelled) setLoadError(friendlyError(cause.message));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSeasonId]);
+
+  const availableSeasons = gameId ? seasons : [];
+  const selectedSeason = availableSeasons.find((season) => season.id === selectedSeasonId);
+  const visibleRows = selectedSeasonId && loadedSeasonId === selectedSeasonId ? rows : [];
+
+  return (
+    <section className="subSection">
+      <div className="paneTitle compactTitle">
+        <div>
+          <p className="eyebrow">Final standings</p>
+          <h3>シーズン別最終順位表</h3>
+        </div>
+        <label className="compactSelect">
+          シーズン
+          <select
+            disabled={!availableSeasons.length}
+            value={availableSeasons.length ? selectedSeasonId : ''}
+            onChange={(event) => setSelectedSeasonId(event.target.value)}
+          >
+            {!availableSeasons.length ? <option value="">未確定</option> : null}
+            {availableSeasons.map((season) => (
+              <option key={season.id} value={season.id}>
+                Season {season.season_number} / {season.year_label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {loadError ? <p className="errorline">{loadError}</p> : null}
+      {!availableSeasons.length ? <p className="muted">確定済みシーズンの最終順位表はまだありません。</p> : null}
+      {selectedSeason ? (
+        <p className="muted">対象: Season {selectedSeason.season_number} / {selectedSeason.year_label}</p>
+      ) : null}
+      {visibleRows.length ? (
+        <table>
+          <thead>
+            <tr><th>順位</th><th>クラブ</th><th>試合</th><th>勝</th><th>分</th><th>敗</th><th>得点</th><th>失点</th><th>得失点</th><th>勝点</th></tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((row) => (
+              <tr key={row.club_id}>
+                <td>{row.rank}</td>
+                <td>{row.club_name}</td>
+                <td>{row.played}</td>
+                <td>{row.won}</td>
+                <td>{row.drawn}</td>
+                <td>{row.lost}</td>
+                <td>{row.gf}</td>
+                <td>{row.ga}</td>
+                <td>{row.gd}</td>
+                <td>{row.points}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+    </section>
+  );
 }
 
 function seasonMonthLabel(monthIndex: number) {
@@ -1063,7 +1234,61 @@ function FinancialDisclosurePanel({
   );
 }
 
-function FinancePanel({ report }: { report: FinanceReport }) {
+function financeKindKey(kind: string) {
+  if (kind === 'additional_reinforcement_applied') return null;
+  if (kind === 'next_home_promo_expense') return 'promo_expense';
+
+  for (const prefix of ['match_operation_cost', 'merchandise_cost', 'merchandise_rev', 'ticket_rev']) {
+    if (kind.startsWith(prefix)) return prefix;
+  }
+  return kind;
+}
+
+function financeKindLabel(kind: string) {
+  const labels: Record<string, string> = {
+    sponsor_annual: 'スポンサー収入',
+    sponsor: 'スポンサー収入',
+    ticket_rev: 'チケット収入',
+    merchandise_rev: '物販収入',
+    distribution_revenue: '配分・賞金',
+    prize_revenue: '賞金',
+    academy_transfer_fee: 'アカデミー移籍金',
+    reinforcement_cost: '強化費',
+    team_operation_cost: 'トップチーム運営費',
+    academy_cost: 'アカデミー費',
+    match_operation_cost: '試合運営費',
+    sales_expense: '営業費',
+    promo_expense: 'プロモーション費',
+    merchandise_cost: '物販原価',
+    hometown_expense: 'ホームタウン活動費',
+    staff_cost: '人件費',
+    admin_cost: '管理費',
+    tax: '税金',
+  };
+  return labels[kind] || kind;
+}
+
+function FinancePanel({
+  clubId,
+  report,
+  seasonId,
+}: {
+  clubId: string | null;
+  report: FinanceReport;
+  seasonId: string | null;
+}) {
+  const [view, setView] = useState<'summary' | 'monthly'>('summary');
+
+  if (view === 'monthly') {
+    return (
+      <MonthlyFinanceTrendPage
+        clubId={clubId}
+        seasonId={seasonId}
+        onBack={() => setView('summary')}
+      />
+    );
+  }
+
   const period = report.period.month_name
     ? `Season ${report.period.season_number} / ${report.period.month_name}`
     : `Season ${report.period.season_number} / 未確定`;
@@ -1074,10 +1299,165 @@ function FinancePanel({ report }: { report: FinanceReport }) {
         <strong>{period}</strong>
         <span>期首 {amount(report.opening_balance)} / 期末 {amount(report.closing_balance)}</span>
       </div>
+      <div className="actionRow flushActionRow">
+        <button type="button" disabled={!clubId || !seasonId} onClick={() => setView('monthly')}>
+          月次財務推移
+        </button>
+      </div>
       <div className="financeStatements">
         <FinanceStatementTable statement={report.monthly} title="今月の収支" />
         <FinanceStatementTable statement={report.cumulative} title="今シーズン累積の収支" />
       </div>
+    </section>
+  );
+}
+
+function MonthlyFinanceTrendPage({
+  clubId,
+  seasonId,
+  onBack,
+}: {
+  clubId: string | null;
+  seasonId: string | null;
+  onBack: () => void;
+}) {
+  const [ledger, setLedger] = useState<FinanceLedgerEntry[]>([]);
+  const [ledgerSource, setLedgerSource] = useState('');
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    if (!clubId || !seasonId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const source = `${clubId}:${seasonId}`;
+    api<FinanceLedgerEntry[]>(`/api/clubs/${clubId}/finance/ledger?season_id=${seasonId}`)
+      .then((data) => {
+        if (!cancelled) {
+          setLoadError('');
+          setLedgerSource(source);
+          setLedger(data);
+        }
+      })
+      .catch((cause: Error) => {
+        if (!cancelled) setLoadError(friendlyError(cause.message));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clubId, seasonId]);
+
+  const visibleLedger = useMemo(() => {
+    if (!clubId || !seasonId || ledgerSource !== `${clubId}:${seasonId}`) return [];
+    return ledger;
+  }, [clubId, ledger, ledgerSource, seasonId]);
+
+  const { rows, incomeTotals, expenseTotals, netTotals } = useMemo(() => {
+    const byKind = new Map<string, Record<number, number>>();
+    const income: Record<number, number> = {};
+    const expense: Record<number, number> = {};
+    const net: Record<number, number> = {};
+
+    for (const month of seasonMonthIndexes) {
+      income[month] = 0;
+      expense[month] = 0;
+      net[month] = 0;
+    }
+
+    for (const entry of visibleLedger) {
+      const key = financeKindKey(entry.kind);
+      if (!key || !seasonMonthIndexes.includes(entry.month_index)) continue;
+
+      const current = byKind.get(key) || Object.fromEntries(seasonMonthIndexes.map((month) => [month, 0])) as Record<number, number>;
+      current[entry.month_index] = (current[entry.month_index] || 0) + entry.amount;
+      byKind.set(key, current);
+
+      if (entry.amount > 0) income[entry.month_index] += entry.amount;
+      if (entry.amount < 0) expense[entry.month_index] += entry.amount;
+      net[entry.month_index] += entry.amount;
+    }
+
+    const preferredOrder = [
+      'sponsor_annual',
+      'sponsor',
+      'ticket_rev',
+      'merchandise_rev',
+      'distribution_revenue',
+      'prize_revenue',
+      'academy_transfer_fee',
+      'reinforcement_cost',
+      'team_operation_cost',
+      'academy_cost',
+      'match_operation_cost',
+      'sales_expense',
+      'promo_expense',
+      'merchandise_cost',
+      'hometown_expense',
+      'staff_cost',
+      'admin_cost',
+      'tax',
+    ];
+    const orderIndex = new Map(preferredOrder.map((kind, index) => [kind, index]));
+    const sortedRows = Array.from(byKind.entries())
+      .sort(([left], [right]) => (orderIndex.get(left) ?? 999) - (orderIndex.get(right) ?? 999) || left.localeCompare(right))
+      .map(([kind, values]) => ({ kind, label: financeKindLabel(kind), values }));
+
+    return {
+      rows: sortedRows,
+      incomeTotals: income,
+      expenseTotals: expense,
+      netTotals: net,
+    };
+  }, [visibleLedger]);
+
+  return (
+    <section className="financePanel">
+      <div className="paneTitle compactTitle">
+        <div>
+          <p className="eyebrow">Monthly finance</p>
+          <h3>月次財務推移</h3>
+        </div>
+        <button type="button" onClick={onBack}>戻る</button>
+      </div>
+      {loadError ? <p className="errorline">{loadError}</p> : null}
+      {!clubId || !seasonId ? <p className="muted">担当クラブとシーズン情報を待機中です。</p> : null}
+      {clubId && seasonId && ledgerSource === `${clubId}:${seasonId}` && !rows.length ? <p className="muted">このシーズンの財務台帳はまだありません。</p> : null}
+      {rows.length ? (
+        <div className="wideTableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>費目</th>
+                {seasonMonthIndexes.map((month) => <th key={month}>{seasonMonthLabel(month)}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.kind}>
+                  <td>{row.label}</td>
+                  {seasonMonthIndexes.map((month) => (
+                    <td key={month} className="numeric">{amount(row.values[month])}</td>
+                  ))}
+                </tr>
+              ))}
+              <tr className="totalRow">
+                <td>収入合計</td>
+                {seasonMonthIndexes.map((month) => <td key={month} className="numeric">{amount(incomeTotals[month])}</td>)}
+              </tr>
+              <tr className="totalRow">
+                <td>費用合計</td>
+                {seasonMonthIndexes.map((month) => <td key={month} className="numeric">{amount(expenseTotals[month])}</td>)}
+              </tr>
+              <tr className="netRow">
+                <td>純収支</td>
+                {seasonMonthIndexes.map((month) => <td key={month} className="numeric">{amount(netTotals[month])}</td>)}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -318,6 +318,11 @@ h3 {
   padding-top: 13px;
 }
 
+.flushActionRow {
+  border-top: 0;
+  padding-top: 0;
+}
+
 .eventline {
   border-left: 3px solid var(--pending);
   color: #f2dca8;
@@ -340,6 +345,30 @@ h3 {
 
 .sectionPane {
   min-height: 370px;
+}
+
+.stackedPanel,
+.subSection {
+  display: grid;
+  gap: 14px;
+}
+
+.subSection {
+  border-bottom: 1px solid rgba(49, 64, 58, .72);
+  padding-bottom: 14px;
+}
+
+.subSection:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.compactTitle {
+  align-items: end;
+}
+
+.compactSelect {
+  min-width: 240px;
 }
 
 .detailList {
@@ -403,11 +432,13 @@ h3 {
   text-align: right;
 }
 
-.disclosureTableWrap {
+.disclosureTableWrap,
+.wideTableWrap {
   overflow-x: auto;
 }
 
-.disclosureTableWrap table {
+.disclosureTableWrap table,
+.wideTableWrap table {
   min-width: 980px;
 }
 
