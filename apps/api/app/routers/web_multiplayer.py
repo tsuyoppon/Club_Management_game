@@ -799,6 +799,82 @@ def turn_console(
     }
 
 
+@router.get("/games/{game_id}/final-standings")
+def final_standings_by_season(
+    game_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _room_for_game_or_404(db, game_id)
+    _room_member(db, room, user)
+
+    seasons = (
+        db.query(models.Season)
+        .filter(models.Season.game_id == game_id, models.Season.is_finalized.is_(True))
+        .order_by(models.Season.season_number.desc())
+        .all()
+    )
+    standings_by_season = {
+        str(season.id): StandingsCalculator(db, season.id).calculate()
+        for season in seasons
+    }
+
+    return {
+        "seasons": [
+            {
+                "id": str(season.id),
+                "game_id": str(season.game_id),
+                "season_number": season.season_number,
+                "year_label": season.year_label,
+                "status": season.status.value,
+                "finalized_at": season.finalized_at.isoformat() if season.finalized_at else None,
+            }
+            for season in seasons
+        ],
+        "standings": standings_by_season,
+    }
+
+
+@router.get("/games/{game_id}/clubs/{club_id}/finance-ledger")
+def web_finance_ledger(
+    game_id: UUID,
+    club_id: UUID,
+    season_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _room_for_game_or_404(db, game_id)
+    _web_club_access(db, room, user, club_id)
+
+    season = db.query(models.Season).filter(models.Season.id == season_id).first()
+    if not season:
+        _not_found("Season not found")
+    if season.game_id != game_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Season does not belong to game")
+
+    records = (
+        db.query(models.ClubFinancialLedger, models.Turn)
+        .join(models.Turn, models.Turn.id == models.ClubFinancialLedger.turn_id)
+        .filter(
+            models.ClubFinancialLedger.club_id == club_id,
+            models.Turn.season_id == season_id,
+        )
+        .order_by(models.Turn.month_index)
+        .all()
+    )
+
+    return [
+        {
+            "turn_id": str(ledger.turn_id),
+            "month_index": turn.month_index,
+            "kind": ledger.kind,
+            "amount": float(ledger.amount),
+            "meta": ledger.meta,
+        }
+        for ledger, turn in records
+    ]
+
+
 @router.put("/games/{game_id}/clubs/{club_id}/turn-draft")
 def save_turn_draft(
     game_id: UUID,
