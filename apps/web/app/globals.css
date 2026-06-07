@@ -442,6 +442,20 @@ h3 {
   min-width: 980px;
 }
 
+.monthlyFinanceTable th:first-child,
+.monthlyFinanceTable td:first-child {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  left: 0;
+  min-width: 170px;
+  position: sticky;
+  z-index: 2;
+}
+
+.monthlyFinanceTable th:first-child {
+  z-index: 3;
+}
+
 .sectionRow th {
   background: var(--panel-2);
   color: var(--focus);
@@ -457,6 +471,12 @@ h3 {
 .netRow td {
   border-top: 1px solid var(--focus);
   color: var(--text);
+  font-weight: 700;
+}
+
+.cashRow td {
+  border-top: 1px solid var(--pending);
+  color: #f2dca8;
   font-weight: 700;
 }
 

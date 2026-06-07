@@ -3,6 +3,7 @@ PR9: 情報公開イベントと最終結果表示API
 v1Spec Section 1.2, 4, 13
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 from uuid import UUID
 from typing import List, Optional
@@ -62,6 +63,16 @@ def get_disclosure_by_type(
         raise HTTPException(status_code=404, detail="Season not found")
     
     disclosure = disclosure_service.get_latest_disclosure(db, season_id, disclosure_type)
+    if not disclosure and disclosure_type == "financial_summary" and season.season_number > 1:
+        previous_season = db.query(Season).filter(
+            and_(
+                Season.game_id == season.game_id,
+                Season.is_finalized == True,
+                Season.season_number < season.season_number,
+            )
+        ).order_by(Season.season_number.desc(), Season.created_at.desc()).first()
+        if previous_season:
+            disclosure = disclosure_service.get_latest_disclosure(db, previous_season.id, disclosure_type)
     if not disclosure:
         raise HTTPException(status_code=404, detail=f"Disclosure of type '{disclosure_type}' not found")
     

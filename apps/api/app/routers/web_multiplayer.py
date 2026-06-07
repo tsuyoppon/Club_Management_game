@@ -862,17 +862,35 @@ def web_finance_ledger(
         .order_by(models.Turn.month_index)
         .all()
     )
+    snapshots = (
+        db.query(models.ClubFinancialSnapshot)
+        .filter(
+            models.ClubFinancialSnapshot.club_id == club_id,
+            models.ClubFinancialSnapshot.season_id == season_id,
+        )
+        .order_by(models.ClubFinancialSnapshot.month_index)
+        .all()
+    )
 
-    return [
-        {
-            "turn_id": str(ledger.turn_id),
-            "month_index": turn.month_index,
-            "kind": ledger.kind,
-            "amount": float(ledger.amount),
-            "meta": ledger.meta,
-        }
-        for ledger, turn in records
-    ]
+    return {
+        "ledger": [
+            {
+                "turn_id": str(ledger.turn_id),
+                "month_index": turn.month_index,
+                "kind": ledger.kind,
+                "amount": float(ledger.amount),
+                "meta": ledger.meta,
+            }
+            for ledger, turn in records
+        ],
+        "balances": [
+            {
+                "month_index": snapshot.month_index,
+                "closing_balance": float(snapshot.closing_balance),
+            }
+            for snapshot in snapshots
+        ],
+    }
 
 
 @router.put("/games/{game_id}/clubs/{club_id}/turn-draft")

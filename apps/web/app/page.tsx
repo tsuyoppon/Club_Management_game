@@ -186,6 +186,16 @@ type FinanceLedgerEntry = {
   meta?: Record<string, unknown> | null;
 };
 
+type FinanceMonthBalance = {
+  month_index: number;
+  closing_balance: number;
+};
+
+type FinanceLedgerPayload = {
+  ledger: FinanceLedgerEntry[];
+  balances: FinanceMonthBalance[];
+};
+
 type FinalStandingsPayload = {
   seasons: SeasonOption[];
   standings: Record<string, StandingRow[]>;
@@ -1310,6 +1320,7 @@ function MonthlyFinanceTrendPage({
   onBack: () => void;
 }) {
   const [ledger, setLedger] = useState<FinanceLedgerEntry[]>([]);
+  const [balances, setBalances] = useState<FinanceMonthBalance[]>([]);
   const [ledgerSource, setLedgerSource] = useState('');
   const [loadError, setLoadError] = useState('');
 
@@ -1320,12 +1331,13 @@ function MonthlyFinanceTrendPage({
 
     let cancelled = false;
     const source = `${gameId}:${clubId}:${seasonId}`;
-    api<FinanceLedgerEntry[]>(`/api/games/${gameId}/clubs/${clubId}/finance-ledger?season_id=${seasonId}`)
+    api<FinanceLedgerPayload>(`/api/games/${gameId}/clubs/${clubId}/finance-ledger?season_id=${seasonId}`)
       .then((data) => {
         if (!cancelled) {
           setLoadError('');
           setLedgerSource(source);
-          setLedger(data);
+          setLedger(data.ledger || []);
+          setBalances(data.balances || []);
         }
       })
       .catch((cause: Error) => {
@@ -1342,16 +1354,23 @@ function MonthlyFinanceTrendPage({
     return ledger;
   }, [clubId, gameId, ledger, ledgerSource, seasonId]);
 
-  const { rows, incomeTotals, expenseTotals, netTotals } = useMemo(() => {
+  const visibleBalances = useMemo(() => {
+    if (!clubId || !gameId || !seasonId || ledgerSource !== `${gameId}:${clubId}:${seasonId}`) return [];
+    return balances;
+  }, [balances, clubId, gameId, ledgerSource, seasonId]);
+
+  const { rows, incomeTotals, expenseTotals, netTotals, cashBalances } = useMemo(() => {
     const byKind = new Map<string, Record<number, number>>();
     const income: Record<number, number> = {};
     const expense: Record<number, number> = {};
     const net: Record<number, number> = {};
+    const cash: Record<number, number | null> = {};
 
     for (const month of seasonMonthIndexes) {
       income[month] = 0;
       expense[month] = 0;
       net[month] = 0;
+      cash[month] = null;
     }
 
     for (const entry of visibleLedger) {
@@ -1365,6 +1384,12 @@ function MonthlyFinanceTrendPage({
       if (entry.amount > 0) income[entry.month_index] += entry.amount;
       if (entry.amount < 0) expense[entry.month_index] += entry.amount;
       net[entry.month_index] += entry.amount;
+    }
+
+    for (const balance of visibleBalances) {
+      if (seasonMonthIndexes.includes(balance.month_index)) {
+        cash[balance.month_index] = balance.closing_balance;
+      }
     }
 
     const preferredOrder = [
@@ -1397,8 +1422,9 @@ function MonthlyFinanceTrendPage({
       incomeTotals: income,
       expenseTotals: expense,
       netTotals: net,
+      cashBalances: cash,
     };
-  }, [visibleLedger]);
+  }, [visibleBalances, visibleLedger]);
 
   return (
     <section className="financePanel">
@@ -1414,7 +1440,7 @@ function MonthlyFinanceTrendPage({
       {clubId && gameId && seasonId && ledgerSource === `${gameId}:${clubId}:${seasonId}` && !rows.length ? <p className="muted">このシーズンの財務台帳はまだありません。</p> : null}
       {rows.length ? (
         <div className="wideTableWrap">
-          <table>
+          <table className="monthlyFinanceTable">
             <thead>
               <tr>
                 <th>費目</th>
@@ -1441,6 +1467,10 @@ function MonthlyFinanceTrendPage({
               <tr className="netRow">
                 <td>純収支</td>
                 {seasonMonthIndexes.map((month) => <td key={month} className="numeric">{amount(netTotals[month])}</td>)}
+              </tr>
+              <tr className="cashRow">
+                <td>現金残高</td>
+                {seasonMonthIndexes.map((month) => <td key={month} className="numeric">{amount(cashBalances[month])}</td>)}
               </tr>
             </tbody>
           </table>
