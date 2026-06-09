@@ -1,7 +1,11 @@
+import math
+from decimal import Decimal
+
 import pytest
 from app.services.match_results import (
     calculate_tp,
     calculate_er,
+    calculate_home_advantage,
     calculate_win_probs,
     determine_outcome,
     determine_score,
@@ -9,12 +13,27 @@ from app.services.match_results import (
     SCORE_D,
     SCORE_A,
 )
-from app.db.models import Match, Club, Fixture, MatchStatus
+from app.services.team_power import calculate_weighted_reinforcement_budget
+from app.db.models import (
+    Match,
+    Club,
+    Fixture,
+    MatchStatus,
+    Game,
+    Season,
+    ClubReinforcementPlan,
+)
 
 
 def test_calculate_er():
-    # Home team: TP=15, HomeAdv=3.0, Streak=1 -> 15 + 3 + 0.5 = 18.5
-    assert calculate_er(15, True, 1) == 18.5
+    # Home advantage is TP-linked: clip(1.0 + 0.3 * TP, 1.0, 4.0)
+    assert calculate_home_advantage(0) == 1.0
+    assert calculate_home_advantage(5) == 2.5
+    assert calculate_home_advantage(10) == 4.0
+    assert calculate_home_advantage(20) == 4.0
+
+    # Home team: TP=5, HomeAdv=2.5, Streak=2 -> 5 + 2.5 + 1.0 = 8.5
+    assert calculate_er(5, True, 2) == 8.5
     # Away team: TP=15, HomeAdv=0, Streak=0 -> 15
     assert calculate_er(15, False, 0) == 15
     # Away team with streak: TP=15, HomeAdv=0, Streak=2 -> 15 + 1.0 = 16.0
@@ -101,3 +120,81 @@ def test_large_delta_produces_larger_goal_diff():
         diffs_large.append(h - a)
 
     assert (sum(diffs_large) / len(diffs_large)) > (sum(diffs_small) / len(diffs_small))
+
+
+def _create_game_club(db):
+    game = Game(name="TP Weight Test")
+    db.add(game)
+    db.flush()
+
+    club = Club(game_id=game.id, name="Weighted FC")
+    db.add(club)
+    db.flush()
+    return game, club
+
+
+def _create_season(db, game, season_number):
+    season = Season(
+        game_id=game.id,
+        season_number=season_number,
+        year_label=f"Y{season_number}",
+    )
+    db.add(season)
+    db.flush()
+    return season
+
+
+def _create_reinforcement_plan(db, club, season, annual_budget, additional_budget=0):
+    plan = ClubReinforcementPlan(
+        club_id=club.id,
+        season_id=season.id,
+        annual_budget=Decimal(str(annual_budget)),
+        additional_budget=Decimal(str(additional_budget)),
+    )
+    db.add(plan)
+    db.flush()
+    return plan
+
+
+def test_weighted_reinforcement_budget_uses_current_budget_for_first_season(db):
+    game, club = _create_game_club(db)
+    season = _create_season(db, game, 1)
+    _create_reinforcement_plan(db, club, season, 100_000_000, 25_000_000)
+
+    budget = calculate_weighted_reinforcement_budget(db, club.id, season.id)
+
+    assert budget == Decimal("125000000")
+
+
+def test_weighted_reinforcement_budget_first_season_zero_budget_stays_zero(db):
+    game, club = _create_game_club(db)
+    season = _create_season(db, game, 1)
+    _create_reinforcement_plan(db, club, season, 0, 0)
+
+    budget = calculate_weighted_reinforcement_budget(db, club.id, season.id)
+
+    assert budget == Decimal("0")
+
+
+def test_calculate_tp_uses_weighted_past_reinforcement_budget(db):
+    game, club = _create_game_club(db)
+    season1 = _create_season(db, game, 1)
+    season2 = _create_season(db, game, 2)
+    season3 = _create_season(db, game, 3)
+    current = _create_season(db, game, 4)
+
+    _create_reinforcement_plan(db, club, season1, 10_000_000)
+    _create_reinforcement_plan(db, club, season2, 50_000_000)
+    _create_reinforcement_plan(db, club, season3, 100_000_000)
+    _create_reinforcement_plan(db, club, current, 300_000_000)
+
+    weighted_budget = (
+        Decimal("100000000")
+        + Decimal("0.6") * Decimal("50000000")
+        + Decimal("0.36") * Decimal("10000000")
+    ) / Decimal("1.96")
+    expected_b_i = float(weighted_budget) / 1_000_000.0
+    expected_tp = 10.0 * math.log(1 + expected_b_i / 500.0)
+
+    assert calculate_weighted_reinforcement_budget(db, club.id, current.id) == weighted_budget
+    assert calculate_tp(db, club.id, current.id) == pytest.approx(expected_tp)

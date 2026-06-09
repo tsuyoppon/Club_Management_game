@@ -136,7 +136,10 @@ PIPELINE_PROB_NEW = {9: 0.15, 10: 0.25, 11: 0.35}
 # Section 8: 試合勝敗 - PR4.5で実装済み、参照用
 # =============================================================================
 
-HOME_ADVANTAGE = 3
+HOME_ADV_BASE = Decimal("1.0")
+HOME_ADV_RATE = Decimal("0.3")
+HOME_ADV_MIN = Decimal("1.0")
+HOME_ADV_MAX = Decimal("4.0")
 MATCH_K = Decimal("0.15")
 MATCH_D0 = Decimal("0.30")
 MATCH_C = Decimal("0.08")
@@ -145,6 +148,8 @@ MATCH_C = Decimal("0.08")
 TP_ALPHA = 10
 TP_BETA = 1
 ACADEMY_DECAY_RHO = Decimal("0.5")
+TEAM_POWER_REINFORCEMENT_LOOKBACK_SEASONS = 10
+TEAM_POWER_REINFORCEMENT_DECAY = Decimal("0.6")
 
 # =============================================================================
 # Section 14: ペナルティ

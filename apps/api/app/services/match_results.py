@@ -11,6 +11,8 @@ from app.services import weather as weather_service
 from app.services import attendance as attendance_service
 from app.services import standings as standings_service
 from app.services import historical_performance
+from app.services.team_power import calculate_weighted_reinforcement_budget
+from app.config.constants import HOME_ADV_BASE, HOME_ADV_RATE, HOME_ADV_MIN, HOME_ADV_MAX
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,7 @@ B_REF = 500.0
 A_REF = 100.0
 
 # 3. Effective Rating (ER)
-# ER = TP + HOME_ADVANTAGE + StreakAdj
-HOME_ADVANTAGE = 3.0  # v1Spec: +3
+# ER = TP + HomeAdv(TP) + StreakAdj
 STREAK_FACTOR = 0.5   # +0.5 per win
 STREAK_CAP = 2.0      # Max +/- 2
 
@@ -62,15 +63,10 @@ def calculate_tp(db: Session, club_id: UUID, season_id: UUID) -> float:
     """
     Calculate Team Power (TP) based on Reinforcement and Academy.
     TP_i = alpha * ln(1 + B_i / B_ref) + beta * ln(1 + A_cum_i / A_ref)
+    B_i is a weighted average of recent past reinforcement budgets in million JPY.
     """
-    # 1. Reinforcement (B_i)
-    reinforcement = db.execute(select(models.ClubReinforcementPlan).where(
-        models.ClubReinforcementPlan.club_id == club_id,
-        models.ClubReinforcementPlan.season_id == season_id
-    )).scalar_one_or_none()
-    
-    # Convert to Million JPY
-    r_budget_raw = float(reinforcement.annual_budget + reinforcement.additional_budget) if reinforcement else 0.0
+    # 1. Reinforcement (B_i): weighted average of recent past seasons, yen base.
+    r_budget_raw = float(calculate_weighted_reinforcement_budget(db, club_id, season_id))
     b_i = r_budget_raw / 1_000_000.0
     
     # 2. Academy (A_cum_i)
@@ -140,15 +136,24 @@ def get_streak(db: Session, club_id: UUID, season_id: UUID, current_turn_month: 
             
     return streak
 
+def calculate_home_advantage(tp: float) -> float:
+    """
+    Calculate TP-linked home advantage.
+    HomeAdv = clip(h_base + h_rate * TP, h_min, h_max)
+    """
+    raw = float(HOME_ADV_BASE) + float(HOME_ADV_RATE) * tp
+    return max(float(HOME_ADV_MIN), min(float(HOME_ADV_MAX), raw))
+
+
 def calculate_er(tp: float, is_home: bool, streak: int) -> float:
     """
     Calculate Effective Rating (ER).
-    ER = TP + HomeAdv + StreakAdj
+    ER = TP + HomeAdv(TP) + StreakAdj
     StreakAdj = +/- min(2, 0.5 * |streak|)
     """
     er = tp
     if is_home:
-        er += HOME_ADVANTAGE
+        er += calculate_home_advantage(tp)
     
     # Streak adjustment
     # streak is positive for wins, negative for losses

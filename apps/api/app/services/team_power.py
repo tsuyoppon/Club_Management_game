@@ -19,7 +19,66 @@ from app.config.constants import (
     TEAM_POWER_B_REF,
     TEAM_POWER_A_REF,
     TEAM_POWER_DISCLOSURE_SIGMA,
+    TEAM_POWER_REINFORCEMENT_DECAY,
+    TEAM_POWER_REINFORCEMENT_LOOKBACK_SEASONS,
 )
+
+
+def _reinforcement_budget_for_plan(plan: Optional[ClubReinforcementPlan]) -> Decimal:
+    if not plan:
+        return Decimal("0")
+    return Decimal(plan.annual_budget or 0) + Decimal(plan.additional_budget or 0)
+
+
+def calculate_weighted_reinforcement_budget(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+) -> Decimal:
+    """
+    TP計算用の強化費を円単位で返す。
+
+    通常は直近最大10シーズンの年間強化費を指数減衰加重平均する。
+    過去シーズンがない初年度だけ、当年度強化費をフォールバックとして使う。
+    """
+    current_season = db.query(Season).filter(Season.id == season_id).first()
+    if not current_season:
+        return Decimal("0")
+
+    previous_seasons = (
+        db.query(Season)
+        .filter(
+            Season.game_id == current_season.game_id,
+            Season.season_number < current_season.season_number,
+        )
+        .order_by(Season.season_number.desc())
+        .limit(TEAM_POWER_REINFORCEMENT_LOOKBACK_SEASONS)
+        .all()
+    )
+
+    if not previous_seasons:
+        current_plan = db.query(ClubReinforcementPlan).filter(
+            ClubReinforcementPlan.club_id == club_id,
+            ClubReinforcementPlan.season_id == season_id,
+        ).first()
+        return _reinforcement_budget_for_plan(current_plan)
+
+    weighted_budget = Decimal("0")
+    weight_total = Decimal("0")
+    decay = TEAM_POWER_REINFORCEMENT_DECAY
+
+    for index, season in enumerate(previous_seasons):
+        weight = decay ** index
+        plan = db.query(ClubReinforcementPlan).filter(
+            ClubReinforcementPlan.club_id == club_id,
+            ClubReinforcementPlan.season_id == season.id,
+        ).first()
+        weighted_budget += weight * _reinforcement_budget_for_plan(plan)
+        weight_total += weight
+
+    if weight_total == 0:
+        return Decimal("0")
+    return weighted_budget / weight_total
 
 
 def calculate_team_power(
@@ -33,18 +92,11 @@ def calculate_team_power(
     v1Spec Section 8.4:
     TP = α * ln(1 + B/B_ref) + β * ln(1 + A_cum/A_ref)
     
-    - B: 当年の強化費（年額）
+    - B: 直近最大10シーズンの年間強化費の指数減衰加重平均
     - A_cum: アカデミー累積投資
     - α = 10, β = 1
     """
-    # 強化費（当年）: シーズン固有の強化計画を参照
-    plan = db.query(ClubReinforcementPlan).filter(
-        ClubReinforcementPlan.club_id == club_id,
-        ClubReinforcementPlan.season_id == season_id,
-    ).first()
-    reinforcement_budget = Decimal("0")
-    if plan:
-        reinforcement_budget = Decimal(plan.annual_budget or 0) + Decimal(plan.additional_budget or 0)
+    reinforcement_budget = calculate_weighted_reinforcement_budget(db, club_id, season_id)
 
     # アカデミー累積投資: シーズン固有の累積値を参照
     academy = db.query(ClubAcademy).filter(
