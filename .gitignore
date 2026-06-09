@@ -9,6 +9,7 @@ __pycache__/
 .DS_Store
 node_modules/
 .next/
+*.tsbuildinfo
 coverage/
 .pytest_cache/
 dist/

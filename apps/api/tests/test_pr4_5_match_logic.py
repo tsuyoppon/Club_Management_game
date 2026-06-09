@@ -93,6 +93,11 @@ def test_score_candidates_respected():
     candidates_w = [s for s, w in SCORE_W]
     candidates_a = [s for s, w in SCORE_A]
     candidates_d = [s for s, w in SCORE_D]
+    assert (4, 2) in candidates_w
+    assert (4, 3) in candidates_w
+    assert (2, 4) in candidates_a
+    assert (3, 4) in candidates_a
+    assert sum(w for _, w in SCORE_W) == pytest.approx(1.0)
     
     for i in range(50):
         h, a = determine_score("H", 20.0, 10.0, f"seed_h_{i}")
