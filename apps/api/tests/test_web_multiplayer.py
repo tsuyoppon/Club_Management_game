@@ -10,6 +10,7 @@ from app.routers.web_multiplayer import (
     _saved_payload_value,
     _statement_from_ledgers,
 )
+from app.services.public_disclosure import _build_financial_summary
 
 
 def _create_room(client: TestClient):
@@ -64,6 +65,47 @@ def test_finance_statement_groups_same_display_item():
 
     assert statement["income"] == [{"kind": "income:ticket_rev", "label": "入場料収入", "amount": 3500.0}]
     assert statement["expenses"] == [{"kind": "expense:match_operation_cost", "label": "試合関連経費", "amount": -1000.0}]
+
+
+def test_financial_disclosure_summary_exposes_display_items():
+    summary = _build_financial_summary(
+        {
+            "sponsor_annual": 1000,
+            "sponsor": 200,
+            "ticket_rev_home-1": 300,
+            "distribution_revenue": 400,
+            "prize_revenue": 500,
+            "merchandise_rev_home-1": 600,
+            "academy_transfer_fee": 700,
+            "reinforcement_cost": -80,
+            "match_operation_cost_home-1": -90,
+            "team_operation_cost": -100,
+            "academy_cost": -110,
+            "merchandise_cost_home-1": -120,
+            "staff_cost": -130,
+            "admin_cost": -140,
+            "tax": -150,
+        },
+        ending_balance=12345,
+    )
+
+    assert summary["Sponsor_revenue"] == 1200
+    assert summary["ticket_revenue"] == 300
+    assert summary["distribution_revenue"] == 400
+    assert summary["prize_revenue"] == 500
+    assert summary["merchandise_revenue"] == 600
+    assert summary["academy_transfer_fee"] == 700
+    assert summary["total_revenue"] == 3700
+    assert summary["reinforcement_cost"] == 80
+    assert summary["match_operation_cost"] == 90
+    assert summary["team_operation_cost"] == 100
+    assert summary["academy_cost"] == 110
+    assert summary["merchandise_cost"] == 120
+    assert summary["staff_cost"] == 130
+    assert summary["total_expense"] == 920
+    assert summary["total expense"] == 920
+    assert summary["net_income"] == 2780
+    assert summary["ending_balance"] == 12345
 
 
 def test_budget_event_metadata_by_month():

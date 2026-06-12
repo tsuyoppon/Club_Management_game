@@ -140,10 +140,17 @@ type FinancialSummaryClub = {
   net_income?: number;
   ending_balance?: number;
   Sponsor_revenue?: number;
-  Distribution_revenue?: number;
-  Business_operation_cost?: number;
+  ticket_revenue?: number;
+  distribution_revenue?: number;
+  prize_revenue?: number;
+  merchandise_revenue?: number;
+  academy_transfer_fee?: number;
+  reinforcement_cost?: number;
+  match_operation_cost?: number;
+  team_operation_cost?: number;
+  academy_cost?: number;
+  merchandise_cost?: number;
   staff_cost?: number;
-  admin_cost?: number;
   [key: string]: string | number | undefined;
 };
 
@@ -1274,28 +1281,44 @@ function FinancialDisclosurePanel({
           <thead>
             <tr>
               <th>クラブ</th>
+              <th>スポンサー収入</th>
+              <th>入場料収入</th>
+              <th>配分金</th>
+              <th>賞金</th>
+              <th>物販収入</th>
+              <th>移籍金収入</th>
               <th>収入合計</th>
+              <th>強化費</th>
+              <th>試合関連経費</th>
+              <th>トップチーム運営経費</th>
+              <th>アカデミー運営経費</th>
+              <th>物販原価</th>
+              <th>人件費</th>
               <th>費用合計</th>
               <th>純利益</th>
               <th>期末残高</th>
-              <th>スポンサー</th>
-              <th>配分・賞金</th>
-              <th>事業運営費</th>
-              <th>人件費</th>
             </tr>
           </thead>
           <tbody>
             {clubs.map((club) => (
               <tr key={club.club_id} className={club.club_id === selfClubId ? 'selfRow' : ''}>
                 <td>{club.club_name}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['Sponsor_revenue']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['ticket_revenue']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['distribution_revenue']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['prize_revenue']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['merchandise_revenue']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['academy_transfer_fee']))}</td>
                 <td className="numeric">{amount(disclosureValue(club, ['total_revenue']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['reinforcement_cost']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['match_operation_cost']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['team_operation_cost']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['academy_cost']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['merchandise_cost']))}</td>
+                <td className="numeric">{amount(disclosureValue(club, ['staff_cost']))}</td>
                 <td className="numeric">{amount(disclosureValue(club, ['total_expense', 'total expense']))}</td>
                 <td className="numeric">{amount(disclosureValue(club, ['net_income']))}</td>
                 <td className="numeric">{amount(disclosureValue(club, ['ending_balance']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['Sponsor_revenue']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['Distribution_revenue']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['Business_operation_cost']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['staff_cost']))}</td>
               </tr>
             ))}
           </tbody>

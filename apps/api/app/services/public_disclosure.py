@@ -374,7 +374,13 @@ def _build_financial_summary(
     merchandise_cost_keys = sorted(key for key in ledger_totals if key.startswith("merchandise_cost_"))
 
     sponsor_revenue = get_total("sponsor_annual") + get_total("sponsor")
-    distribution_revenue = get_total("distribution_revenue") + get_total("prize_revenue")
+    ticket_revenue = sum(get_total(key) for key in ticket_keys)
+    distribution_revenue = get_total("distribution_revenue")
+    prize_revenue = get_total("prize_revenue")
+    distribution_and_prize_revenue = distribution_revenue + prize_revenue
+    merchandise_revenue = sum(get_total(key) for key in merchandise_rev_keys)
+    match_operation_cost = sum(get_expense(key) for key in match_operation_keys)
+    merchandise_cost = sum(get_expense(key) for key in merchandise_cost_keys)
     business_operation_cost = sum(
         get_expense(kind)
         for kind in ["sales_expense", "promo_expense", "next_home_promo_expense", "hometown_expense"]
@@ -382,18 +388,18 @@ def _build_financial_summary(
 
     total_revenue = (
         sponsor_revenue
-        + sum(get_total(key) for key in ticket_keys)
-        + sum(get_total(key) for key in merchandise_rev_keys)
-        + distribution_revenue
+        + ticket_revenue
+        + merchandise_revenue
+        + distribution_and_prize_revenue
         + get_total("academy_transfer_fee")
     )
     total_expense = (
         get_expense("reinforcement_cost")
         + get_expense("team_operation_cost")
-        + sum(get_expense(key) for key in match_operation_keys)
+        + match_operation_cost
         + get_expense("academy_cost")
         + business_operation_cost
-        + sum(get_expense(key) for key in merchandise_cost_keys)
+        + merchandise_cost
         + get_expense("staff_cost")
         + get_expense("admin_cost")
         + get_expense("tax")
@@ -402,16 +408,23 @@ def _build_financial_summary(
 
     summary = {
         "Sponsor_revenue": sponsor_revenue,
-        "Distribution_revenue": distribution_revenue,
+        "ticket_revenue": ticket_revenue,
+        "distribution_revenue": distribution_revenue,
+        "prize_revenue": prize_revenue,
+        "merchandise_revenue": merchandise_revenue,
+        "Distribution_revenue": distribution_and_prize_revenue,
         "Business_operation_cost": business_operation_cost,
         "academy_transfer_fee": get_total("academy_transfer_fee"),
         "reinforcement_cost": get_expense("reinforcement_cost"),
+        "match_operation_cost": match_operation_cost,
         "team_operation_cost": get_expense("team_operation_cost"),
         "academy_cost": get_expense("academy_cost"),
+        "merchandise_cost": merchandise_cost,
         "staff_cost": get_expense("staff_cost"),
         "admin_cost": get_expense("admin_cost"),
         "tax": get_expense("tax"),
         "total_revenue": total_revenue,
+        "total_expense": total_expense,
         "total expense": total_expense,
         "net_income": net_income,
         "ending_balance": ending_balance,
