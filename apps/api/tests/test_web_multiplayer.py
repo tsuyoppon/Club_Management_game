@@ -51,7 +51,7 @@ def _save_and_commit(client: TestClient, room: dict, club: dict, payload: dict):
 def test_finance_label_dynamic_fixture_kinds_are_localized():
     assert _finance_label("merchandise_rev_fixture-1") == "物販収入"
     assert _finance_label("merchandise_cost_fixture-1") == "物販原価"
-    assert _finance_label("match_operation_cost_fixture-1") == "試合運営費"
+    assert _finance_label("match_operation_cost_fixture-1") == "試合関連経費"
 
 
 def test_finance_statement_groups_same_display_item():
@@ -62,8 +62,8 @@ def test_finance_statement_groups_same_display_item():
         models.ClubFinancialLedger(kind="match_operation_cost_fixture-2", amount=-700),
     ])
 
-    assert statement["income"] == [{"kind": "income:チケット収入", "label": "チケット収入", "amount": 3500.0}]
-    assert statement["expenses"] == [{"kind": "expense:試合運営費", "label": "試合運営費", "amount": -1000.0}]
+    assert statement["income"] == [{"kind": "income:ticket_rev", "label": "入場料収入", "amount": 3500.0}]
+    assert statement["expenses"] == [{"kind": "expense:match_operation_cost", "label": "試合関連経費", "amount": -1000.0}]
 
 
 def test_budget_event_metadata_by_month():

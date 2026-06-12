@@ -42,24 +42,49 @@ DECISION_LABELS = {
 EVENT_INPUT_KEYS = {"additional_reinforcement", "reinforcement_budget"}
 
 FINANCE_LABELS = {
-    "academy_cost": "アカデミー費",
-    "academy_transfer_fee": "アカデミー移籍金収入",
-    "admin_cost": "管理運営費",
-    "distribution_revenue": "配分金収入",
+    "academy_cost": "アカデミー運営経費",
+    "academy_transfer_fee": "移籍金収入",
+    "admin_cost": "管理運営経費",
+    "distribution_revenue": "配分金",
     "hometown_expense": "ホームタウン活動費",
-    "match_operation_cost": "試合運営費",
+    "match_operation_cost": "試合関連経費",
     "merchandise_cost": "物販原価",
+    "merchandise_rev": "物販収入",
     "merchandise_revenue": "物販収入",
-    "next_home_promo_expense": "翌月ホーム向けプロモ費",
-    "prize_revenue": "賞金収入",
+    "next_home_promo_expense": "プロモーション費",
+    "prize_revenue": "賞金",
     "promo_expense": "プロモーション費",
     "reinforcement_cost": "強化費",
     "sales_expense": "営業費",
-    "sponsor": "月次スポンサー収入",
-    "sponsor_annual": "年間スポンサー収入",
-    "staff_cost": "スタッフ人件費",
+    "sponsor": "スポンサー収入",
+    "sponsor_annual": "スポンサー収入",
+    "staff_cost": "人件費",
+    "staff_severance": "スタッフ退職金",
+    "team_operation_cost": "トップチーム運営経費",
     "tax": "税金",
 }
+
+FINANCE_ORDER = [
+    "sponsor_annual",
+    "sponsor",
+    "ticket_rev",
+    "distribution_revenue",
+    "prize_revenue",
+    "merchandise_rev",
+    "academy_transfer_fee",
+    "reinforcement_cost",
+    "match_operation_cost",
+    "team_operation_cost",
+    "academy_cost",
+    "merchandise_cost",
+    "sales_expense",
+    "promo_expense",
+    "hometown_expense",
+    "staff_cost",
+    "admin_cost",
+    "tax",
+]
+FINANCE_ORDER_INDEX = {kind: index for index, kind in enumerate(FINANCE_ORDER)}
 
 
 class RoomCreate(BaseModel):
@@ -208,18 +233,34 @@ def _serialize_room(db: Session, room: models.GameRoom, viewer: models.User) -> 
     }
 
 
+def _finance_kind_key(kind: str) -> str | None:
+    if kind == "additional_reinforcement_applied":
+        return None
+    if kind == "next_home_promo_expense":
+        return "promo_expense"
+    if kind.startswith("staff_severance_"):
+        return "staff_severance"
+    for prefix in ["match_operation_cost", "merchandise_cost", "merchandise_rev", "ticket_rev"]:
+        if kind.startswith(prefix):
+            return prefix
+    return kind
+
+
 def _finance_label(kind: str) -> str:
+    key = _finance_kind_key(kind)
+    if key is None:
+        return kind
     if kind.startswith("ticket_rev_"):
-        return "チケット収入"
+        return "入場料収入"
     if kind.startswith("merchandise_rev_"):
         return "物販収入"
     if kind.startswith("merchandise_cost_"):
         return "物販原価"
     if kind.startswith("match_operation_cost_"):
-        return "試合運営費"
+        return "試合関連経費"
     if kind.startswith("staff_severance_"):
         return "スタッフ退職金"
-    return FINANCE_LABELS.get(kind, kind)
+    return FINANCE_LABELS.get(key, key)
 
 
 def _statement_from_ledgers(ledgers: list[models.ClubFinancialLedger]) -> dict[str, Any]:
@@ -228,17 +269,22 @@ def _statement_from_ledgers(ledgers: list[models.ClubFinancialLedger]) -> dict[s
         amount = float(ledger.amount)
         if amount == 0:
             continue
+        kind_key = _finance_kind_key(ledger.kind)
+        if not kind_key:
+            continue
         label = _finance_label(ledger.kind)
         sign = "income" if amount > 0 else "expense"
-        key = f"{sign}:{label}"
-        item = grouped.setdefault(key, {"kind": key, "label": label, "amount": 0.0})
+        key = f"{sign}:{kind_key}"
+        item = grouped.setdefault(key, {"kind": key, "label": label, "amount": 0.0, "order": FINANCE_ORDER_INDEX.get(kind_key, 999)})
         item["amount"] += amount
 
-    items = sorted(grouped.values(), key=lambda item: (item["amount"] < 0, item["label"]))
+    items = sorted(grouped.values(), key=lambda item: (item["amount"] < 0, item["order"], item["label"]))
     income = [item for item in items if item["amount"] > 0]
     expenses = [item for item in items if item["amount"] < 0]
     income_total = sum(item["amount"] for item in income)
     expense_total = sum(item["amount"] for item in expenses)
+    for item in income + expenses:
+        item.pop("order", None)
     return {
         "income": income,
         "expenses": expenses,
