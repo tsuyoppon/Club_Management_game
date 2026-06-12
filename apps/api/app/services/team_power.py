@@ -12,7 +12,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Club, Season, ClubFinancialProfile, ClubReinforcementPlan, ClubAcademy
+from app.db.models import Club, Season, ClubFinancialProfile, ClubReinforcementPlan, ClubAcademy, Turn, TurnDecision
 from app.config.constants import (
     TP_ALPHA,
     TP_BETA,
@@ -145,6 +145,76 @@ def calculate_team_power_for_july_disclosure(
     return Decimal(str(round(tp, 2)))
 
 
+def _calculate_team_power_from_reinforcement_budget(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+    reinforcement_budget: Decimal,
+) -> Decimal:
+    academy = db.query(ClubAcademy).filter(
+        ClubAcademy.club_id == club_id,
+        ClubAcademy.season_id == season_id,
+    ).first()
+    academy_cumulative = Decimal(academy.cumulative_investment or 0) if academy else Decimal("0")
+
+    b_ratio = float(reinforcement_budget) / float(TEAM_POWER_B_REF) if TEAM_POWER_B_REF else 0
+    a_ratio = float(academy_cumulative) / float(TEAM_POWER_A_REF) if TEAM_POWER_A_REF else 0
+
+    tp = TP_ALPHA * math.log(1 + b_ratio) + TP_BETA * math.log(1 + a_ratio)
+    return Decimal(str(round(tp, 2)))
+
+
+def _reinforcement_budget_input_for_month(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+    month_index: int,
+) -> Decimal:
+    row = (
+        db.query(TurnDecision.payload_json)
+        .join(Turn, TurnDecision.turn_id == Turn.id)
+        .filter(
+            TurnDecision.club_id == club_id,
+            Turn.season_id == season_id,
+            Turn.month_index == month_index,
+        )
+        .first()
+    )
+    payload = row[0] if row else None
+    if not payload:
+        return Decimal("0")
+    return Decimal(str(payload.get("reinforcement_budget", 0) or 0))
+
+
+def calculate_team_power_for_monthly_reinforcement_input(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+    month_index: int,
+) -> Decimal:
+    """
+    指定月に入力された翌シーズン強化費だけを使って公開用TPを計算する。
+    6月resolve後の暫定公開で使用する。
+    """
+    reinforcement_budget = _reinforcement_budget_input_for_month(db, club_id, season_id, month_index)
+    return _calculate_team_power_from_reinforcement_budget(db, club_id, season_id, reinforcement_budget)
+
+
+def calculate_team_power_monthly_input_with_uncertainty(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+    month_index: int,
+) -> Tuple[Decimal, Decimal]:
+    """
+    指定月入力ベースの公開用TPに、7月公開と同じ不確実性を付与する。
+    """
+    actual_tp = calculate_team_power_for_monthly_reinforcement_input(db, club_id, season_id, month_index)
+    noise = random.gauss(0, float(TEAM_POWER_DISCLOSURE_SIGMA))
+    disclosed_tp = actual_tp + Decimal(str(round(noise, 2)))
+    return (disclosed_tp, actual_tp)
+
+
 def calculate_team_power_july_with_uncertainty(
     db: Session,
     club_id: UUID,
@@ -158,7 +228,7 @@ def calculate_team_power_july_with_uncertainty(
     """
     actual_tp = calculate_team_power_for_july_disclosure(db, club_id, season_id)
 
-    noise = random.gauss(0, TEAM_POWER_DISCLOSURE_SIGMA)
+    noise = random.gauss(0, float(TEAM_POWER_DISCLOSURE_SIGMA))
     disclosed_tp = actual_tp + Decimal(str(round(noise, 2)))
 
     return (disclosed_tp, actual_tp)
@@ -181,7 +251,7 @@ def calculate_team_power_with_uncertainty(
     actual_tp = calculate_team_power(db, club_id, season_id)
     
     # ノイズを付与
-    noise = random.gauss(0, TEAM_POWER_DISCLOSURE_SIGMA)
+    noise = random.gauss(0, float(TEAM_POWER_DISCLOSURE_SIGMA))
     disclosed_tp = actual_tp + Decimal(str(round(noise, 2)))
     
     return (disclosed_tp, actual_tp)
@@ -262,4 +332,34 @@ def get_all_clubs_team_power_for_july(
 
     results.sort(key=lambda x: x["team_power"], reverse=True)
 
+    return results
+
+
+def get_all_clubs_team_power_for_monthly_input(
+    db: Session,
+    season_id: UUID,
+    month_index: int,
+) -> list[dict]:
+    """
+    指定月入力の翌シーズン強化費を使った公開用チーム力を取得する。
+    """
+    season = db.query(Season).filter(Season.id == season_id).first()
+    if not season:
+        return []
+
+    clubs = db.query(Club).filter(Club.game_id == season.game_id).all()
+
+    results = []
+    for club in clubs:
+        disclosed_tp, actual_tp = calculate_team_power_monthly_input_with_uncertainty(
+            db, club.id, season_id, month_index
+        )
+        results.append({
+            "club_id": str(club.id),
+            "club_name": club.name,
+            "team_power": float(disclosed_tp),
+            "actual_team_power": float(actual_tp),
+        })
+
+    results.sort(key=lambda x: x["team_power"], reverse=True)
     return results

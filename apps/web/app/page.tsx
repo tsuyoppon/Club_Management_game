@@ -147,16 +147,22 @@ type FinancialSummaryClub = {
   [key: string]: string | number | undefined;
 };
 
-type PublicDisclosure = {
+type TeamPowerClub = {
+  club_id: string;
+  club_name: string;
+  team_power: number;
+};
+
+type PublicDisclosure<TClub = FinancialSummaryClub> = {
   id: string;
   season_id: string;
   disclosure_type: string;
   disclosure_month: number;
-  disclosed_data: { clubs?: FinancialSummaryClub[] };
+  disclosed_data: { clubs?: TClub[]; note?: string; disclosure_type?: string; disclosed_at?: string };
   created_at: string;
 };
 
-type ConsoleSection = 'Turn' | 'Matches' | 'Table' | 'Finance' | 'Fans' | 'Sponsors' | 'Staff' | 'Disclosures';
+type ConsoleSection = 'Turn' | 'Matches' | 'Table' | 'Finance' | 'Fans' | 'Sponsors' | 'Staff' | 'Team Power' | 'Disclosures';
 type FinanceLine = { kind: string; label: string; amount: number };
 type FinanceStatement = {
   income: FinanceLine[];
@@ -202,7 +208,7 @@ type FinalStandingsPayload = {
 };
 
 const defaultClubs = ['東京ユナイテッド', '大阪イレブン', '福岡アローズ'];
-const consoleSections: ConsoleSection[] = ['Turn', 'Matches', 'Table', 'Finance', 'Fans', 'Sponsors', 'Staff', 'Disclosures'];
+const consoleSections: ConsoleSection[] = ['Turn', 'Matches', 'Table', 'Finance', 'Fans', 'Sponsors', 'Staff', 'Team Power', 'Disclosures'];
 const seasonMonthIndexes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const moneyKeys = new Set([
   'sales_expense',
@@ -262,7 +268,8 @@ export default function Home() {
   const [room, setRoom] = useState<Room | null>(null);
   const [play, setPlay] = useState<PlayState | null>(null);
   const [consoleData, setConsoleData] = useState<ConsoleData | null>(null);
-  const [financialDisclosure, setFinancialDisclosure] = useState<PublicDisclosure | null>(null);
+  const [financialDisclosure, setFinancialDisclosure] = useState<PublicDisclosure<FinancialSummaryClub> | null>(null);
+  const [teamPowerDisclosure, setTeamPowerDisclosure] = useState<PublicDisclosure<TeamPowerClub> | null>(null);
   const [stage, setStage] = useState<'entry' | 'lobby' | 'console'>('entry');
   const [displayName, setDisplayName] = useState('');
   const [roomName, setRoomName] = useState('研修リーグ');
@@ -292,7 +299,15 @@ export default function Home() {
 
   const loadFinancialDisclosure = useCallback(async (seasonId: string) => {
     try {
-      return await api<PublicDisclosure>(`/api/seasons/${seasonId}/disclosures/financial_summary`);
+      return await api<PublicDisclosure<FinancialSummaryClub>>(`/api/seasons/${seasonId}/disclosures/financial_summary`);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const loadTeamPowerDisclosure = useCallback(async (seasonId: string) => {
+    try {
+      return await api<PublicDisclosure<TeamPowerClub>>(`/api/seasons/${seasonId}/team-power`);
     } catch {
       return null;
     }
@@ -303,8 +318,10 @@ export default function Home() {
     setPlay(nextPlay);
     if (nextPlay.season) {
       setFinancialDisclosure(await loadFinancialDisclosure(nextPlay.season.id));
+      setTeamPowerDisclosure(await loadTeamPowerDisclosure(nextPlay.season.id));
     } else {
       setFinancialDisclosure(null);
+      setTeamPowerDisclosure(null);
     }
     if (nextPlay.self.club_id) {
       const nextConsole = await api<ConsoleData>(
@@ -314,7 +331,7 @@ export default function Home() {
     } else {
       setConsoleData(null);
     }
-  }, [loadFinancialDisclosure]);
+  }, [loadFinancialDisclosure, loadTeamPowerDisclosure]);
 
   useEffect(() => {
     api<{ rooms: Array<{ id: string; status: string }> }>('/api/me')
@@ -553,6 +570,7 @@ export default function Home() {
           busy={busy}
           consoleData={consoleData}
           financialDisclosure={financialDisclosure}
+          teamPowerDisclosure={teamPowerDisclosure}
           draftState={draftState}
           formValues={formValues}
           play={play}
@@ -713,6 +731,7 @@ function Console({
   busy,
   consoleData,
   financialDisclosure,
+  teamPowerDisclosure,
   draftState,
   formValues,
   play,
@@ -727,7 +746,8 @@ function Console({
 }: {
   busy: boolean;
   consoleData: ConsoleData | null;
-  financialDisclosure: PublicDisclosure | null;
+  financialDisclosure: PublicDisclosure<FinancialSummaryClub> | null;
+  teamPowerDisclosure: PublicDisclosure<TeamPowerClub> | null;
   draftState: string;
   formValues: Record<string, string>;
   play: PlayState | null;
@@ -860,6 +880,7 @@ function Console({
             selfClubId={selfClubId}
             seasonId={play?.season?.id || null}
             standings={play?.standings || []}
+            teamPowerDisclosure={teamPowerDisclosure}
           />
         )}
       </section>
@@ -915,14 +936,16 @@ function ConsoleSectionPanel({
   selfClubId,
   seasonId,
   standings,
+  teamPowerDisclosure,
 }: {
   consoleData: ConsoleData | null;
-  financialDisclosure: PublicDisclosure | null;
+  financialDisclosure: PublicDisclosure<FinancialSummaryClub> | null;
   gameId: string | null;
   section: Exclude<ConsoleSection, 'Turn'>;
   selfClubId: string | null;
   seasonId: string | null;
   standings: PlayState['standings'];
+  teamPowerDisclosure: PublicDisclosure<TeamPowerClub> | null;
 }) {
   const titleMap: Record<Exclude<ConsoleSection, 'Turn'>, string> = {
     Matches: '試合',
@@ -931,6 +954,7 @@ function ConsoleSectionPanel({
     Fans: 'ファン',
     Sponsors: 'スポンサー',
     Staff: 'スタッフ',
+    'Team Power': 'チーム力',
     Disclosures: '公開情報',
   };
 
@@ -942,7 +966,7 @@ function ConsoleSectionPanel({
           <h2>{titleMap[section]}</h2>
         </div>
       </div>
-      {!consoleData && section !== 'Disclosures' ? <p className="muted">担当クラブの情報を待機中です。</p> : null}
+      {!consoleData && section !== 'Disclosures' && section !== 'Team Power' ? <p className="muted">担当クラブの情報を待機中です。</p> : null}
       {consoleData && section === 'Matches' ? (
         <table>
           <thead>
@@ -1007,6 +1031,9 @@ function ConsoleSectionPanel({
           </tbody>
         </table>
       ) : null}
+      {section === 'Team Power' ? (
+        <TeamPowerPanel disclosure={teamPowerDisclosure} selfClubId={selfClubId} />
+      ) : null}
       {section === 'Disclosures' ? (
         <FinancialDisclosurePanel disclosure={financialDisclosure} selfClubId={selfClubId} />
       ) : null}
@@ -1024,6 +1051,59 @@ function disclosureValue(row: FinancialSummaryClub, keys: string[]) {
     }
   }
   return null;
+}
+
+function teamPowerDisclosureLabel(type: string | undefined) {
+  if (type === 'team_power_june_preview') return '6月入力ベース / 暫定公開';
+  if (type === 'team_power_july') return '7月公開 / 次シーズン予測';
+  if (type === 'team_power_december') return '12月公開 / 最新';
+  if (type === 'team_power_july_carried') return '前シーズン7月公開値';
+  return type || 'チーム力開示';
+}
+
+function TeamPowerPanel({
+  disclosure,
+  selfClubId,
+}: {
+  disclosure: PublicDisclosure<TeamPowerClub> | null;
+  selfClubId: string | null;
+}) {
+  const clubs = disclosure?.disclosed_data?.clubs || [];
+  const disclosureType = disclosure?.disclosed_data?.disclosure_type || disclosure?.disclosure_type;
+
+  if (!disclosure || clubs.length === 0) {
+    return <p className="muted">7月ターン終了後または12月ターン終了後に、全クラブのチーム力指標が公開されます。</p>;
+  }
+
+  return (
+    <section className="disclosurePanel">
+      <div className="financePeriod">
+        <strong>{teamPowerDisclosureLabel(disclosureType)}</strong>
+        <span>公開月 {seasonMonthLabel(disclosure.disclosure_month)} / {new Date(disclosure.created_at).toLocaleString('ja-JP')}</span>
+      </div>
+      {disclosure.disclosed_data.note ? <p className="muted">{disclosure.disclosed_data.note}</p> : null}
+      <div className="disclosureTableWrap compactDisclosureTable">
+        <table>
+          <thead>
+            <tr>
+              <th>順位</th>
+              <th>クラブ</th>
+              <th>チーム力</th>
+            </tr>
+          </thead>
+          <tbody>
+            {clubs.map((club, index) => (
+              <tr key={club.club_id} className={club.club_id === selfClubId ? 'selfRow' : ''}>
+                <td>{index + 1}</td>
+                <td>{club.club_name}</td>
+                <td className="numeric">{club.team_power.toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 function StandingsPanel({

@@ -172,6 +172,7 @@ TEAM_POWER_DISCLOSURE_SIGMA = 1.5         # 7月公開時の不確実性（標�
 # 公開イベントの月インデックス
 DISCLOSURE_MONTH_DECEMBER = 5   # 12月 = month_index 5
 DISCLOSURE_MONTH_MAY = 10       # 5月 = month_index 10
+DISCLOSURE_MONTH_JUNE = 11      # 6月 = month_index 11
 DISCLOSURE_MONTH_JULY = 12      # 7月 = month_index 12
 
 # =============================================================================

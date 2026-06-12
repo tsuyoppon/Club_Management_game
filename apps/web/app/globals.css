@@ -442,6 +442,10 @@ h3 {
   min-width: 980px;
 }
 
+.compactDisclosureTable table {
+  min-width: 520px;
+}
+
 .monthlyFinanceTable th:first-child,
 .monthlyFinanceTable td:first-child {
   background: var(--panel);

@@ -95,6 +95,11 @@ def get_team_power(
     if not season:
         raise HTTPException(status_code=404, detail="Season not found")
     
+    # 6月resolve後〜7月resolve前だけ、6月入力ベースの暫定公開を優先
+    june_preview = disclosure_service.get_visible_team_power_june_preview(db, season_id)
+    if june_preview:
+        return june_preview
+
     # 7月公開を優先、なければ12月公開、さらに引き継ぎ（7月公開値）を参照
     july_disclosure = disclosure_service.get_latest_disclosure(
         db, season_id, "team_power_july"

@@ -15,13 +15,18 @@ from sqlalchemy import select, and_
 
 from app.db.models import (
     Season, Turn, Club, ClubFinancialSnapshot, ClubFinancialLedger,
-    SeasonPublicDisclosure, SeasonFinalStanding,
+    SeasonPublicDisclosure, SeasonFinalStanding, TurnState,
 )
 from app.config.constants import (
     DISCLOSURE_MONTH_DECEMBER,
+    DISCLOSURE_MONTH_JUNE,
     DISCLOSURE_MONTH_JULY,
 )
-from app.services.team_power import get_all_clubs_team_power, get_all_clubs_team_power_for_july
+from app.services.team_power import (
+    get_all_clubs_team_power,
+    get_all_clubs_team_power_for_july,
+    get_all_clubs_team_power_for_monthly_input,
+)
 
 
 def publish_financial_summary(
@@ -201,6 +206,85 @@ def publish_team_power_july(
     db.flush()
     
     return disclosed_data
+
+
+def publish_team_power_june_preview(
+    db: Session,
+    season_id: UUID,
+    turn_id: UUID,
+) -> dict:
+    """
+    6月ターン終了時：6月入力の翌シーズン強化費だけに基づく暫定チーム力を公開。
+
+    この開示は7月ターンresolve前までの一時表示用で、正式な7月公開値ではない。
+    """
+    team_powers = get_all_clubs_team_power_for_monthly_input(db, season_id, DISCLOSURE_MONTH_JUNE)
+
+    public_team_powers = []
+    for tp in team_powers:
+        public_team_powers.append({
+            "club_id": tp["club_id"],
+            "club_name": tp["club_name"],
+            "team_power": tp["team_power"],
+        })
+
+    disclosed_data = {
+        "clubs": public_team_powers,
+        "disclosure_type": "team_power_june_preview",
+        "disclosed_at": datetime.utcnow().isoformat(),
+        "note": "6月入力の来期強化費に基づく暫定値（7月resolve前まで表示）",
+    }
+
+    existing = db.query(SeasonPublicDisclosure).filter(
+        and_(
+            SeasonPublicDisclosure.season_id == season_id,
+            SeasonPublicDisclosure.disclosure_type == "team_power_june_preview",
+            SeasonPublicDisclosure.disclosure_month == DISCLOSURE_MONTH_JUNE,
+        )
+    ).first()
+
+    if existing:
+        existing.disclosed_data = disclosed_data
+        existing.turn_id = turn_id
+        db.add(existing)
+    else:
+        disclosure = SeasonPublicDisclosure(
+            season_id=season_id,
+            disclosure_type="team_power_june_preview",
+            disclosure_month=DISCLOSURE_MONTH_JUNE,
+            turn_id=turn_id,
+            disclosed_data=disclosed_data,
+        )
+        db.add(disclosure)
+
+    db.flush()
+    return disclosed_data
+
+
+def get_visible_team_power_june_preview(
+    db: Session,
+    season_id: UUID,
+) -> Optional[dict]:
+    """
+    6月resolve後から7月resolve前までだけ、6月入力ベースの暫定TPを返す。
+    """
+    june_turn = db.query(Turn).filter(
+        Turn.season_id == season_id,
+        Turn.month_index == DISCLOSURE_MONTH_JUNE,
+    ).first()
+    july_turn = db.query(Turn).filter(
+        Turn.season_id == season_id,
+        Turn.month_index == DISCLOSURE_MONTH_JULY,
+    ).first()
+
+    if not june_turn or not july_turn:
+        return None
+    if june_turn.turn_state not in (TurnState.resolved, TurnState.acked):
+        return None
+    if july_turn.turn_state in (TurnState.resolved, TurnState.acked):
+        return None
+
+    return get_latest_disclosure(db, season_id, "team_power_june_preview")
 
 
 def get_latest_disclosure(
@@ -395,6 +479,7 @@ def process_disclosure_for_turn(
     ターン解決時に呼び出される公開処理
     
     12月（month_index=5）: 財務サマリー + チーム力指標
+    6月（month_index=11）: 6月入力ベースの暫定チーム力指標
     7月（month_index=12）: チーム力指標（不確実性付き）
     """
     results = {}
@@ -403,6 +488,10 @@ def process_disclosure_for_turn(
         # 12月ターン終了時
         results["financial_summary"] = publish_financial_summary(db, season_id, turn_id)
         results["team_power"] = publish_team_power_december(db, season_id, turn_id)
+    
+    elif month_index == DISCLOSURE_MONTH_JUNE:
+        # 6月ターン終了時
+        results["team_power"] = publish_team_power_june_preview(db, season_id, turn_id)
     
     elif month_index == DISCLOSURE_MONTH_JULY:
         # 7月ターン終了時
