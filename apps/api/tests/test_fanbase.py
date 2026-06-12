@@ -1,4 +1,5 @@
 import pytest
+import math
 from decimal import Decimal
 from uuid import uuid4
 from app.services import fanbase
@@ -52,3 +53,103 @@ def test_fanbase_update_logic(db_session):
     
     # Check if penalty applied (hard to check exact value without calc, but should run)
     assert updated2.last_ht_spend == ht2
+
+
+def test_followers_use_new_scale_and_positive_trend_bias(db_session, monkeypatch):
+    club_id = uuid4()
+    season_id = uuid4()
+
+    game = Game(id=uuid4(), name="Follower Trend Game", status=GameStatus.active)
+    db_session.add(game)
+    db_session.commit()
+
+    season = Season(id=season_id, game_id=game.id, year_label="2025", status=SeasonStatus.running)
+    club = Club(id=club_id, game_id=game.id, name="Club B")
+    db_session.add_all([season, club])
+    db_session.commit()
+
+    state = ClubFanbaseState(
+        club_id=club_id,
+        season_id=season_id,
+        fb_count=60000,
+        fb_rate=Decimal("0.06"),
+        cumulative_promo=Decimal("0"),
+        cumulative_ht=Decimal("0"),
+        last_ht_spend=Decimal("0"),
+        fb_trend_streak=0,
+    )
+    db_session.add(state)
+    db_session.commit()
+
+    gauss_args = {}
+
+    def fake_gauss(mean, sigma):
+        gauss_args["mean"] = mean
+        gauss_args["sigma"] = sigma
+        return mean
+
+    monkeypatch.setattr(fanbase.random, "gauss", fake_gauss)
+
+    updated = fanbase.update_fanbase_for_turn(
+        db_session,
+        state,
+        Decimal("10000000"),
+        Decimal("5000000"),
+        1.0,
+        0.5,
+    )
+
+    assert updated.fb_trend_streak == 1
+    assert gauss_args["mean"] == pytest.approx(0.13)
+    assert gauss_args["sigma"] == pytest.approx(0.08)
+    expected = int(math.exp(math.log(float(fanbase.KAPPA_F * updated.fb_count)) + 0.13))
+    assert updated.followers_public == expected
+
+
+def test_followers_negative_trend_lowers_error_mean(db_session, monkeypatch):
+    club_id = uuid4()
+    season_id = uuid4()
+
+    game = Game(id=uuid4(), name="Follower Decline Game", status=GameStatus.active)
+    db_session.add(game)
+    db_session.commit()
+
+    season = Season(id=season_id, game_id=game.id, year_label="2025", status=SeasonStatus.running)
+    club = Club(id=club_id, game_id=game.id, name="Club C")
+    db_session.add_all([season, club])
+    db_session.commit()
+
+    state = ClubFanbaseState(
+        club_id=club_id,
+        season_id=season_id,
+        fb_count=60000,
+        fb_rate=Decimal("0.06"),
+        cumulative_promo=Decimal("0"),
+        cumulative_ht=Decimal("0"),
+        last_ht_spend=Decimal("0"),
+        fb_trend_streak=-2,
+    )
+    db_session.add(state)
+    db_session.commit()
+
+    gauss_args = {}
+
+    def fake_gauss(mean, sigma):
+        gauss_args["mean"] = mean
+        gauss_args["sigma"] = sigma
+        return mean
+
+    monkeypatch.setattr(fanbase.random, "gauss", fake_gauss)
+
+    updated = fanbase.update_fanbase_for_turn(
+        db_session,
+        state,
+        Decimal("0"),
+        Decimal("0"),
+        0.0,
+        0.0,
+    )
+
+    assert updated.fb_trend_streak == -3
+    assert gauss_args["mean"] == pytest.approx(0.01)
+    assert gauss_args["sigma"] == pytest.approx(0.08)

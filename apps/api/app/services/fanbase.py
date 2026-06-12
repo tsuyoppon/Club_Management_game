@@ -21,8 +21,12 @@ S_HT = Decimal("10000000")
 F_MAX = Decimal("0.25")
 POPULATION = 1000000
 
-KAPPA_F = Decimal("1.0")
-SIGMA_F = 0.15
+KAPPA_F = Decimal("0.3")
+SIGMA_F = 0.08
+FOLLOWER_ERROR_MEAN = 0.10
+FOLLOWER_TREND_MEAN_STEP = 0.03
+FOLLOWER_TREND_MEAN_CAP = 0.12
+
 
 def ensure_fanbase_state(db: Session, club_id: str, season_id: str) -> ClubFanbaseState:
     state = db.query(ClubFanbaseState).filter_by(club_id=club_id, season_id=season_id).first()
@@ -35,6 +39,7 @@ def ensure_fanbase_state(db: Session, club_id: str, season_id: str) -> ClubFanba
             cumulative_promo=Decimal("0"),
             cumulative_ht=Decimal("0"),
             last_ht_spend=Decimal("0"),
+            fb_trend_streak=0,
             followers_public=None
         )
         db.add(state)
@@ -84,6 +89,7 @@ def update_fanbase_for_turn(
     # 4. Effective Growth Rate (Cap constraint)
     # g_eff = g(t) * (1 - f(t)/f_max)
     f_t = state.fb_rate
+    prev_fb_count = state.fb_count
     g_eff = g_t * (1 - f_t / F_MAX)
     
     # 5. Update FB Rate
@@ -98,17 +104,29 @@ def update_fanbase_for_turn(
     
     # Update FB Count
     state.fb_count = int(f_next * POPULATION)
+    if state.fb_count > prev_fb_count:
+        state.fb_trend_streak = max((state.fb_trend_streak or 0) + 1, 1)
+    elif state.fb_count < prev_fb_count:
+        state.fb_trend_streak = min((state.fb_trend_streak or 0) - 1, -1)
+    else:
+        state.fb_trend_streak = 0
     
     # 6. Update Public Followers
     # ln(Followers) = ln(kappa * FB) + epsilon
-    # epsilon ~ N(0, sigma^2)
+    # epsilon ~ N(mu_epsilon, sigma^2)
+    # mu_epsilon = base_mean + trend adjustment.
     
     fb_val = state.fb_count
     if fb_val < 1:
         fb_val = 1
         
     mu = math.log(float(KAPPA_F * fb_val))
-    epsilon = random.gauss(0, SIGMA_F)
+    trend_adjustment = max(
+        -FOLLOWER_TREND_MEAN_CAP,
+        min(FOLLOWER_TREND_MEAN_CAP, (state.fb_trend_streak or 0) * FOLLOWER_TREND_MEAN_STEP),
+    )
+    epsilon_mean = FOLLOWER_ERROR_MEAN + trend_adjustment
+    epsilon = random.gauss(epsilon_mean, SIGMA_F)
     log_followers = mu + epsilon
     followers = int(math.exp(log_followers))
     

@@ -88,8 +88,11 @@ FB_A3 = Decimal("0.010")
 FB_A4 = Decimal("0.006")
 
 # 公開ファン指標
-FAN_INDICATOR_KAPPA = Decimal("1.0")
-FAN_INDICATOR_SIGMA = 0.15
+FAN_INDICATOR_KAPPA = Decimal("0.3")
+FAN_INDICATOR_SIGMA = 0.08
+FAN_INDICATOR_ERROR_MEAN = Decimal("0.10")
+FAN_INDICATOR_TREND_MEAN_STEP = Decimal("0.03")
+FAN_INDICATOR_TREND_MEAN_CAP = Decimal("0.12")
 
 # =============================================================================
 # Section 10: スポンサー数モデル
