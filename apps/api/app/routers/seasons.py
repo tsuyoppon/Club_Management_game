@@ -187,6 +187,8 @@ def create_season_core(db: Session, game: Game, year_label: str) -> Season:
                 fb_rate=prev_state.fb_rate,
                 cumulative_promo=prev_state.cumulative_promo,
                 cumulative_ht=prev_state.cumulative_ht,
+                cumulative_promotion_staff=prev_state.cumulative_promotion_staff,
+                cumulative_hometown_staff=prev_state.cumulative_hometown_staff,
                 last_ht_spend=prev_state.last_ht_spend,
                 fb_trend_streak=prev_state.fb_trend_streak,
                 followers_public=prev_state.followers_public,

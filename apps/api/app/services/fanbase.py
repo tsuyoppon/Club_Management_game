@@ -1,12 +1,13 @@
 import math
 import random
 from decimal import Decimal
-from typing import Optional
 from sqlalchemy.orm import Session
-from app.db.models import ClubFanbaseState
+from app.db.models import ClubFanbaseState, ClubStaff, StaffRole
 
 # Coefficients
 LAMBDA_EWMA = Decimal("0.10")
+PROMOTION_STAFF_EWMA_LAMBDA = Decimal("0.10")
+HOMETOWN_STAFF_EWMA_LAMBDA = Decimal("0.04")
 PHI_PENALTY = Decimal("0.00002")
 
 G0 = Decimal("-0.0005")
@@ -14,9 +15,13 @@ A1 = Decimal("0.006")
 A2 = Decimal("0.006")
 A3 = Decimal("0.010")
 A4 = Decimal("0.006")
+A_PROMOTION_STAFF = Decimal("0.0015")
+A_HOMETOWN_STAFF = Decimal("0.0012")
 
 S_PROMO = Decimal("10000000")
 S_HT = Decimal("10000000")
+S_PROMOTION_STAFF = Decimal("2")
+S_HOMETOWN_STAFF = Decimal("2")
 
 F_MAX = Decimal("0.25")
 POPULATION = 1000000
@@ -38,6 +43,8 @@ def ensure_fanbase_state(db: Session, club_id: str, season_id: str) -> ClubFanba
             fb_rate=Decimal("0.06"),
             cumulative_promo=Decimal("0"),
             cumulative_ht=Decimal("0"),
+            cumulative_promotion_staff=Decimal("1"),
+            cumulative_hometown_staff=Decimal("1"),
             last_ht_spend=Decimal("0"),
             fb_trend_streak=0,
             followers_public=None
@@ -46,6 +53,17 @@ def ensure_fanbase_state(db: Session, club_id: str, season_id: str) -> ClubFanba
         db.commit()
         db.refresh(state)
     return state
+
+
+def _staff_count(db: Session, club_id, role: StaffRole) -> Decimal:
+    staff = db.query(ClubStaff).filter(
+        ClubStaff.club_id == club_id,
+        ClubStaff.role == role,
+    ).first()
+    if not staff:
+        return Decimal("1")
+    return Decimal(staff.count or 1)
+
 
 def update_fanbase_for_turn(
     db: Session, 
@@ -69,30 +87,61 @@ def update_fanbase_for_turn(
         state.cumulative_ht = Decimal("0")
         
     state.last_ht_spend = ht_spend
+
+    # 3. Update cumulative staff effects
+    # C_staff(t) = (1-lambda)C_staff(t-1) + lambda * StaffCount(t)
+    promotion_staff = _staff_count(db, state.club_id, StaffRole.promotion)
+    hometown_staff = _staff_count(db, state.club_id, StaffRole.hometown)
+    state.cumulative_promotion_staff = (
+        (Decimal("1") - PROMOTION_STAFF_EWMA_LAMBDA)
+        * Decimal(state.cumulative_promotion_staff or 1)
+        + PROMOTION_STAFF_EWMA_LAMBDA * promotion_staff
+    )
+    state.cumulative_hometown_staff = (
+        (Decimal("1") - HOMETOWN_STAFF_EWMA_LAMBDA)
+        * Decimal(state.cumulative_hometown_staff or 1)
+        + HOMETOWN_STAFF_EWMA_LAMBDA * hometown_staff
+    )
     
-    # 3. Calculate Growth Rate g(t)
-    # g(t) = g0 + a1*ln(1 + C_promo/S_promo) + a2*ln(1 + C_ht/S_ht) + a3*(Perf-0.5) + a4*(HistPerf-0.5)
+    # 4. Calculate Growth Rate g(t)
+    # Staff terms use effective excess over the baseline 1-person structure.
     
     # Avoid log(0) or negative
     c_promo_float = float(state.cumulative_promo)
     c_ht_float = float(state.cumulative_ht)
     s_promo_float = float(S_PROMO)
     s_ht_float = float(S_HT)
+    promotion_staff_excess = max(0.0, float(state.cumulative_promotion_staff) - 1.0)
+    hometown_staff_excess = max(0.0, float(state.cumulative_hometown_staff) - 1.0)
     
     term_promo = A1 * Decimal(math.log(1 + c_promo_float / s_promo_float))
     term_ht = A2 * Decimal(math.log(1 + c_ht_float / s_ht_float))
     term_perf = A3 * Decimal(perf_val - 0.5)
     term_hist = A4 * Decimal(hist_perf_val - 0.5)
+    term_promotion_staff = A_PROMOTION_STAFF * Decimal(
+        math.log(1 + promotion_staff_excess / float(S_PROMOTION_STAFF))
+    )
+    term_hometown_staff = A_HOMETOWN_STAFF * Decimal(
+        math.log(1 + hometown_staff_excess / float(S_HOMETOWN_STAFF))
+    )
     
-    g_t = G0 + term_promo + term_ht + term_perf + term_hist
+    g_t = (
+        G0
+        + term_promo
+        + term_ht
+        + term_promotion_staff
+        + term_hometown_staff
+        + term_perf
+        + term_hist
+    )
     
-    # 4. Effective Growth Rate (Cap constraint)
+    # 5. Effective Growth Rate (Cap constraint)
     # g_eff = g(t) * (1 - f(t)/f_max)
     f_t = state.fb_rate
     prev_fb_count = state.fb_count
     g_eff = g_t * (1 - f_t / F_MAX)
     
-    # 5. Update FB Rate
+    # 6. Update FB Rate
     # f(t+1) = clip(f(t)*(1+g_eff), 0, f_max)
     f_next = f_t * (1 + g_eff)
     if f_next < 0:
@@ -111,7 +160,7 @@ def update_fanbase_for_turn(
     else:
         state.fb_trend_streak = 0
     
-    # 6. Update Public Followers
+    # 7. Update Public Followers
     # ln(Followers) = ln(kappa * FB) + epsilon
     # epsilon ~ N(mu_epsilon, sigma^2)
     # mu_epsilon = base_mean + trend adjustment.

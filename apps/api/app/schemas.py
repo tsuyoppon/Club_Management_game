@@ -314,6 +314,8 @@ class FanbaseStateRead(BaseModel):
     fb_rate: float
     cumulative_promo: float
     cumulative_ht: float
+    cumulative_promotion_staff: float
+    cumulative_hometown_staff: float
     last_ht_spend: float
     followers_public: Optional[int]
     updated_at: datetime

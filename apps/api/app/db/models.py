@@ -620,6 +620,8 @@ class ClubFanbaseState(Base):
     fb_rate = Column(Numeric(10, 6), nullable=False, default=0.06)
     cumulative_promo = Column(Numeric(14, 2), nullable=False, default=0)
     cumulative_ht = Column(Numeric(14, 2), nullable=False, default=0)
+    cumulative_promotion_staff = Column(Numeric(10, 4), nullable=False, default=1)
+    cumulative_hometown_staff = Column(Numeric(10, 4), nullable=False, default=1)
     last_ht_spend = Column(Numeric(14, 2), nullable=False, default=0)
     fb_trend_streak = Column(Integer, nullable=False, default=0)
     followers_public = Column(Integer, nullable=True)
