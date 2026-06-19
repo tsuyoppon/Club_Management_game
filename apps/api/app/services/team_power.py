@@ -12,7 +12,17 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Club, Season, ClubFinancialProfile, ClubReinforcementPlan, ClubAcademy, Turn, TurnDecision
+from app.db.models import (
+    Club,
+    Season,
+    ClubFinancialProfile,
+    ClubReinforcementPlan,
+    ClubAcademy,
+    ClubStaff,
+    StaffRole,
+    Turn,
+    TurnDecision,
+)
 from app.config.constants import (
     TP_ALPHA,
     TP_BETA,
@@ -21,6 +31,8 @@ from app.config.constants import (
     TEAM_POWER_DISCLOSURE_SIGMA,
     TEAM_POWER_REINFORCEMENT_DECAY,
     TEAM_POWER_REINFORCEMENT_LOOKBACK_SEASONS,
+    TEAM_POWER_TOPTEAM_BUDGET_PER_STAFF,
+    TEAM_POWER_TOPTEAM_PENALTY_FACTOR,
 )
 
 
@@ -41,6 +53,89 @@ def _target_reinforcement_budget_for_plan(
     if month_index is None or month_index >= 6:
         budget += Decimal(plan.additional_budget or 0)
     return budget
+
+
+def calculate_current_reinforcement_budget_for_topteam_penalty(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+    month_index: Optional[int] = None,
+) -> Decimal:
+    """
+    topteam人数ペナルティ判定用の対象シーズン強化費を円単位で返す。
+    TP本体の加重平均とは分け、当該シーズンの予算だけを見る。
+    """
+    plan = db.query(ClubReinforcementPlan).filter(
+        ClubReinforcementPlan.club_id == club_id,
+        ClubReinforcementPlan.season_id == season_id,
+    ).first()
+    return _target_reinforcement_budget_for_plan(plan, month_index)
+
+
+def _topteam_staff_count(
+    db: Session,
+    club_id: UUID,
+    use_next_staff: bool = False,
+) -> int:
+    staff = db.query(ClubStaff).filter(
+        ClubStaff.club_id == club_id,
+        ClubStaff.role == StaffRole.topteam,
+    ).first()
+    if not staff:
+        return 1
+    if use_next_staff:
+        if staff.next_count is not None:
+            return staff.next_count
+        if staff.hiring_target is not None:
+            return staff.hiring_target
+    return staff.count
+
+
+def calculate_topteam_staff_tp_multiplier(
+    db: Session,
+    club_id: UUID,
+    reinforcement_budget: Decimal,
+    use_next_staff: bool = False,
+) -> Decimal:
+    """
+    topteam人数不足によるTP倍率を返す。
+
+    強化費1億円あたりtopteam 1人以上なら倍率1.0。
+    不足分に比例してペナルティを掛ける。
+    3億円:1人で penalty_rate=20% になるよう係数0.30を使う。
+    """
+    budget = Decimal(reinforcement_budget or 0)
+    if budget <= 0:
+        return Decimal("1")
+
+    required_staff = budget / TEAM_POWER_TOPTEAM_BUDGET_PER_STAFF
+    if required_staff <= 0:
+        return Decimal("1")
+
+    staff_count = Decimal(_topteam_staff_count(db, club_id, use_next_staff=use_next_staff))
+    coverage = staff_count / required_staff
+    if coverage >= 1:
+        return Decimal("1")
+
+    shortage = Decimal("1") - coverage
+    penalty_rate = TEAM_POWER_TOPTEAM_PENALTY_FACTOR * shortage
+    return Decimal("1") - penalty_rate
+
+
+def apply_topteam_staff_tp_penalty(
+    db: Session,
+    club_id: UUID,
+    tp: float,
+    reinforcement_budget: Decimal,
+    use_next_staff: bool = False,
+) -> float:
+    multiplier = calculate_topteam_staff_tp_multiplier(
+        db,
+        club_id,
+        reinforcement_budget,
+        use_next_staff=use_next_staff,
+    )
+    return tp * float(multiplier)
 
 
 def calculate_weighted_reinforcement_budget(
@@ -190,6 +285,10 @@ def calculate_team_power(
     a_ratio = float(academy_cumulative) / float(TEAM_POWER_A_REF) if TEAM_POWER_A_REF else 0
 
     tp = TP_ALPHA * math.log(1 + b_ratio) + TP_BETA * math.log(1 + a_ratio)
+    penalty_budget = calculate_current_reinforcement_budget_for_topteam_penalty(
+        db, club_id, season_id, month_index=month_index
+    )
+    tp = apply_topteam_staff_tp_penalty(db, club_id, tp, penalty_budget)
 
     return Decimal(str(round(tp, 2)))
 
@@ -227,6 +326,13 @@ def calculate_team_power_for_july_disclosure(
     a_ratio = float(academy_cumulative) / float(TEAM_POWER_A_REF) if TEAM_POWER_A_REF else 0
 
     tp = TP_ALPHA * math.log(1 + b_ratio) + TP_BETA * math.log(1 + a_ratio)
+    tp = apply_topteam_staff_tp_penalty(
+        db,
+        club_id,
+        tp,
+        next_season_budget,
+        use_next_staff=True,
+    )
 
     return Decimal(str(round(tp, 2)))
 
@@ -236,6 +342,8 @@ def _calculate_team_power_from_reinforcement_budget(
     club_id: UUID,
     season_id: UUID,
     reinforcement_budget: Decimal,
+    topteam_penalty_budget: Optional[Decimal] = None,
+    use_next_staff: bool = False,
 ) -> Decimal:
     academy = db.query(ClubAcademy).filter(
         ClubAcademy.club_id == club_id,
@@ -247,6 +355,13 @@ def _calculate_team_power_from_reinforcement_budget(
     a_ratio = float(academy_cumulative) / float(TEAM_POWER_A_REF) if TEAM_POWER_A_REF else 0
 
     tp = TP_ALPHA * math.log(1 + b_ratio) + TP_BETA * math.log(1 + a_ratio)
+    tp = apply_topteam_staff_tp_penalty(
+        db,
+        club_id,
+        tp,
+        topteam_penalty_budget if topteam_penalty_budget is not None else reinforcement_budget,
+        use_next_staff=use_next_staff,
+    )
     return Decimal(str(round(tp, 2)))
 
 
@@ -289,7 +404,14 @@ def calculate_team_power_for_monthly_reinforcement_input(
         season_id,
         current_budget_override=input_budget,
     )
-    return _calculate_team_power_from_reinforcement_budget(db, club_id, season_id, reinforcement_budget)
+    return _calculate_team_power_from_reinforcement_budget(
+        db,
+        club_id,
+        season_id,
+        reinforcement_budget,
+        topteam_penalty_budget=input_budget,
+        use_next_staff=True,
+    )
 
 
 def calculate_team_power_monthly_input_with_uncertainty(

@@ -11,7 +11,11 @@ from app.services import weather as weather_service
 from app.services import attendance as attendance_service
 from app.services import standings as standings_service
 from app.services import historical_performance
-from app.services.team_power import calculate_weighted_reinforcement_budget
+from app.services.team_power import (
+    apply_topteam_staff_tp_penalty,
+    calculate_current_reinforcement_budget_for_topteam_penalty,
+    calculate_weighted_reinforcement_budget,
+)
 from app.config.constants import HOME_ADV_BASE, HOME_ADV_RATE, HOME_ADV_MIN, HOME_ADV_MAX
 
 logger = logging.getLogger(__name__)
@@ -93,8 +97,15 @@ def calculate_tp(
     # Calculation
     term_b = ALPHA * math.log(1 + b_i / B_REF)
     term_a = BETA * math.log(1 + a_cum_i / A_REF)
-    
-    return term_b + term_a
+    tp = term_b + term_a
+
+    penalty_budget = calculate_current_reinforcement_budget_for_topteam_penalty(
+        db,
+        club_id,
+        season_id,
+        month_index=month_index,
+    )
+    return apply_topteam_staff_tp_penalty(db, club_id, tp, penalty_budget)
 
 def get_streak(db: Session, club_id: UUID, season_id: UUID, current_turn_month: int) -> int:
     """

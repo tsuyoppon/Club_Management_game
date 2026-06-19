@@ -153,6 +153,8 @@ TP_BETA = 1
 ACADEMY_DECAY_RHO = Decimal("0.5")
 TEAM_POWER_REINFORCEMENT_LOOKBACK_SEASONS = 10
 TEAM_POWER_REINFORCEMENT_DECAY = Decimal("0.6")
+TEAM_POWER_TOPTEAM_BUDGET_PER_STAFF = Decimal("100000000")
+TEAM_POWER_TOPTEAM_PENALTY_FACTOR = Decimal("0.30")
 
 # =============================================================================
 # Section 14: ペナルティ

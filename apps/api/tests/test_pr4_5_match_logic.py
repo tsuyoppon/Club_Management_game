@@ -13,7 +13,10 @@ from app.services.match_results import (
     SCORE_D,
     SCORE_A,
 )
-from app.services.team_power import calculate_weighted_reinforcement_budget
+from app.services.team_power import (
+    calculate_topteam_staff_tp_multiplier,
+    calculate_weighted_reinforcement_budget,
+)
 from app.db.models import (
     Match,
     Club,
@@ -22,6 +25,8 @@ from app.db.models import (
     Game,
     Season,
     ClubReinforcementPlan,
+    ClubStaff,
+    StaffRole,
 )
 
 
@@ -161,6 +166,20 @@ def _create_reinforcement_plan(db, club, season, annual_budget, additional_budge
     return plan
 
 
+def _create_topteam_staff(db, club, count, next_count=None, hiring_target=None):
+    staff = ClubStaff(
+        club_id=club.id,
+        role=StaffRole.topteam,
+        count=count,
+        next_count=next_count,
+        hiring_target=hiring_target,
+        salary_per_person=Decimal("0"),
+    )
+    db.add(staff)
+    db.flush()
+    return staff
+
+
 def test_weighted_reinforcement_budget_uses_current_budget_for_first_season(db):
     game, club = _create_game_club(db)
     season = _create_season(db, game, 1)
@@ -192,6 +211,7 @@ def test_calculate_tp_uses_weighted_current_and_past_reinforcement_budget(db):
     _create_reinforcement_plan(db, club, season2, 50_000_000)
     _create_reinforcement_plan(db, club, season3, 100_000_000)
     _create_reinforcement_plan(db, club, current, 300_000_000)
+    _create_topteam_staff(db, club, 3)
 
     weighted_budget = (
         Decimal("300000000")
@@ -204,6 +224,50 @@ def test_calculate_tp_uses_weighted_current_and_past_reinforcement_budget(db):
 
     assert calculate_weighted_reinforcement_budget(db, club.id, current.id) == weighted_budget
     assert calculate_tp(db, club.id, current.id) == pytest.approx(expected_tp)
+
+
+def test_topteam_staff_penalty_is_twenty_percent_for_one_staff_at_300m(db):
+    game, club = _create_game_club(db)
+    _create_topteam_staff(db, club, 1)
+
+    multiplier = calculate_topteam_staff_tp_multiplier(
+        db,
+        club.id,
+        Decimal("300000000"),
+    )
+
+    assert float(multiplier) == pytest.approx(0.8)
+
+
+def test_topteam_staff_penalty_can_use_next_staff_plan(db):
+    game, club = _create_game_club(db)
+    _create_topteam_staff(db, club, 1, hiring_target=3)
+
+    current_multiplier = calculate_topteam_staff_tp_multiplier(
+        db,
+        club.id,
+        Decimal("300000000"),
+    )
+    next_multiplier = calculate_topteam_staff_tp_multiplier(
+        db,
+        club.id,
+        Decimal("300000000"),
+        use_next_staff=True,
+    )
+
+    assert float(current_multiplier) == pytest.approx(0.8)
+    assert next_multiplier == Decimal("1")
+
+
+def test_calculate_tp_applies_topteam_staff_penalty_from_current_budget(db):
+    game, club = _create_game_club(db)
+    season = _create_season(db, game, 1)
+    _create_reinforcement_plan(db, club, season, 300_000_000)
+    _create_topteam_staff(db, club, 1)
+
+    expected_base_tp = 10.0 * math.log(1 + 300.0 / 500.0)
+
+    assert calculate_tp(db, club.id, season.id) == pytest.approx(expected_base_tp * 0.8)
 
 
 def test_weighted_reinforcement_budget_applies_current_additional_from_january(db):
