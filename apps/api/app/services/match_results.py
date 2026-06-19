@@ -60,14 +60,24 @@ SCORE_A = [((a, h), w) for (h, a), w in SCORE_W]
 
 # ---------------------------------------------------------
 
-def calculate_tp(db: Session, club_id: UUID, season_id: UUID) -> float:
+def calculate_tp(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+    month_index: int | None = None,
+) -> float:
     """
     Calculate Team Power (TP) based on Reinforcement and Academy.
     TP_i = alpha * ln(1 + B_i / B_ref) + beta * ln(1 + A_cum_i / A_ref)
-    B_i is a weighted average of recent past reinforcement budgets in million JPY.
+    B_i is a weighted average of the current and recent past reinforcement
+    budgets in million JPY.
     """
-    # 1. Reinforcement (B_i): weighted average of recent past seasons, yen base.
-    r_budget_raw = float(calculate_weighted_reinforcement_budget(db, club_id, season_id))
+    # 1. Reinforcement (B_i): weighted average of current and recent past seasons, yen base.
+    r_budget_raw = float(
+        calculate_weighted_reinforcement_budget(
+            db, club_id, season_id, month_index=month_index
+        )
+    )
     b_i = r_budget_raw / 1_000_000.0
     
     # 2. Academy (A_cum_i)
@@ -355,8 +365,8 @@ def process_matches_for_turn(db: Session, season_id: UUID, turn_id: UUID, month_
         # -------------------------------
             
         # 2. Calculate TP
-        tp_home = calculate_tp(db, fixture.home_club_id, season_id)
-        tp_away = calculate_tp(db, fixture.away_club_id, season_id)
+        tp_home = calculate_tp(db, fixture.home_club_id, season_id, month_index)
+        tp_away = calculate_tp(db, fixture.away_club_id, season_id, month_index)
         
         # 3. Get Streaks
         streak_home = get_streak(db, fixture.home_club_id, season_id, month_index)

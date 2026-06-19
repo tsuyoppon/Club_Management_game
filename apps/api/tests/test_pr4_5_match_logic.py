@@ -181,7 +181,7 @@ def test_weighted_reinforcement_budget_first_season_zero_budget_stays_zero(db):
     assert budget == Decimal("0")
 
 
-def test_calculate_tp_uses_weighted_past_reinforcement_budget(db):
+def test_calculate_tp_uses_weighted_current_and_past_reinforcement_budget(db):
     game, club = _create_game_club(db)
     season1 = _create_season(db, game, 1)
     season2 = _create_season(db, game, 2)
@@ -194,12 +194,65 @@ def test_calculate_tp_uses_weighted_past_reinforcement_budget(db):
     _create_reinforcement_plan(db, club, current, 300_000_000)
 
     weighted_budget = (
-        Decimal("100000000")
-        + Decimal("0.6") * Decimal("50000000")
-        + Decimal("0.36") * Decimal("10000000")
-    ) / Decimal("1.96")
+        Decimal("300000000")
+        + Decimal("0.6") * Decimal("100000000")
+        + Decimal("0.36") * Decimal("50000000")
+        + Decimal("0.216") * Decimal("10000000")
+    ) / Decimal("2.176")
     expected_b_i = float(weighted_budget) / 1_000_000.0
     expected_tp = 10.0 * math.log(1 + expected_b_i / 500.0)
 
     assert calculate_weighted_reinforcement_budget(db, club.id, current.id) == weighted_budget
     assert calculate_tp(db, club.id, current.id) == pytest.approx(expected_tp)
+
+
+def test_weighted_reinforcement_budget_applies_current_additional_from_january(db):
+    game, club = _create_game_club(db)
+    previous = _create_season(db, game, 1)
+    current = _create_season(db, game, 2)
+
+    _create_reinforcement_plan(db, club, previous, 100_000_000, 20_000_000)
+    _create_reinforcement_plan(db, club, current, 300_000_000, 60_000_000)
+
+    december_budget = (
+        Decimal("300000000")
+        + Decimal("0.6") * Decimal("120000000")
+    ) / Decimal("1.6")
+    january_budget = (
+        Decimal("360000000")
+        + Decimal("0.6") * Decimal("120000000")
+    ) / Decimal("1.6")
+
+    assert (
+        calculate_weighted_reinforcement_budget(db, club.id, current.id, month_index=5)
+        == december_budget
+    )
+    assert (
+        calculate_weighted_reinforcement_budget(db, club.id, current.id, month_index=6)
+        == january_budget
+    )
+
+
+def test_weighted_reinforcement_budget_override_treats_input_as_next_season(db):
+    game, club = _create_game_club(db)
+    previous = _create_season(db, game, 1)
+    current = _create_season(db, game, 2)
+
+    _create_reinforcement_plan(db, club, previous, 100_000_000)
+    _create_reinforcement_plan(db, club, current, 300_000_000)
+
+    weighted_budget = (
+        Decimal("500000000")
+        + Decimal("0.6") * Decimal("300000000")
+        + Decimal("0.36") * Decimal("100000000")
+    ) / Decimal("1.96")
+
+    assert (
+        calculate_weighted_reinforcement_budget(
+            db,
+            club.id,
+            current.id,
+            current_budget_override=Decimal("500000000"),
+        )
+        == weighted_budget
+    )

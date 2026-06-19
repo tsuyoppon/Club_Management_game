@@ -114,7 +114,12 @@ def publish_team_power_december(
     v1Spec Section 4.2:
     - 12月ターン終了時：チーム力指標を再公開（"最新"）
     """
-    team_powers = get_all_clubs_team_power(db, season_id, with_uncertainty=False)
+    team_powers = get_all_clubs_team_power(
+        db,
+        season_id,
+        with_uncertainty=False,
+        month_index=DISCLOSURE_MONTH_DECEMBER,
+    )
     
     disclosed_data = {
         "clubs": team_powers,
