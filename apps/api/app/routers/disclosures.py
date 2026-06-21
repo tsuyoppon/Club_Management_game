@@ -41,6 +41,12 @@ def get_all_disclosures(
         raise HTTPException(status_code=404, detail="Season not found")
     
     disclosures = disclosure_service.get_all_disclosures(db, season_id)
+    if season.season_number <= 1:
+        disclosures = [
+            disclosure
+            for disclosure in disclosures
+            if disclosure.get("disclosure_type") != "financial_summary"
+        ]
     return disclosures
 
 
@@ -62,6 +68,9 @@ def get_disclosure_by_type(
     if not season:
         raise HTTPException(status_code=404, detail="Season not found")
     
+    if disclosure_type == "financial_summary" and season.season_number <= 1:
+        raise HTTPException(status_code=404, detail=f"Disclosure of type '{disclosure_type}' not found")
+
     disclosure = disclosure_service.get_latest_disclosure(db, season_id, disclosure_type)
     if not disclosure and disclosure_type == "financial_summary" and season.season_number > 1:
         previous_season = db.query(Season).filter(

@@ -40,8 +40,8 @@ def publish_financial_summary(
     v1Spec Section 4.3:
     - 12月ターン終了時：全クラブの前期財務サマリー（PL/BS簡易）を公開
     
-    注意: 「前期」= 前シーズン（8月〜7月）のデータ
-    最初のシーズンの場合は前期データがないため、当期の途中データを使用
+    注意: 「前期」= 前シーズン（8月〜7月）のデータ。
+    最初のシーズンでは前期データがないため、財務サマリーは公開しない。
     """
     season = db.query(Season).filter(Season.id == season_id).first()
     if not season:
@@ -52,22 +52,32 @@ def publish_financial_summary(
         and_(
             Season.game_id == season.game_id,
             Season.is_finalized == True,
-            Season.id != season_id,
+            Season.season_number < season.season_number,
         )
-    ).order_by(Season.created_at.desc()).first()
+    ).order_by(Season.season_number.desc(), Season.created_at.desc()).first()
+
+    if not previous_season:
+        # Season1の12月終了後に当期途中の半期財務を公開しない。
+        # 古い仕様で作られた同種の途中開示があれば、再resolve時に消しておく。
+        existing = db.query(SeasonPublicDisclosure).filter(
+            and_(
+                SeasonPublicDisclosure.season_id == season_id,
+                SeasonPublicDisclosure.disclosure_type == "financial_summary",
+                SeasonPublicDisclosure.disclosure_month == DISCLOSURE_MONTH_DECEMBER,
+            )
+        ).first()
+        if existing:
+            db.delete(existing)
+            db.flush()
+        return {}
     
     clubs = db.query(Club).filter(Club.game_id == season.game_id).all()
     
     disclosed_data = []
     for club in clubs:
-        if previous_season:
-            # 前シーズンの財務サマリーを取得
-            summary = _get_season_financial_summary(db, club.id, previous_season.id)
-            summary["fiscal_year"] = previous_season.year_label
-        else:
-            # 前シーズンがない場合、当期の途中データを使用
-            summary = _get_partial_season_summary(db, club.id, season_id)
-            summary["fiscal_year"] = f"{season.year_label} (途中)"
+        # 前シーズンの財務サマリーを取得
+        summary = _get_season_financial_summary(db, club.id, previous_season.id)
+        summary["fiscal_year"] = previous_season.year_label
         
         summary["club_id"] = str(club.id)
         summary["club_name"] = club.name
@@ -462,26 +472,6 @@ def _get_season_financial_summary(
         )
     ).order_by(ClubFinancialSnapshot.month_index).all()
 
-    ending_balance = int(snapshots[-1].closing_balance or 0) if snapshots else 0
-    ledger_totals = _sum_ledger_amounts_by_kind(db, club_id, season_id)
-    return _build_financial_summary(ledger_totals, ending_balance)
-
-
-def _get_partial_season_summary(
-    db: Session,
-    club_id: UUID,
-    season_id: UUID,
-) -> dict:
-    """
-    進行中シーズンの途中財務サマリーを取得
-    """
-    snapshots = db.query(ClubFinancialSnapshot).filter(
-        and_(
-            ClubFinancialSnapshot.club_id == club_id,
-            ClubFinancialSnapshot.season_id == season_id,
-        )
-    ).order_by(ClubFinancialSnapshot.month_index).all()
-    
     ending_balance = int(snapshots[-1].closing_balance or 0) if snapshots else 0
     ledger_totals = _sum_ledger_amounts_by_kind(db, club_id, season_id)
     return _build_financial_summary(ledger_totals, ending_balance)
