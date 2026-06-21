@@ -1053,7 +1053,7 @@ function ConsoleSectionPanel({
   );
 }
 
-function disclosureValue(row: FinancialSummaryClub, keys: string[]) {
+function disclosureValue(row: FinancialSummaryClub, keys: readonly string[]) {
   for (const key of keys) {
     const value = row[key];
     if (typeof value === 'number') return value;
@@ -1072,6 +1072,25 @@ function teamPowerDisclosureLabel(type: string | undefined) {
   if (type === 'team_power_july_carried') return '前シーズン7月公開値';
   return type || 'チーム力開示';
 }
+
+const financialDisclosureRows = [
+  { label: 'スポンサー収入', keys: ['Sponsor_revenue'] },
+  { label: '入場料収入', keys: ['ticket_revenue'] },
+  { label: '配分金', keys: ['distribution_revenue'] },
+  { label: '賞金', keys: ['prize_revenue'] },
+  { label: '物販収入', keys: ['merchandise_revenue'] },
+  { label: '移籍金収入', keys: ['academy_transfer_fee'] },
+  { label: '収入合計', keys: ['total_revenue'] },
+  { label: '強化費', keys: ['reinforcement_cost'] },
+  { label: '試合関連経費', keys: ['match_operation_cost'] },
+  { label: 'トップチーム運営経費', keys: ['team_operation_cost'] },
+  { label: 'アカデミー運営経費', keys: ['academy_cost'] },
+  { label: '物販原価', keys: ['merchandise_cost'] },
+  { label: '人件費', keys: ['staff_cost'] },
+  { label: '費用合計', keys: ['total_expense', 'total expense'] },
+  { label: '純利益', keys: ['net_income'] },
+  { label: '期末残高', keys: ['ending_balance'] },
+] as const;
 
 function TeamPowerPanel({
   disclosure,
@@ -1291,48 +1310,26 @@ function FinancialDisclosurePanel({
         <span>公開月 {seasonMonthLabel(disclosure.disclosure_month)} / {new Date(disclosure.created_at).toLocaleString('ja-JP')}</span>
       </div>
       <div className="disclosureTableWrap">
-        <table>
+        <table className="financialDisclosureTable" style={{ minWidth: Math.max(980, 180 + clubs.length * 150) }}>
           <thead>
             <tr>
-              <th>クラブ</th>
-              <th>スポンサー収入</th>
-              <th>入場料収入</th>
-              <th>配分金</th>
-              <th>賞金</th>
-              <th>物販収入</th>
-              <th>移籍金収入</th>
-              <th>収入合計</th>
-              <th>強化費</th>
-              <th>試合関連経費</th>
-              <th>トップチーム運営経費</th>
-              <th>アカデミー運営経費</th>
-              <th>物販原価</th>
-              <th>人件費</th>
-              <th>費用合計</th>
-              <th>純利益</th>
-              <th>期末残高</th>
+              <th>項目</th>
+              {clubs.map((club) => (
+                <th key={club.club_id} className={club.club_id === selfClubId ? 'selfColumn' : ''}>
+                  {club.club_name}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {clubs.map((club) => (
-              <tr key={club.club_id} className={club.club_id === selfClubId ? 'selfRow' : ''}>
-                <td>{club.club_name}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['Sponsor_revenue']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['ticket_revenue']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['distribution_revenue']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['prize_revenue']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['merchandise_revenue']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['academy_transfer_fee']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['total_revenue']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['reinforcement_cost']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['match_operation_cost']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['team_operation_cost']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['academy_cost']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['merchandise_cost']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['staff_cost']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['total_expense', 'total expense']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['net_income']))}</td>
-                <td className="numeric">{amount(disclosureValue(club, ['ending_balance']))}</td>
+            {financialDisclosureRows.map((row) => (
+              <tr key={row.label}>
+                <th scope="row">{row.label}</th>
+                {clubs.map((club) => (
+                  <td key={club.club_id} className={club.club_id === selfClubId ? 'numeric selfColumn' : 'numeric'}>
+                    {amount(disclosureValue(club, row.keys))}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>

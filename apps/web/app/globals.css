@@ -442,6 +442,46 @@ h3 {
   min-width: 980px;
 }
 
+.financialDisclosureTable {
+  table-layout: fixed;
+}
+
+.financialDisclosureTable th:first-child,
+.financialDisclosureTable td:first-child {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  left: 0;
+  min-width: 180px;
+  position: sticky;
+  width: 180px;
+  z-index: 2;
+}
+
+.financialDisclosureTable thead th:first-child {
+  z-index: 3;
+}
+
+.financialDisclosureTable thead th:not(:first-child),
+.financialDisclosureTable td:not(:first-child) {
+  min-width: 150px;
+  width: 150px;
+}
+
+.financialDisclosureTable thead th {
+  white-space: normal;
+  word-break: keep-all;
+}
+
+.financialDisclosureTable tbody th {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.financialDisclosureTable .selfColumn {
+  background: rgba(88, 184, 199, .12);
+  color: #c8eef4;
+}
+
 .compactDisclosureTable table {
   min-width: 520px;
 }
