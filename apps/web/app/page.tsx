@@ -589,6 +589,10 @@ export default function Home() {
           onAck={ackTurn}
           onCommit={commitDecision}
           onFormValue={(key, value) => {
+            if (key === 'sales_allocation_new' && value.trim() !== '') {
+              const numeric = Number(value);
+              if (Number.isNaN(numeric) || numeric < 0 || numeric > 1) return;
+            }
             setFormValues((current) => ({ ...current, [key]: value }));
             setDraftDirty(true);
           }}
@@ -843,6 +847,7 @@ function Console({
                           <input
                             inputMode="decimal"
                             min="0"
+                            max={input.key === 'sales_allocation_new' ? '1' : undefined}
                             step={input.key === 'sales_allocation_new' ? '0.01' : '100000'}
                             type="number"
                             value={formValues[input.key] || ''}
