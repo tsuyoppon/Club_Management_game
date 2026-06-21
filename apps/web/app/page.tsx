@@ -46,6 +46,11 @@ type PlayState = {
     club_id: string;
     club_name: string;
     played: number;
+    won: number;
+    drawn: number;
+    lost: number;
+    gf: number;
+    ga: number;
     gd: number;
     points: number;
   }>;
@@ -1124,22 +1129,29 @@ function StandingsPanel({
     <section className="stackedPanel">
       <section className="subSection">
         <h3>現シーズン順位表</h3>
-        <table>
-          <thead>
-            <tr><th>順位</th><th>クラブ</th><th>試合</th><th>得失点</th><th>勝点</th></tr>
-          </thead>
-          <tbody>
-            {standings.map((row) => (
-              <tr key={row.club_id}>
-                <td>{row.rank}</td>
-                <td>{row.club_name}</td>
-                <td>{row.played}</td>
-                <td>{row.gd}</td>
-                <td>{row.points}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="wideTableWrap">
+          <table>
+            <thead>
+              <tr><th>順位</th><th>クラブ</th><th>試合</th><th>勝</th><th>分</th><th>敗</th><th>得点</th><th>失点</th><th>得失点</th><th>勝点</th></tr>
+            </thead>
+            <tbody>
+              {standings.map((row) => (
+                <tr key={row.club_id}>
+                  <td>{row.rank}</td>
+                  <td>{row.club_name}</td>
+                  <td>{row.played}</td>
+                  <td>{row.won}</td>
+                  <td>{row.drawn}</td>
+                  <td>{row.lost}</td>
+                  <td>{row.gf}</td>
+                  <td>{row.ga}</td>
+                  <td>{row.gd}</td>
+                  <td>{row.points}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
       <FinalStandingsPanel gameId={gameId} />
     </section>
@@ -1212,27 +1224,29 @@ function FinalStandingsPanel({ gameId }: { gameId: string | null }) {
         <p className="muted">対象: Season {selectedSeason.season_number} / {selectedSeason.year_label}</p>
       ) : null}
       {visibleRows.length ? (
-        <table>
-          <thead>
-            <tr><th>順位</th><th>クラブ</th><th>試合</th><th>勝</th><th>分</th><th>敗</th><th>得点</th><th>失点</th><th>得失点</th><th>勝点</th></tr>
-          </thead>
-          <tbody>
-            {visibleRows.map((row) => (
-              <tr key={row.club_id}>
-                <td>{row.rank}</td>
-                <td>{row.club_name}</td>
-                <td>{row.played}</td>
-                <td>{row.won}</td>
-                <td>{row.drawn}</td>
-                <td>{row.lost}</td>
-                <td>{row.gf}</td>
-                <td>{row.ga}</td>
-                <td>{row.gd}</td>
-                <td>{row.points}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="wideTableWrap">
+          <table>
+            <thead>
+              <tr><th>順位</th><th>クラブ</th><th>試合</th><th>勝</th><th>分</th><th>敗</th><th>得点</th><th>失点</th><th>得失点</th><th>勝点</th></tr>
+            </thead>
+            <tbody>
+              {visibleRows.map((row) => (
+                <tr key={row.club_id}>
+                  <td>{row.rank}</td>
+                  <td>{row.club_name}</td>
+                  <td>{row.played}</td>
+                  <td>{row.won}</td>
+                  <td>{row.drawn}</td>
+                  <td>{row.lost}</td>
+                  <td>{row.gf}</td>
+                  <td>{row.ga}</td>
+                  <td>{row.gd}</td>
+                  <td>{row.points}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
     </section>
   );
