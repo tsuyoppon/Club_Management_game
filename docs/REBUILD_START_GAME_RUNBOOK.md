@@ -27,7 +27,43 @@ DB データも破棄して完全に最初から検証する場合のみ、以�
 docker compose --profile web down -v
 ```
 
+`down -v` は PostgreSQL の Docker volume も削除するため、過去のゲーム、ルーム、Web セッションはすべて消える。完全にまっさらな検証環境が必要な場合は、通常の `down` ではなく必ず `down -v` を使う。
+
 Codex 環境では Docker daemon への接続がサンドボックスで拒否されることがある。その場合は、同じ `docker compose` コマンドを権限付きで再実行する。
+
+## 完全初期化して起動する場合
+
+外部ブラウザで `http://localhost:3000` を開いたときに前回のゲーム状態が復元される場合、原因は主に以下のどちらか。
+
+- Docker の DB volume が残っており、サーバー側に過去の `games` / `game_rooms` / `web_sessions` が残っている。
+- ブラウザ側に以前の `localhost` Cookie や画面キャッシュが残っている。
+
+完全にまっさらな検証環境にするには、DB volume を削除してから起動し直す。
+
+```bash
+docker compose --profile web down -v
+docker compose --profile web up -d --build
+docker compose exec -T api alembic upgrade head
+```
+
+起動後、サーバー側が空になっていることを確認する。
+
+```bash
+docker compose exec -T db psql -U postgres -d club_game -c \
+  "select count(*) as games from games;
+   select count(*) as rooms from game_rooms;
+   select count(*) as web_sessions from web_sessions;"
+```
+
+期待値:
+
+```text
+games        0
+rooms        0
+web_sessions 0
+```
+
+`web_sessions` が `0` であれば、古いブラウザ Cookie が残っていてもサーバー側のセッションには復元されない。画面表示だけが古く見える場合は、ブラウザの強制リロード、サイトデータ削除、またはプライベートウィンドウで確認する。
 
 ## 最新状態で再ビルドして起動
 
@@ -244,3 +280,10 @@ curl -sS \
 - ホストと端末が同じ LAN にいるか確認する。
 - `ipconfig getifaddr en0` の IP が現在のネットワークのものか確認する。
 - macOS ファイアウォール、ルーター、セキュリティソフトが 3000 番ポートを遮断していないか確認する。
+
+外部ブラウザで前回のゲーム状態が残っている:
+
+- DB を残した再起動では、前回のゲーム状態がサーバー側に残る。完全初期化が必要なら `docker compose --profile web down -v` からやり直す。
+- API で作成した新規ゲームは `/tmp/club-game-*.cookies` の Cookie に紐づくため、外部ブラウザの既存 Cookie とは別セッションになる。
+- `down -v` 後も表示が残る場合は、ブラウザが古い `localhost` の画面状態を表示している可能性がある。強制リロード、`localhost` のサイトデータ削除、プライベートウィンドウで確認する。
+- サーバー側が空かどうかは `games`、`game_rooms`、`web_sessions` の件数がすべて `0` かで判断する。
