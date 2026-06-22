@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import delete as sqlalchemy_delete
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -113,6 +114,10 @@ class HostTurnAction(BaseModel):
     action: str
 
 
+class DeleteGameRequest(BaseModel):
+    confirm: str = Field(..., min_length=1)
+
+
 class WebStaffPlan(BaseModel):
     role: str
     count: int = Field(..., ge=1)
@@ -145,6 +150,11 @@ def _room_for_game_or_404(db: Session, game_id: UUID) -> models.GameRoom:
     return room
 
 
+def _ensure_game_active(room: models.GameRoom):
+    if room.status == "archived" or room.game.status == models.GameStatus.archived:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Game is archived")
+
+
 def _room_member(db: Session, room: models.GameRoom, user: models.User) -> models.GameRoomMember:
     member = (
         db.query(models.GameRoomMember)
@@ -159,6 +169,13 @@ def _room_member(db: Session, room: models.GameRoom, user: models.User) -> model
 def _require_host(room: models.GameRoom, user: models.User):
     if room.host_user_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Host role required")
+
+
+def _require_host_for_game(db: Session, game_id: UUID, user: models.User) -> models.GameRoom:
+    room = _room_for_game_or_404(db, game_id)
+    _room_member(db, room, user)
+    _require_host(room, user)
+    return room
 
 
 def _set_browser_session(response: Response, db: Session, user: models.User):
@@ -231,6 +248,85 @@ def _serialize_room(db: Session, room: models.GameRoom, viewer: models.User) -> 
             for member in members
         ],
     }
+
+
+def _count_query(query) -> int:
+    return int(query.count())
+
+
+def _game_delete_counts(db: Session, game: models.Game, exclude_user_id: Optional[UUID] = None) -> dict[str, int]:
+    club_ids = [club.id for club in db.query(models.Club.id).filter(models.Club.game_id == game.id).all()]
+    season_ids = [season.id for season in db.query(models.Season.id).filter(models.Season.game_id == game.id).all()]
+    turn_ids = [turn.id for turn in db.query(models.Turn.id).filter(models.Turn.season_id.in_(season_ids)).all()] if season_ids else []
+    fixture_ids = [fixture.id for fixture in db.query(models.Fixture.id).filter(models.Fixture.season_id.in_(season_ids)).all()] if season_ids else []
+    room = db.query(models.GameRoom).filter(models.GameRoom.game_id == game.id).first()
+
+    counts = {
+        "clubs": len(club_ids),
+        "memberships": _count_query(db.query(models.Membership).filter(models.Membership.game_id == game.id)),
+        "seasons": len(season_ids),
+        "turns": len(turn_ids),
+        "decisions": _count_query(db.query(models.TurnDecision).filter(models.TurnDecision.turn_id.in_(turn_ids))) if turn_ids else 0,
+        "acks": _count_query(db.query(models.TurnAck).filter(models.TurnAck.turn_id.in_(turn_ids))) if turn_ids else 0,
+        "drafts": _count_query(db.query(models.WebTurnDraft).filter(models.WebTurnDraft.turn_id.in_(turn_ids))) if turn_ids else 0,
+        "fixtures": len(fixture_ids),
+        "matches": _count_query(db.query(models.Match).filter(models.Match.fixture_id.in_(fixture_ids))) if fixture_ids else 0,
+        "financial_profiles": _count_query(db.query(models.ClubFinancialProfile).filter(models.ClubFinancialProfile.club_id.in_(club_ids))) if club_ids else 0,
+        "financial_states": _count_query(db.query(models.ClubFinancialState).filter(models.ClubFinancialState.club_id.in_(club_ids))) if club_ids else 0,
+        "ledgers": _count_query(db.query(models.ClubFinancialLedger).filter(models.ClubFinancialLedger.club_id.in_(club_ids))) if club_ids else 0,
+        "snapshots": _count_query(db.query(models.ClubFinancialSnapshot).filter(models.ClubFinancialSnapshot.season_id.in_(season_ids))) if season_ids else 0,
+        "sponsor_states": _count_query(db.query(models.ClubSponsorState).filter(models.ClubSponsorState.season_id.in_(season_ids))) if season_ids else 0,
+        "academy_states": _count_query(db.query(models.ClubAcademy).filter(models.ClubAcademy.season_id.in_(season_ids))) if season_ids else 0,
+        "reinforcement_plans": _count_query(db.query(models.ClubReinforcementPlan).filter(models.ClubReinforcementPlan.season_id.in_(season_ids))) if season_ids else 0,
+        "staffs": _count_query(db.query(models.ClubStaff).filter(models.ClubStaff.club_id.in_(club_ids))) if club_ids else 0,
+        "fanbase_states": _count_query(db.query(models.ClubFanbaseState).filter(models.ClubFanbaseState.season_id.in_(season_ids))) if season_ids else 0,
+        "sales_allocations": _count_query(db.query(models.ClubSalesAllocation).filter(models.ClubSalesAllocation.season_id.in_(season_ids))) if season_ids else 0,
+        "point_penalties": _count_query(db.query(models.ClubPointPenalty).filter(models.ClubPointPenalty.season_id.in_(season_ids))) if season_ids else 0,
+        "bankruptcy_states": _count_query(db.query(models.ClubBankruptcyState).filter(models.ClubBankruptcyState.season_id.in_(season_ids))) if season_ids else 0,
+        "public_disclosures": _count_query(db.query(models.SeasonPublicDisclosure).filter(models.SeasonPublicDisclosure.season_id.in_(season_ids))) if season_ids else 0,
+        "final_results": _count_query(db.query(models.GameFinalResult).filter(models.GameFinalResult.game_id == game.id)),
+        "rooms": 1 if room else 0,
+        "room_members": _count_query(db.query(models.GameRoomMember).filter(models.GameRoomMember.room_id == room.id)) if room else 0,
+    }
+
+    cleanup_user_ids = _guest_user_cleanup_candidates(db, game, room, exclude_user_id)
+    counts["guest_users_to_cleanup"] = len(cleanup_user_ids)
+    counts["sessions_to_cleanup"] = (
+        _count_query(db.query(models.WebSession).filter(models.WebSession.user_id.in_(cleanup_user_ids)))
+        if cleanup_user_ids else 0
+    )
+    return counts
+
+
+def _guest_user_cleanup_candidates(
+    db: Session,
+    game: models.Game,
+    room: Optional[models.GameRoom],
+    exclude_user_id: Optional[UUID] = None,
+) -> list[UUID]:
+    if not room:
+        return []
+    members = db.query(models.GameRoomMember).filter(models.GameRoomMember.room_id == room.id).all()
+    candidates: list[UUID] = []
+    for member in members:
+        user = member.user
+        if exclude_user_id and user.id == exclude_user_id:
+            continue
+        if user.email is not None:
+            continue
+        other_room_memberships = (
+            db.query(models.GameRoomMember)
+            .filter(models.GameRoomMember.user_id == user.id, models.GameRoomMember.room_id != room.id)
+            .count()
+        )
+        other_game_memberships = (
+            db.query(models.Membership)
+            .filter(models.Membership.user_id == user.id, models.Membership.game_id != game.id)
+            .count()
+        )
+        if other_room_memberships == 0 and other_game_memberships == 0:
+            candidates.append(user.id)
+    return candidates
 
 
 def _finance_kind_key(kind: str) -> str | None:
@@ -514,6 +610,58 @@ def current_browser_user(user: models.User = Depends(get_web_current_user), db: 
     }
 
 
+@router.get("/rooms/recent")
+def recent_rooms(
+    include_archived: bool = False,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    memberships = (
+        db.query(models.GameRoomMember)
+        .join(models.GameRoom, models.GameRoom.id == models.GameRoomMember.room_id)
+        .join(models.Game, models.Game.id == models.GameRoom.game_id)
+        .filter(models.GameRoomMember.user_id == user.id)
+        .order_by(models.GameRoomMember.updated_at.desc(), models.GameRoom.created_at.desc())
+        .all()
+    )
+    rooms = []
+    for membership in memberships:
+        room = membership.room
+        if (
+            not include_archived
+            and (room.status == "archived" or room.game.status == models.GameStatus.archived)
+        ):
+            continue
+        if include_archived and room.host_user_id != user.id:
+            continue
+
+        season = _latest_running_season(db, str(room.game_id))
+        turn = _current_turn(db, season)
+        club = membership.club
+        rooms.append(
+            {
+                "room_id": str(room.id),
+                "game_id": str(room.game_id),
+                "room_name": room.game.name,
+                "game_status": room.game.status.value,
+                "room_status": room.status,
+                "invite_code": room.invite_code,
+                "is_host": room.host_user_id == user.id,
+                "club_id": str(club.id) if club else None,
+                "club_name": club.name if club else None,
+                "season": {
+                    "id": str(season.id),
+                    "number": season.season_number,
+                    "year_label": season.year_label,
+                    "status": season.status.value,
+                } if season else None,
+                "turn": _turn_label(turn),
+                "last_seen_at": membership.updated_at.isoformat() if membership.updated_at else None,
+            }
+        )
+    return {"rooms": rooms}
+
+
 @router.get("/rooms/{room_id}")
 def get_room(
     room_id: UUID,
@@ -525,6 +673,72 @@ def get_room(
     return _serialize_room(db, room, user)
 
 
+@router.post("/games/{game_id}/archive")
+def archive_game(
+    game_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _require_host_for_game(db, game_id, user)
+    room.game.status = models.GameStatus.archived
+    room.status = "archived"
+    db.commit()
+    return {
+        "game_id": str(game_id),
+        "status": room.game.status.value,
+        "room_status": room.status,
+    }
+
+
+@router.get("/games/{game_id}/delete-preview")
+def delete_game_preview(
+    game_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _require_host_for_game(db, game_id, user)
+    return {
+        "game_id": str(game_id),
+        "room_name": room.game.name,
+        "invite_code": room.invite_code,
+        "game_status": room.game.status.value,
+        "room_status": room.status,
+        "counts": _game_delete_counts(db, room.game, user.id),
+        "confirm_options": [room.game.name, room.invite_code],
+    }
+
+
+@router.delete("/games/{game_id}")
+def delete_game(
+    game_id: UUID,
+    payload: DeleteGameRequest,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _require_host_for_game(db, game_id, user)
+    game = room.game
+    if game.status != models.GameStatus.archived or room.status != "archived":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Archive the game before deleting it")
+    if payload.confirm not in {game.name, room.invite_code}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Confirmation did not match")
+
+    counts = _game_delete_counts(db, game, user.id)
+    cleanup_user_ids = _guest_user_cleanup_candidates(db, game, room, user.id)
+    db.execute(sqlalchemy_delete(models.Game).where(models.Game.id == game.id))
+    db.flush()
+    for user_id in cleanup_user_ids:
+        remaining_room_memberships = (
+            db.query(models.GameRoomMember).filter(models.GameRoomMember.user_id == user_id).count()
+        )
+        remaining_game_memberships = (
+            db.query(models.Membership).filter(models.Membership.user_id == user_id).count()
+        )
+        if remaining_room_memberships == 0 and remaining_game_memberships == 0:
+            db.execute(sqlalchemy_delete(models.User).where(models.User.id == user_id))
+    db.commit()
+    return {"deleted": True, "game_id": str(game_id), "counts": counts}
+
+
 @router.post("/rooms/{room_id}/clubs/{club_id}/claim")
 def claim_club(
     room_id: UUID,
@@ -533,6 +747,7 @@ def claim_club(
     db: Session = Depends(get_db),
 ):
     room = _room_or_404(db, room_id)
+    _ensure_game_active(room)
     member = _room_member(db, room, user)
     if room.status != "lobby":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Club claims close after start")
@@ -578,6 +793,7 @@ def set_ready(
     db: Session = Depends(get_db),
 ):
     room = _room_or_404(db, room_id)
+    _ensure_game_active(room)
     member = _room_member(db, room, user)
     if room.status != "lobby":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Room already started")
@@ -596,6 +812,7 @@ def start_room(
     db: Session = Depends(get_db),
 ):
     room = _room_or_404(db, room_id)
+    _ensure_game_active(room)
     _room_member(db, room, user)
     _require_host(room, user)
     if room.status != "lobby":
@@ -623,6 +840,7 @@ def play_state(
     db: Session = Depends(get_db),
 ):
     room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
     member = _room_member(db, room, user)
     season = _latest_running_season(db, str(game_id))
     turn = _current_turn(db, season)
@@ -684,6 +902,7 @@ def turn_console(
     db: Session = Depends(get_db),
 ):
     room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
     _web_club_access(db, room, user, club_id)
     season = _latest_running_season(db, str(game_id))
     turn = _current_turn(db, season)
@@ -890,6 +1109,7 @@ def web_finance_ledger(
     db: Session = Depends(get_db),
 ):
     room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
     _web_club_access(db, room, user, club_id)
 
     season = db.query(models.Season).filter(models.Season.id == season_id).first()
@@ -948,6 +1168,7 @@ def save_turn_draft(
     db: Session = Depends(get_db),
 ):
     room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
     _web_club_access(db, room, user, club_id)
     season = _latest_running_season(db, str(game_id))
     turn = _current_turn(db, season)
@@ -1004,6 +1225,7 @@ def save_web_budget_event(
     db: Session = Depends(get_db),
 ):
     room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
     _web_club_access(db, room, user, club_id)
     season = _latest_running_season(db, str(game_id))
     turn = _current_turn(db, season)
@@ -1057,6 +1279,7 @@ def save_web_staff_plan(
     db: Session = Depends(get_db),
 ):
     room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
     _web_club_access(db, room, user, club_id)
     season = _latest_running_season(db, str(game_id))
     turn = _current_turn(db, season)
@@ -1090,6 +1313,7 @@ def save_web_academy_budget(
     db: Session = Depends(get_db),
 ):
     room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
     _web_club_access(db, room, user, club_id)
     season = _latest_running_season(db, str(game_id))
     turn = _current_turn(db, season)
@@ -1110,6 +1334,7 @@ def commit_turn_draft(
     db: Session = Depends(get_db),
 ):
     room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
     _web_club_access(db, room, user, club_id)
     season = _latest_running_season(db, str(game_id))
     turn = _current_turn(db, season)
@@ -1149,6 +1374,7 @@ def host_uncommit_turn(
     db: Session = Depends(get_db),
 ):
     room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
     _room_member(db, room, user)
     _require_host(room, user)
     season = _latest_running_season(db, str(game_id))
@@ -1182,6 +1408,7 @@ def ack_current_turn(
     db: Session = Depends(get_db),
 ):
     room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
     _web_club_access(db, room, user, club_id)
     season = _latest_running_season(db, str(game_id))
     turn = _current_turn(db, season)
@@ -1198,6 +1425,7 @@ def host_turn_action(
     db: Session = Depends(get_db),
 ):
     room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
     _room_member(db, room, user)
     _require_host(room, user)
     season = _latest_running_season(db, str(game_id))

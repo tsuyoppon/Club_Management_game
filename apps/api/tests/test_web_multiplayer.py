@@ -157,6 +157,84 @@ def test_browser_room_start_and_turn_console():
     assert committed.status_code == 200
 
 
+def test_recent_rooms_restore_candidates_and_archive_visibility():
+    host = TestClient(app)
+    player = TestClient(app)
+    room, host_club, player_club = _ready_two_player_room(host, player)
+
+    host_recent = host.get("/api/rooms/recent")
+    assert host_recent.status_code == 200
+    host_room = host_recent.json()["rooms"][0]
+    assert host_room["room_id"] == room["id"]
+    assert host_room["game_id"] == room["game_id"]
+    assert host_room["room_name"] == "Browser League"
+    assert host_room["is_host"] is True
+    assert host_room["club_id"] == host_club["id"]
+
+    player_recent = player.get("/api/rooms/recent")
+    assert player_recent.status_code == 200
+    player_room = player_recent.json()["rooms"][0]
+    assert player_room["is_host"] is False
+    assert player_room["club_id"] == player_club["id"]
+
+    forbidden_archive = player.post(f"/api/games/{room['game_id']}/archive")
+    assert forbidden_archive.status_code == 403
+
+    archived = host.post(f"/api/games/{room['game_id']}/archive")
+    assert archived.status_code == 200
+    assert archived.json()["status"] == "archived"
+    assert archived.json()["room_status"] == "archived"
+
+    assert host.get("/api/rooms/recent").json()["rooms"] == []
+    host_archived = host.get("/api/rooms/recent?include_archived=true")
+    assert host_archived.status_code == 200
+    assert host_archived.json()["rooms"][0]["game_status"] == "archived"
+
+    player_archived = player.get("/api/rooms/recent?include_archived=true")
+    assert player_archived.status_code == 200
+    assert player_archived.json()["rooms"] == []
+
+
+def test_archived_game_requires_confirmation_before_delete(db_session):
+    host = TestClient(app)
+    player = TestClient(app)
+    room, _, player_club = _ready_two_player_room(host, player)
+    assert host.post(f"/api/rooms/{room['id']}/start", json={"year_label": "2026"}).status_code == 200
+
+    saved = player.put(
+        f"/api/games/{room['game_id']}/clubs/{player_club['id']}/turn-draft",
+        json={"payload": {"sales_expense": 1000000}},
+    )
+    assert saved.status_code == 200
+
+    active_delete = host.request("DELETE", f"/api/games/{room['game_id']}", json={"confirm": room["invite_code"]})
+    assert active_delete.status_code == 409
+
+    assert host.post(f"/api/games/{room['game_id']}/archive").status_code == 200
+    archived_play_state = player.get(f"/api/games/{room['game_id']}/play-state")
+    assert archived_play_state.status_code == 409
+
+    preview = host.get(f"/api/games/{room['game_id']}/delete-preview")
+    assert preview.status_code == 200
+    counts = preview.json()["counts"]
+    assert counts["clubs"] == 2
+    assert counts["seasons"] == 1
+    assert counts["turns"] == 12
+    assert counts["drafts"] == 1
+
+    bad_confirm = host.request("DELETE", f"/api/games/{room['game_id']}", json={"confirm": "wrong"})
+    assert bad_confirm.status_code == 400
+
+    deleted = host.request("DELETE", f"/api/games/{room['game_id']}", json={"confirm": room["invite_code"]})
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+
+    assert db_session.query(models.Game).filter(models.Game.id == room["game_id"]).first() is None
+    assert db_session.query(models.Club).count() == 0
+    assert db_session.query(models.Season).count() == 0
+    assert db_session.query(models.WebTurnDraft).count() == 0
+
+
 def test_host_can_uncommit_before_lock_for_corrections():
     host = TestClient(app)
     player = TestClient(app)

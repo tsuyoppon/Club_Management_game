@@ -33,11 +33,17 @@ Out of scope for V1:
 | See other club private input and finance | no | no | no |
 | Open, lock, resolve, advance turns | yes | no | no |
 | Ack resolved claimed club turn | only own club | only own club | no |
+| Resume own joined room from saved browser session | yes | yes | no |
+| Archive a game | yes | no | no |
+| Permanently delete an archived game | yes | no | no |
 
 V1 browser identity is a guest display name bound to an opaque session token in
 an HttpOnly cookie. The database stores only the token hash, expiry, last-seen
 time, user relation, room membership, club claim, ready status, and Web drafts.
 CLI `X-User-Email` identity is intentionally separate from this browser flow.
+The same player can resume only while that browser cookie remains valid. A
+different browser/device or a deleted/expired cookie cannot prove the same guest
+identity in V1.
 
 ## Web Flow
 
@@ -50,6 +56,9 @@ CLI `X-User-Email` identity is intentionally separate from this browser flow.
 6. Players edit only fields enabled for the current turn. Drafts autosave.
 7. Players commit. Host locks and resolves after all clubs commit.
 8. Players acknowledge resolved results. Host advances after all clubs ack.
+9. Returning users choose a saved active/lobby room from the resume list.
+10. Hosts can archive games, then permanently delete archived game data after
+    confirming the invite code.
 
 ## CLI To Web Input Mapping
 
@@ -105,6 +114,8 @@ Local:
 - Web calls relative `/api` URLs.
 - Next rewrites `/api` to `API_PROXY_ORIGIN` for development.
 - PostgreSQL and API migrations must be running before browser turn flow tests.
+- Preserve the PostgreSQL volume to preserve game progress. `docker compose down`
+  keeps the named volume, while `docker compose down -v` deletes saved game data.
 
 Limited shared server:
 
@@ -113,6 +124,7 @@ Limited shared server:
   reverse proxy.
 - Set secure cookie policy according to TLS termination.
 - Persist PostgreSQL data; do not depend on app process memory for room state.
+- Back up PostgreSQL before destructive migrations or bulk deletion.
 
 Future public environment:
 

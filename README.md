@@ -31,6 +31,11 @@ the role-aware console after each club has committed input and acknowledged resu
 The V1 scope, role matrix, environment notes, and playtest checklist are in
 [`docs/WEB_MULTIPLAYER_V1.md`](docs/WEB_MULTIPLAYER_V1.md).
 
+Game progress is stored in PostgreSQL, not in the API/Web process memory. Rebuilds
+and restarts keep progress as long as the `pgdata` Docker volume and the same
+`DATABASE_URL` are preserved. Do not use `docker compose down -v` unless you intend
+to delete saved game data.
+
 ## Development
 - Run Alembic migrations (inside the API container):
   ```bash

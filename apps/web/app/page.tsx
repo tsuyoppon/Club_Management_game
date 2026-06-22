@@ -5,7 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 're
 type Room = {
   id: string;
   game_id: string;
-  status: 'lobby' | 'active';
+  status: 'lobby' | 'active' | 'archived';
   invite_code: string;
   is_host: boolean;
   self: { user_id: string; display_name: string; club_id: string | null; ready: boolean };
@@ -25,6 +25,31 @@ type Room = {
     ready: boolean;
     is_host: boolean;
   }>;
+};
+
+type RecentRoom = {
+  room_id: string;
+  game_id: string;
+  room_name: string;
+  game_status: string;
+  room_status: string;
+  invite_code: string;
+  is_host: boolean;
+  club_id: string | null;
+  club_name: string | null;
+  season: { id: string; number: number; year_label: string; status: string } | null;
+  turn: PlayState['turn'];
+  last_seen_at: string | null;
+};
+
+type DeletePreview = {
+  game_id: string;
+  room_name: string;
+  invite_code: string;
+  game_status: string;
+  room_status: string;
+  counts: Record<string, number>;
+  confirm_options: string[];
 };
 
 type PlayState = {
@@ -282,6 +307,8 @@ export default function Home() {
   const [consoleData, setConsoleData] = useState<ConsoleData | null>(null);
   const [financialDisclosure, setFinancialDisclosure] = useState<PublicDisclosure<FinancialSummaryClub> | null>(null);
   const [teamPowerDisclosure, setTeamPowerDisclosure] = useState<PublicDisclosure<TeamPowerClub> | null>(null);
+  const [recentRooms, setRecentRooms] = useState<RecentRoom[]>([]);
+  const [archivedRooms, setArchivedRooms] = useState<RecentRoom[]>([]);
   const [stage, setStage] = useState<'entry' | 'lobby' | 'console'>('entry');
   const [displayName, setDisplayName] = useState('');
   const [roomName, setRoomName] = useState('研修リーグ');
@@ -307,6 +334,17 @@ export default function Home() {
     setRoom(nextRoom);
     setStage(nextRoom.status === 'active' ? 'console' : 'lobby');
     return nextRoom;
+  }, []);
+
+  const loadRecentRooms = useCallback(async () => {
+    const active = await api<{ rooms: RecentRoom[] }>('/api/rooms/recent');
+    setRecentRooms(active.rooms);
+    try {
+      const archived = await api<{ rooms: RecentRoom[] }>('/api/rooms/recent?include_archived=true');
+      setArchivedRooms(archived.rooms);
+    } catch {
+      setArchivedRooms([]);
+    }
   }, []);
 
   const loadFinancialDisclosure = useCallback(async (seasonId: string) => {
@@ -346,14 +384,11 @@ export default function Home() {
   }, [loadFinancialDisclosure, loadTeamPowerDisclosure]);
 
   useEffect(() => {
-    api<{ rooms: Array<{ id: string; status: string }> }>('/api/me')
-      .then((me) => {
-        const lastRoom = me.rooms[me.rooms.length - 1];
-        if (lastRoom) return loadRoom(lastRoom.id);
-        return null;
-      })
-      .catch(() => undefined);
-  }, [loadRoom]);
+    const timer = window.setTimeout(() => {
+      loadRecentRooms().catch(() => undefined);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadRecentRooms]);
 
   useEffect(() => {
     if (!room || stage !== 'lobby') return undefined;
@@ -529,6 +564,49 @@ export default function Home() {
     );
   }
 
+  function clearCurrentGame() {
+    setRoom(null);
+    setPlay(null);
+    setConsoleData(null);
+    setFinancialDisclosure(null);
+    setTeamPowerDisclosure(null);
+    setFormValues({});
+    setDraftDirty(false);
+    setDraftState('未保存');
+    restoredTurnId.current = null;
+    setStage('entry');
+  }
+
+  async function archiveGame(target: RecentRoom | null = null) {
+    const gameId = target?.game_id || room?.game_id;
+    const roomName = target?.room_name || room?.invite_code || '';
+    if (!gameId) return;
+    if (!window.confirm(`${roomName} をアーカイブします。通常の再開一覧から非表示になります。`)) return;
+    await report(
+      api(`/api/games/${gameId}/archive`, { method: 'POST' }).then(async () => {
+        clearCurrentGame();
+        await loadRecentRooms();
+      }),
+    );
+  }
+
+  async function deleteArchivedGame(target: RecentRoom) {
+    await report(
+      api<DeletePreview>(`/api/games/${target.game_id}/delete-preview`).then(async (preview) => {
+        const confirmText = window.prompt(
+          `${preview.room_name} を完全削除します。復元できません。削除するには招待コード ${preview.invite_code} を入力してください。`,
+        );
+        if (!confirmText) return;
+        await api(`/api/games/${target.game_id}`, {
+          method: 'DELETE',
+          body: JSON.stringify({ confirm: confirmText }),
+        });
+        clearCurrentGame();
+        await loadRecentRooms();
+      }),
+    );
+  }
+
   return (
     <main className="shell">
       <header className="masthead">
@@ -546,16 +624,21 @@ export default function Home() {
       {error ? <p className="errorline">{error}</p> : null}
       {stage === 'entry' ? (
         <Entry
+          archivedRooms={archivedRooms}
           busy={busy}
           clubNames={clubNames}
           displayName={displayName}
           inviteCode={inviteCode}
+          recentRooms={recentRooms}
           roomName={roomName}
+          onArchive={archiveGame}
           onClubNames={setClubNames}
           onCreate={createRoom}
+          onDeleteArchived={deleteArchivedGame}
           onDisplayName={setDisplayName}
           onInviteCode={setInviteCode}
           onJoin={joinRoom}
+          onResume={(roomId) => report(loadRoom(roomId))}
           onRoomName={setRoomName}
         />
       ) : null}
@@ -598,6 +681,7 @@ export default function Home() {
           }}
           onAcademyBudget={saveAcademyBudget}
           onBudgetEvent={saveBudgetEvent}
+          onArchive={() => archiveGame()}
           onHostAction={hostAction}
           onHostUncommit={hostUncommit}
           onStaffPlan={saveStaffPlan}
@@ -608,32 +692,93 @@ export default function Home() {
 }
 
 function Entry({
+  archivedRooms,
   busy,
   clubNames,
   displayName,
   inviteCode,
+  recentRooms,
   roomName,
+  onArchive,
   onClubNames,
   onCreate,
+  onDeleteArchived,
   onDisplayName,
   onInviteCode,
   onJoin,
+  onResume,
   onRoomName,
 }: {
+  archivedRooms: RecentRoom[];
   busy: boolean;
   clubNames: string[];
   displayName: string;
   inviteCode: string;
+  recentRooms: RecentRoom[];
   roomName: string;
+  onArchive: (room: RecentRoom) => void;
   onClubNames: (value: string[]) => void;
   onCreate: (event: FormEvent) => void;
+  onDeleteArchived: (room: RecentRoom) => void;
   onDisplayName: (value: string) => void;
   onInviteCode: (value: string) => void;
   onJoin: (event: FormEvent) => void;
+  onResume: (roomId: string) => void;
   onRoomName: (value: string) => void;
 }) {
   return (
-    <section className="entryGrid">
+    <section className="entryStack">
+      {recentRooms.length || archivedRooms.length ? (
+        <article className="pane resumePane">
+          <div className="paneTitle">
+            <div>
+              <p className="eyebrow">Resume</p>
+              <h2>続きから再開</h2>
+            </div>
+          </div>
+          {recentRooms.length ? (
+            <div className="roomList">
+              {recentRooms.map((item) => (
+                <div className="roomCard" key={item.room_id}>
+                  <div>
+                    <strong>{item.room_name}</strong>
+                    <p className="muted">
+                      {item.club_name || (item.is_host ? 'ホスト' : '未割当')} / {item.season ? `S${item.season.number}` : 'ロビー'} / {item.turn?.month_name || item.room_status}
+                    </p>
+                  </div>
+                  <div className="roomActions">
+                    {item.is_host ? (
+                      <button disabled={busy} onClick={() => onArchive(item)} type="button">
+                        アーカイブ
+                      </button>
+                    ) : null}
+                    <button className="primary" disabled={busy} onClick={() => onResume(item.room_id)} type="button">
+                      再開
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <p className="muted">再開できるゲームはありません。</p>}
+          {archivedRooms.length ? (
+            <div className="archivedList">
+              <h3>アーカイブ済み</h3>
+              {archivedRooms.map((item) => (
+                <div className="roomCard archivedRoom" key={item.room_id}>
+                  <div>
+                    <strong>{item.room_name}</strong>
+                    <p className="muted">招待コード {item.invite_code}</p>
+                  </div>
+                  <button disabled={busy} onClick={() => onDeleteArchived(item)} type="button">
+                    完全削除
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </article>
+      ) : null}
+      <section className="entryGrid">
       <form className="pane entryPane" onSubmit={onCreate}>
         <h2>ルーム作成</h2>
         <label>
@@ -671,6 +816,7 @@ function Entry({
         </label>
         <button disabled={busy}>ルームへ入る</button>
       </form>
+      </section>
     </section>
   );
 }
@@ -753,6 +899,7 @@ function Console({
   play,
   onAck,
   onAcademyBudget,
+  onArchive,
   onBudgetEvent,
   onCommit,
   onFormValue,
@@ -769,6 +916,7 @@ function Console({
   play: PlayState | null;
   onAck: () => void;
   onAcademyBudget: (annualBudget: number) => void;
+  onArchive: () => void;
   onBudgetEvent: (key: string, amount: number) => void;
   onCommit: () => void;
   onFormValue: (key: string, value: string) => void;
@@ -937,6 +1085,7 @@ function Console({
               {['open', 'lock', 'resolve', 'advance'].map((action) => (
                 <button key={action} disabled={hostActionDisabled(action)} onClick={() => onHostAction(action)}>{action}</button>
               ))}
+              <button disabled={busy} onClick={onArchive} type="button">アーカイブ</button>
             </div>
           ) : <p className="muted">ホストが締切と解決を進めます。</p>}
         </article>
