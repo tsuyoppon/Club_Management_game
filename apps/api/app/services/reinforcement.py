@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from decimal import Decimal
 from app.db import models
+from app.config.constants import INITIAL_REINFORCEMENT_BUDGET
 
 def ensure_reinforcement_plan(db: Session, club_id: UUID, season_id: UUID):
     plan = db.execute(select(models.ClubReinforcementPlan).where(
@@ -11,10 +12,12 @@ def ensure_reinforcement_plan(db: Session, club_id: UUID, season_id: UUID):
     )).scalar_one_or_none()
     
     if not plan:
+        season = db.execute(select(models.Season).where(models.Season.id == season_id)).scalar_one_or_none()
+        annual_budget = INITIAL_REINFORCEMENT_BUDGET if season and season.season_number == 1 else Decimal("0")
         plan = models.ClubReinforcementPlan(
             club_id=club_id,
             season_id=season_id,
-            annual_budget=0,
+            annual_budget=annual_budget,
             additional_budget=0,
             next_season_budget=0
         )

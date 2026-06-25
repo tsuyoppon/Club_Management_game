@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import select, func
 from app.db import models
+from app.config.constants import INITIAL_CASH_BALANCE
 from app.services import finance
 
 def test_finance_integrity(client, db, auth_headers):
@@ -81,8 +82,7 @@ def test_finance_integrity(client, db, auth_headers):
     assert len(snapshots) == 2
     
     # Calculate expected balance from ledgers
-    # Initial balance is 0
-    calculated_balance = 0
+    calculated_balance = INITIAL_CASH_BALANCE
     for ledger in ledgers:
         calculated_balance += ledger.amount
         

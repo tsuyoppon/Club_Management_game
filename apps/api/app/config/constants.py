@@ -5,6 +5,16 @@ v1Spec 係数一覧（実装用まとめ）
 from decimal import Decimal
 
 # =============================================================================
+# Initial scenario defaults
+# =============================================================================
+
+INITIAL_CASH_BALANCE = Decimal("100000000")  # 1億円
+INITIAL_SPONSOR_COUNT = 20
+INITIAL_REINFORCEMENT_BUDGET = Decimal("30000000")  # 3000万円
+INITIAL_ACADEMY_ANNUAL_BUDGET = Decimal("0")
+INITIAL_ACADEMY_CUMULATIVE_INVESTMENT = Decimal("50000000")  # 5000万円
+
+# =============================================================================
 # Section 7: 会計（収入・費用）
 # =============================================================================
 

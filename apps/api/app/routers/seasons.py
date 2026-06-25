@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime
+from decimal import Decimal
 from typing import Dict, List, Optional
 import uuid
 
@@ -27,8 +28,9 @@ from app.schemas import FixtureGenerateRequest, SeasonCreate, SeasonRead, Standi
 from app.services.fixtures import generate_round_robin
 from app.services.standings import StandingsCalculator
 from app.services.season_finalize import SeasonFinalizer
-from app.services import reinforcement, sponsor, academy
+from app.services import reinforcement, sponsor, academy, finance
 from app.services.public_disclosure import copy_team_power_july_to_new_season
+from app.config.constants import INITIAL_CASH_BALANCE
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
@@ -200,6 +202,11 @@ def create_season_core(db: Session, game: Game, year_label: str) -> Season:
         copy_team_power_july_to_new_season(db, prev_season.id, season.id)
         db.commit()
 
+    # Reinforcement plan: Season 1 gets the initial scenario budget; later seasons
+    # use the previous season's next_season_budget propagated above.
+    for club in clubs:
+        reinforcement.ensure_reinforcement_plan(db, club.id, season.id)
+
     # Sponsor state: inherit final next_count (or count) and keep pipelines consistent with Section 10
     for club in clubs:
         sponsor.ensure_sponsor_state(db, club.id, season.id)
@@ -207,6 +214,14 @@ def create_season_core(db: Session, game: Game, year_label: str) -> Season:
     # Academy state: carry cumulative investment and planned budget forward
     for club in clubs:
         academy.ensure_academy_state(db, club.id, season.id)
+
+    # Season 1 starts from an existing club scenario, so each club has opening cash.
+    if season.season_number == 1:
+        for club in clubs:
+            _profile, state = finance.ensure_finance_initialized_for_club(db, club.id)
+            if state.last_applied_turn_id is None and Decimal(state.balance or 0) == Decimal("0"):
+                state.balance = INITIAL_CASH_BALANCE
+                db.add(state)
 
     db.commit()
 

@@ -7,6 +7,7 @@ from sqlalchemy import select, desc, func, or_
 from app.db import models
 from app.config.constants import (
     SPONSOR_PRICE_PER_COMPANY,
+    INITIAL_SPONSOR_COUNT,
     CHURN_C0, CHURN_C1, CHURN_C2, CHURN_C3, CHURN_MIN, CHURN_MAX,
     LEADS_L0, LEADS_L1, LEADS_L2, LEADS_L3, LEADS_L4,
     CONV_A0, CONV_A1, CONV_A2, CONV_A3,
@@ -38,6 +39,8 @@ def ensure_sponsor_state(db: Session, club_id: UUID, season_id: UUID):
             if prev_state:
                 # Use next_count if determined, otherwise fallback to current count
                 initial_count = prev_state.next_count if prev_state.next_count is not None else prev_state.count
+        elif current_season.season_number == 1:
+            initial_count = INITIAL_SPONSOR_COUNT
 
         state = models.ClubSponsorState(
             club_id=club_id,

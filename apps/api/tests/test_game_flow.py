@@ -2,7 +2,15 @@ import uuid
 
 from fastapi.testclient import TestClient
 
+from app.db import models
 from app.main import app
+from app.config.constants import (
+    INITIAL_ACADEMY_ANNUAL_BUDGET,
+    INITIAL_ACADEMY_CUMULATIVE_INVESTMENT,
+    INITIAL_CASH_BALANCE,
+    INITIAL_REINFORCEMENT_BUDGET,
+    INITIAL_SPONSOR_COUNT,
+)
 from app.services.fixtures import generate_round_robin
 
 
@@ -41,6 +49,37 @@ def test_game_club_season_schedule_flow():
     schedule = schedule_resp.json()
     assert len(schedule) == 10
     assert any(item["is_bye"] for item in schedule)
+
+
+def test_first_season_initial_business_settings(client, db, auth_headers):
+    game_resp = client.post("/api/games", json={"name": "Initial Settings Game"}, headers=auth_headers)
+    game_id = game_resp.json()["id"]
+
+    club_resp = client.post(f"/api/games/{game_id}/clubs", json={"name": "Initial Club"}, headers=auth_headers)
+    club_id = club_resp.json()["id"]
+
+    season_resp = client.post(f"/api/seasons/games/{game_id}", json={"year_label": "2024"}, headers=auth_headers)
+    season_id = season_resp.json()["id"]
+
+    finance_state = db.query(models.ClubFinancialState).filter(models.ClubFinancialState.club_id == club_id).one()
+    sponsor_state = db.query(models.ClubSponsorState).filter(
+        models.ClubSponsorState.club_id == club_id,
+        models.ClubSponsorState.season_id == season_id,
+    ).one()
+    reinforcement_plan = db.query(models.ClubReinforcementPlan).filter(
+        models.ClubReinforcementPlan.club_id == club_id,
+        models.ClubReinforcementPlan.season_id == season_id,
+    ).one()
+    academy_state = db.query(models.ClubAcademy).filter(
+        models.ClubAcademy.club_id == club_id,
+        models.ClubAcademy.season_id == season_id,
+    ).one()
+
+    assert finance_state.balance == INITIAL_CASH_BALANCE
+    assert sponsor_state.count == INITIAL_SPONSOR_COUNT
+    assert reinforcement_plan.annual_budget == INITIAL_REINFORCEMENT_BUDGET
+    assert academy_state.annual_budget == INITIAL_ACADEMY_ANNUAL_BUDGET
+    assert academy_state.cumulative_investment == INITIAL_ACADEMY_CUMULATIVE_INVESTMENT
 
 
 def test_fixture_fairness_counts():
@@ -96,4 +135,3 @@ def test_viewer_cannot_commit():
         headers=viewer_headers,
     )
     assert commit_resp.status_code == 403
-

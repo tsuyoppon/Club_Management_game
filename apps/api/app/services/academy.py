@@ -4,6 +4,7 @@ import random
 from sqlalchemy.orm import Session
 from sqlalchemy import select, desc
 from app.db import models
+from app.config.constants import INITIAL_ACADEMY_ANNUAL_BUDGET, INITIAL_ACADEMY_CUMULATIVE_INVESTMENT
 
 # Assumed v1Spec Constants
 TRANSFER_FEE_PROBABILITY_BASE = 0.01 # 1% per 10M cumulative investment
@@ -45,6 +46,9 @@ def ensure_academy_state(db: Session, club_id: UUID, season_id: UUID):
                         break
                 # Note: We store next_budget in transfer_fee_history as a temporary measure
                 # to avoid adding a new column for "next_annual_budget".
+        elif current_season.season_number == 1:
+            cumulative = INITIAL_ACADEMY_CUMULATIVE_INVESTMENT
+            annual_budget = INITIAL_ACADEMY_ANNUAL_BUDGET
 
         state = models.ClubAcademy(
             club_id=club_id,
