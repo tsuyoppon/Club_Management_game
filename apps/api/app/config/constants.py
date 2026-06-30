@@ -19,7 +19,7 @@ INITIAL_ACADEMY_CUMULATIVE_INVESTMENT = Decimal("50000000")  # 5000万円
 # =============================================================================
 
 # 配分金（8月一括入金）
-DISTRIBUTION_AMOUNT = Decimal("50000000")  # 5000万円
+DISTRIBUTION_AMOUNT = Decimal("20000000")  # 2000万円
 
 # 物販
 MERCHANDISE_SPEND_PER_PERSON = Decimal("800")  # 1人あたり物販購入額
@@ -30,11 +30,9 @@ MATCH_OPERATION_FIXED_COST = Decimal("3000000")  # 300万円/試合
 
 # 賞金（順位別、6月入金）
 PRIZE_AMOUNTS = {
-    1: Decimal("300000000"),  # 1位: 3億円
-    2: Decimal("150000000"),  # 2位: 1.5億円
-    3: Decimal("100000000"),  # 3位: 1億円
-    4: Decimal("50000000"),   # 4位: 5000万円
-    5: Decimal("30000000"),   # 5位: 3000万円
+    1: Decimal("20000000"),  # 1位: 2000万円
+    2: Decimal("10000000"),  # 2位: 1000万円
+    3: Decimal("5000000"),   # 3位: 500万円
 }
 
 # 退職金係数（年収×0.75）

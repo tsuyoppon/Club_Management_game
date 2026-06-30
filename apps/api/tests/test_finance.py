@@ -63,17 +63,17 @@ def test_finance_flow(client, db, auth_headers):
     # 4. Verify State & Snapshot
     resp = client.get(f"/api/clubs/{club_id}/finance/state", headers=auth_headers)
     assert resp.status_code == 200
-    # Balance = opening cash + 50M distribution + 100M annual sponsors + 1,000 base sponsor
+    # Balance = opening cash + 20M distribution + 100M annual sponsors + 1,000 base sponsor
     # - 2.5M reinforcement - 250k team operation - 2.8M staff - 200 admin override.
-    assert resp.json()["balance"] == 244450800.0
+    assert resp.json()["balance"] == 214450800.0
     assert resp.json()["last_applied_turn_id"] == turn_id
     
     resp = client.get(f"/api/clubs/{club_id}/finance/snapshots?season_id={season_id}", headers=auth_headers)
     assert resp.status_code == 200
     snapshots = resp.json()
     assert len(snapshots) == 1
-    assert snapshots[0]["closing_balance"] == 244450800.0
-    assert snapshots[0]["income_total"] == 150001000.0
+    assert snapshots[0]["closing_balance"] == 214450800.0
+    assert snapshots[0]["income_total"] == 120001000.0
     assert snapshots[0]["expense_total"] == -5550200.0
     
     # 5. Idempotency Check
@@ -82,4 +82,4 @@ def test_finance_flow(client, db, auth_headers):
     
     # Balance should be unchanged.
     state = finance.get_financial_state(db, UUID(club_id))
-    assert state.balance == 244450800.0
+    assert state.balance == 214450800.0
