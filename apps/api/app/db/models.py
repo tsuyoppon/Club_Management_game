@@ -616,8 +616,8 @@ class ClubFanbaseState(Base):
     club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
     season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
     
-    fb_count = Column(Integer, nullable=False, default=60000)
-    fb_rate = Column(Numeric(10, 6), nullable=False, default=0.06)
+    fb_count = Column(Integer, nullable=False, default=10000)
+    fb_rate = Column(Numeric(10, 6), nullable=False, default=0.01)
     cumulative_promo = Column(Numeric(14, 2), nullable=False, default=0)
     cumulative_ht = Column(Numeric(14, 2), nullable=False, default=0)
     cumulative_promotion_staff = Column(Numeric(10, 4), nullable=False, default=1)
@@ -668,7 +668,7 @@ class ClubPointPenalty(Base):
     club_id = Column(UUID(as_uuid=True), ForeignKey("clubs.id", ondelete="CASCADE"), nullable=False)
     season_id = Column(UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False)
     turn_id = Column(UUID(as_uuid=True), ForeignKey("turns.id", ondelete="CASCADE"), nullable=False)
-    points_deducted = Column(Integer, nullable=False)  # 剥奪点数（負の値: -6）
+    points_deducted = Column(Integer, nullable=False)  # 剥奪点数（負の値）
     reason = Column(String, nullable=False)  # 理由（"bankruptcy" など）
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 

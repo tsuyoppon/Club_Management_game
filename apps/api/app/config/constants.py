@@ -9,7 +9,8 @@ from decimal import Decimal
 # =============================================================================
 
 INITIAL_CASH_BALANCE = Decimal("100000000")  # 1億円
-INITIAL_SPONSOR_COUNT = 20
+INITIAL_SPONSOR_COUNT = 10
+INITIAL_FANBASE_COUNT = 10000
 INITIAL_REINFORCEMENT_BUDGET = Decimal("30000000")  # 3000万円
 INITIAL_ACADEMY_ANNUAL_BUDGET = Decimal("0")
 INITIAL_ACADEMY_CUMULATIVE_INVESTMENT = Decimal("50000000")  # 5000万円
@@ -45,7 +46,7 @@ SEVERANCE_COEFFICIENT = Decimal("0.75")
 # 固定（初期シナリオ共通）
 POPULATION = 1000000
 STADIUM_CAPACITY = 20000
-INITIAL_FB_RATE = Decimal("0.06")  # f(0) = 0.06 → FB(0) = 60,000
+INITIAL_FB_RATE = Decimal("0.01")  # f(0) = 0.01 -> FB(0) = 10,000
 FB_MAX_RATE = Decimal("0.25")  # f_max
 TICKET_PRICE = Decimal("2500")  # チケット単価
 
@@ -168,7 +169,7 @@ TEAM_POWER_TOPTEAM_PENALTY_FACTOR = Decimal("0.30")
 # Section 14: ペナルティ
 # =============================================================================
 
-DEBT_POINT_DEDUCTION = -6  # 勝点剥奪
+DEBT_POINT_DEDUCTION = -10  # 勝点剥奪
 
 # =============================================================================
 # Section 4: 情報公開（PR9）

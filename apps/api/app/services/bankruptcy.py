@@ -3,7 +3,7 @@ PR8: 債務超過判定・ペナルティ処理
 v1Spec Section 1.1, 14.1
 
 - 債務超過判定（balance < 0）
-- 勝点剥奪（-6点）
+- 勝点剥奪（-10点）
 - 追加強化費入力禁止
 """
 from decimal import Decimal

@@ -2,6 +2,7 @@ import math
 import random
 from decimal import Decimal
 from sqlalchemy.orm import Session
+from app.config.constants import INITIAL_FANBASE_COUNT, INITIAL_FB_RATE
 from app.db.models import ClubFanbaseState, ClubStaff, StaffRole
 
 # Coefficients
@@ -39,8 +40,8 @@ def ensure_fanbase_state(db: Session, club_id: str, season_id: str) -> ClubFanba
         state = ClubFanbaseState(
             club_id=club_id,
             season_id=season_id,
-            fb_count=60000,
-            fb_rate=Decimal("0.06"),
+            fb_count=INITIAL_FANBASE_COUNT,
+            fb_rate=INITIAL_FB_RATE,
             cumulative_promo=Decimal("0"),
             cumulative_ht=Decimal("0"),
             cumulative_promotion_staff=Decimal("1"),

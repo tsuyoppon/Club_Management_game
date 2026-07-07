@@ -3,6 +3,7 @@ import math
 from decimal import Decimal
 from uuid import uuid4
 from app.services import fanbase
+from app.config.constants import INITIAL_FANBASE_COUNT, INITIAL_FB_RATE
 from app.db.models import (
     ClubFanbaseState,
     ClubStaff,
@@ -13,6 +14,22 @@ from app.db.models import (
     GameStatus,
     SeasonStatus,
 )
+
+
+def test_ensure_fanbase_state_uses_initial_defaults(db_session):
+    club_id = uuid4()
+    season_id = uuid4()
+
+    game = Game(id=uuid4(), name="Fanbase Initial Game", status=GameStatus.active)
+    season = Season(id=season_id, game_id=game.id, year_label="2025", status=SeasonStatus.running)
+    club = Club(id=club_id, game_id=game.id, name="Initial Fanbase Club")
+    db_session.add_all([game, season, club])
+    db_session.commit()
+
+    state = fanbase.ensure_fanbase_state(db_session, club_id, season_id)
+
+    assert state.fb_count == INITIAL_FANBASE_COUNT
+    assert state.fb_rate == INITIAL_FB_RATE
 
 
 def _add_staff(db_session, club_id, role, count):

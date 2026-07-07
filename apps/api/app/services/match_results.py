@@ -16,7 +16,13 @@ from app.services.team_power import (
     calculate_current_reinforcement_budget_for_topteam_penalty,
     calculate_weighted_reinforcement_budget,
 )
-from app.config.constants import HOME_ADV_BASE, HOME_ADV_RATE, HOME_ADV_MIN, HOME_ADV_MAX
+from app.config.constants import (
+    HOME_ADV_BASE,
+    HOME_ADV_RATE,
+    HOME_ADV_MIN,
+    HOME_ADV_MAX,
+    INITIAL_FANBASE_COUNT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -314,8 +320,8 @@ def process_matches_for_turn(db: Session, season_id: UUID, turn_id: UUID, month_
         fb_home = db.query(models.ClubFanbaseState).filter_by(club_id=fixture.home_club_id, season_id=season_id).first()
         fb_away = db.query(models.ClubFanbaseState).filter_by(club_id=fixture.away_club_id, season_id=season_id).first()
         
-        home_fb_count = fb_home.fb_count if fb_home else 60000
-        away_fb_count = fb_away.fb_count if fb_away else 60000
+        home_fb_count = fb_home.fb_count if fb_home else INITIAL_FANBASE_COUNT
+        away_fb_count = fb_away.fb_count if fb_away else INITIAL_FANBASE_COUNT
         
         # 3. Get Performance (Rank)
         perf_val = 0.5

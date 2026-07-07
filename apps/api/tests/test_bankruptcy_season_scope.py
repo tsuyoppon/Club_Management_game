@@ -42,7 +42,7 @@ def test_bankruptcy_state_and_penalty_are_scoped_by_season(db):
     turn1 = _turn(db, season1.id, 5, "Dec")
 
     assert bankruptcy.check_bankruptcy(db, club.id, turn1.id) is True
-    assert bankruptcy.apply_point_penalty(db, club.id, season1.id, turn1.id) == -6
+    assert bankruptcy.apply_point_penalty(db, club.id, season1.id, turn1.id) == -10
     fin_state.point_penalty_applied = True
     fin_state.balance = Decimal("100")
     db.add(fin_state)
@@ -61,13 +61,13 @@ def test_bankruptcy_state_and_penalty_are_scoped_by_season(db):
     db.flush()
 
     assert bankruptcy.check_bankruptcy(db, club.id, turn2.id) is True
-    assert bankruptcy.apply_point_penalty(db, club.id, season2.id, turn2.id) == -6
+    assert bankruptcy.apply_point_penalty(db, club.id, season2.id, turn2.id) == -10
 
     penalties = db.query(models.ClubPointPenalty).filter(
         models.ClubPointPenalty.club_id == club.id,
         models.ClubPointPenalty.reason == "bankruptcy",
     ).all()
     assert {(penalty.season_id, penalty.points_deducted) for penalty in penalties} == {
-        (season1.id, -6),
-        (season2.id, -6),
+        (season1.id, -10),
+        (season2.id, -10),
     }
