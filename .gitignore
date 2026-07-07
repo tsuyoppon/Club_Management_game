@@ -7,6 +7,7 @@ __pycache__/
 .env.test
 .env.production
 .DS_Store
+.Rhistory
 node_modules/
 .next/
 *.tsbuildinfo
@@ -21,3 +22,4 @@ build/
 .fixtures.json
 .game.json
 .season.json
+.demo/

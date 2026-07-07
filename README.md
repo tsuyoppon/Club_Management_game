@@ -52,6 +52,16 @@ to delete saved game data.
 
 ## デモプレイ手順
 
+### Webワンコマンド起動
+
+Web Multiplayer の当日デモ環境は、以下で Docker 起動、DB マイグレーション、ルーム/ゲーム作成、クラブ準備、開始までまとめて実行できます。
+
+```bash
+./scripts/demo_env.py up --reset
+```
+
+再実演用の reset/archive/status は [`docs/DEMO_ENV_RUNBOOK.md`](docs/DEMO_ENV_RUNBOOK.md) を参照してください。
+
 ### APIベース
 - ゲーム作成: `POST /api/games`（GMユーザーで作成）
 - クラブ追加: `POST /api/games/{game_id}/clubs`
