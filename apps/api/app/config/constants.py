@@ -27,7 +27,7 @@ MERCHANDISE_SPEND_PER_PERSON = Decimal("800")  # 1人あたり物販購入額
 MERCHANDISE_MARGIN = Decimal("0.40")  # 粗利率40%（原価60%）
 
 # 試合運営費（固定）
-MATCH_OPERATION_FIXED_COST = Decimal("3000000")  # 300万円/試合
+MATCH_OPERATION_FIXED_COST = Decimal("1000000")  # 100万円/試合
 
 # 賞金（順位別、6月入金）
 PRIZE_AMOUNTS = {
