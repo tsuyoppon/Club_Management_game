@@ -1159,6 +1159,63 @@ def web_finance_ledger(
     }
 
 
+@router.get("/games/{game_id}/clubs/{club_id}/annual-finance-ledger")
+def web_annual_finance_ledger(
+    game_id: UUID,
+    club_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
+    _web_club_access(db, room, user, club_id)
+
+    season_end_snapshots = (
+        db.query(models.ClubFinancialSnapshot, models.Season)
+        .join(models.Season, models.Season.id == models.ClubFinancialSnapshot.season_id)
+        .filter(
+            models.ClubFinancialSnapshot.club_id == club_id,
+            models.ClubFinancialSnapshot.month_index == 12,
+            models.Season.game_id == game_id,
+        )
+        .order_by(models.Season.season_number)
+        .all()
+    )
+    season_ids = [season.id for _, season in season_end_snapshots]
+    records = []
+    if season_ids:
+        records = (
+            db.query(models.ClubFinancialLedger, models.Turn)
+            .join(models.Turn, models.Turn.id == models.ClubFinancialLedger.turn_id)
+            .filter(
+                models.ClubFinancialLedger.club_id == club_id,
+                models.Turn.season_id.in_(season_ids),
+            )
+            .order_by(models.Turn.season_id, models.Turn.month_index)
+            .all()
+        )
+
+    return {
+        "seasons": [
+            {
+                "id": str(season.id),
+                "season_number": season.season_number,
+                "year_label": season.year_label,
+                "closing_balance": float(snapshot.closing_balance),
+            }
+            for snapshot, season in season_end_snapshots
+        ],
+        "ledger": [
+            {
+                "season_id": str(turn.season_id),
+                "kind": ledger.kind,
+                "amount": float(ledger.amount),
+            }
+            for ledger, turn in records
+        ],
+    }
+
+
 @router.put("/games/{game_id}/clubs/{club_id}/turn-draft")
 def save_turn_draft(
     game_id: UUID,

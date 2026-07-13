@@ -67,6 +67,57 @@ def test_finance_statement_groups_same_display_item():
     assert statement["expenses"] == [{"kind": "expense:match_operation_cost", "label": "試合関連経費", "amount": -1000.0}]
 
 
+def test_annual_finance_ledger_returns_only_season_end_totals(client, db):
+    room = _create_room(client)
+    club = room["clubs"][0]
+    assert client.post(f"/api/rooms/{room['id']}/clubs/{club['id']}/claim").status_code == 200
+
+    seasons = []
+    for season_number, final_month in [(1, 12), (2, 11), (3, 12)]:
+        season = models.Season(
+            game_id=room["game_id"],
+            season_number=season_number,
+            year_label=str(2024 + season_number),
+            status=models.SeasonStatus.running,
+        )
+        db.add(season)
+        db.flush()
+        turn = models.Turn(
+            season_id=season.id,
+            month_index=final_month,
+            month_name="Jul" if final_month == 12 else "Jun",
+            month_number=7 if final_month == 12 else 6,
+            turn_state=models.TurnState.resolved,
+        )
+        db.add(turn)
+        db.flush()
+        db.add_all([
+            models.ClubFinancialLedger(club_id=club["id"], turn_id=turn.id, kind="sponsor_annual", amount=season_number * 1000),
+            models.ClubFinancialLedger(club_id=club["id"], turn_id=turn.id, kind="admin_cost", amount=season_number * -100),
+            models.ClubFinancialSnapshot(
+                club_id=club["id"],
+                season_id=season.id,
+                turn_id=turn.id,
+                month_index=final_month,
+                opening_balance=10000,
+                income_total=season_number * 1000,
+                expense_total=season_number * -100,
+                closing_balance=10000 + season_number * 900,
+            ),
+        ])
+        seasons.append(season)
+    db.commit()
+
+    response = client.get(f"/api/games/{room['game_id']}/clubs/{club['id']}/annual-finance-ledger")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [season["season_number"] for season in payload["seasons"]] == [1, 3]
+    assert [season["closing_balance"] for season in payload["seasons"]] == [10900.0, 12700.0]
+    assert {entry["season_id"] for entry in payload["ledger"]} == {str(seasons[0].id), str(seasons[2].id)}
+    assert sum(entry["amount"] for entry in payload["ledger"] if entry["season_id"] == str(seasons[0].id)) == 900.0
+
+
 def test_financial_disclosure_summary_exposes_display_items():
     summary = _build_financial_summary(
         {

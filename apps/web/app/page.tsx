@@ -239,6 +239,24 @@ type FinanceLedgerPayload = {
   balances: FinanceMonthBalance[];
 };
 
+type AnnualFinanceSeason = {
+  id: string;
+  season_number: number;
+  year_label: string | null;
+  closing_balance: number;
+};
+
+type AnnualFinanceLedgerEntry = {
+  season_id: string;
+  kind: string;
+  amount: number;
+};
+
+type AnnualFinanceLedgerPayload = {
+  seasons: AnnualFinanceSeason[];
+  ledger: AnnualFinanceLedgerEntry[];
+};
+
 type FinalStandingsPayload = {
   seasons: SeasonOption[];
   standings: Record<string, StandingRow[]>;
@@ -247,6 +265,27 @@ type FinalStandingsPayload = {
 const defaultClubs = ['東京ユナイテッド', '大阪イレブン', '福岡アローズ'];
 const consoleSections: ConsoleSection[] = ['Turn', 'Matches', 'Table', 'Finance', 'Fans', 'Sponsors', 'Staff', 'Team Power', 'Disclosures'];
 const seasonMonthIndexes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+const financeKindOrder = [
+  'sponsor_annual',
+  'sponsor',
+  'ticket_rev',
+  'distribution_revenue',
+  'prize_revenue',
+  'merchandise_rev',
+  'academy_transfer_fee',
+  'reinforcement_cost',
+  'match_operation_cost',
+  'team_operation_cost',
+  'academy_cost',
+  'merchandise_cost',
+  'sales_expense',
+  'promo_expense',
+  'hometown_expense',
+  'staff_cost',
+  'staff_severance',
+  'admin_cost',
+  'tax',
+];
 const moneyKeys = new Set([
   'sales_expense',
   'promo_expense',
@@ -1540,7 +1579,7 @@ function FinancePanel({
   report: FinanceReport;
   seasonId: string | null;
 }) {
-  const [view, setView] = useState<'summary' | 'monthly'>('summary');
+  const [view, setView] = useState<'summary' | 'monthly' | 'annual'>('summary');
 
   if (view === 'monthly') {
     return (
@@ -1548,6 +1587,16 @@ function FinancePanel({
         clubId={clubId}
         gameId={gameId}
         seasonId={seasonId}
+        onBack={() => setView('summary')}
+      />
+    );
+  }
+
+  if (view === 'annual') {
+    return (
+      <AnnualFinanceTrendPage
+        clubId={clubId}
+        gameId={gameId}
         onBack={() => setView('summary')}
       />
     );
@@ -1566,6 +1615,9 @@ function FinancePanel({
       <div className="actionRow flushActionRow">
         <button type="button" disabled={!clubId || !gameId || !seasonId} onClick={() => setView('monthly')}>
           月次財務推移
+        </button>
+        <button type="button" disabled={!clubId || !gameId} onClick={() => setView('annual')}>
+          年次財務推移
         </button>
       </div>
       <div className="financeStatements">
@@ -1660,27 +1712,7 @@ function MonthlyFinanceTrendPage({
       }
     }
 
-    const preferredOrder = [
-      'sponsor_annual',
-      'sponsor',
-      'ticket_rev',
-      'distribution_revenue',
-      'prize_revenue',
-      'merchandise_rev',
-      'academy_transfer_fee',
-      'reinforcement_cost',
-      'match_operation_cost',
-      'team_operation_cost',
-      'academy_cost',
-      'merchandise_cost',
-      'sales_expense',
-      'promo_expense',
-      'hometown_expense',
-      'staff_cost',
-      'admin_cost',
-      'tax',
-    ];
-    const orderIndex = new Map(preferredOrder.map((kind, index) => [kind, index]));
+    const orderIndex = new Map(financeKindOrder.map((kind, index) => [kind, index]));
     const sortedRows = Array.from(byKind.entries())
       .sort(([left], [right]) => (orderIndex.get(left) ?? 999) - (orderIndex.get(right) ?? 999) || left.localeCompare(right))
       .map(([kind, values]) => ({ kind, label: financeKindLabel(kind), values }));
@@ -1739,6 +1771,139 @@ function MonthlyFinanceTrendPage({
               <tr className="cashRow">
                 <td>現金残高</td>
                 {seasonMonthIndexes.map((month) => <td key={month} className="numeric">{amount(cashBalances[month])}</td>)}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function AnnualFinanceTrendPage({
+  clubId,
+  gameId,
+  onBack,
+}: {
+  clubId: string | null;
+  gameId: string | null;
+  onBack: () => void;
+}) {
+  const [payload, setPayload] = useState<AnnualFinanceLedgerPayload>({ seasons: [], ledger: [] });
+  const [ledgerSource, setLedgerSource] = useState('');
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    if (!clubId || !gameId) return undefined;
+
+    let cancelled = false;
+    const source = `${gameId}:${clubId}`;
+    api<AnnualFinanceLedgerPayload>(`/api/games/${gameId}/clubs/${clubId}/annual-finance-ledger`)
+      .then((data) => {
+        if (!cancelled) {
+          setLoadError('');
+          setLedgerSource(source);
+          setPayload(data);
+        }
+      })
+      .catch((cause: Error) => {
+        if (!cancelled) setLoadError(friendlyError(cause.message));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clubId, gameId]);
+
+  const visiblePayload = useMemo(() => {
+    if (!clubId || !gameId || ledgerSource !== `${gameId}:${clubId}`) {
+      return { seasons: [], ledger: [] } as AnnualFinanceLedgerPayload;
+    }
+    return payload;
+  }, [clubId, gameId, ledgerSource, payload]);
+
+  const { rows, incomeTotals, expenseTotals, netTotals } = useMemo(() => {
+    const byKind = new Map<string, Record<string, number>>();
+    const income: Record<string, number> = {};
+    const expense: Record<string, number> = {};
+    const net: Record<string, number> = {};
+
+    for (const season of visiblePayload.seasons) {
+      income[season.id] = 0;
+      expense[season.id] = 0;
+      net[season.id] = 0;
+    }
+
+    for (const entry of visiblePayload.ledger) {
+      const key = financeKindKey(entry.kind);
+      if (!key || !(entry.season_id in net)) continue;
+
+      const current = byKind.get(key) || {};
+      current[entry.season_id] = (current[entry.season_id] || 0) + entry.amount;
+      byKind.set(key, current);
+
+      if (entry.amount > 0) income[entry.season_id] += entry.amount;
+      if (entry.amount < 0) expense[entry.season_id] += entry.amount;
+      net[entry.season_id] += entry.amount;
+    }
+
+    const orderIndex = new Map(financeKindOrder.map((kind, index) => [kind, index]));
+    const sortedRows = Array.from(byKind.entries())
+      .sort(([left], [right]) => (orderIndex.get(left) ?? 999) - (orderIndex.get(right) ?? 999) || left.localeCompare(right))
+      .map(([kind, values]) => ({ kind, label: financeKindLabel(kind), values }));
+
+    return { rows: sortedRows, incomeTotals: income, expenseTotals: expense, netTotals: net };
+  }, [visiblePayload]);
+
+  return (
+    <section className="financePanel">
+      <div className="paneTitle compactTitle">
+        <div>
+          <p className="eyebrow">Annual finance</p>
+          <h3>年次財務推移</h3>
+        </div>
+        <button type="button" onClick={onBack}>戻る</button>
+      </div>
+      {loadError ? <p className="errorline">{loadError}</p> : null}
+      {!clubId || !gameId ? <p className="muted">担当クラブ情報を待機中です。</p> : null}
+      {clubId && gameId && ledgerSource === `${gameId}:${clubId}` && !visiblePayload.seasons.length ? (
+        <p className="muted">シーズン末まで確定した年次財務はまだありません。</p>
+      ) : null}
+      {visiblePayload.seasons.length ? (
+        <div className="wideTableWrap">
+          <table className="monthlyFinanceTable">
+            <thead>
+              <tr>
+                <th>費目</th>
+                {visiblePayload.seasons.map((season) => (
+                  <th key={season.id}>Season {season.season_number}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.kind}>
+                  <td>{row.label}</td>
+                  {visiblePayload.seasons.map((season) => (
+                    <td key={season.id} className="numeric">{amount(row.values[season.id] || 0)}</td>
+                  ))}
+                </tr>
+              ))}
+              <tr className="totalRow">
+                <td>収入合計</td>
+                {visiblePayload.seasons.map((season) => <td key={season.id} className="numeric">{amount(incomeTotals[season.id])}</td>)}
+              </tr>
+              <tr className="totalRow">
+                <td>費用合計</td>
+                {visiblePayload.seasons.map((season) => <td key={season.id} className="numeric">{amount(expenseTotals[season.id])}</td>)}
+              </tr>
+              <tr className="netRow">
+                <td>累積収支</td>
+                {visiblePayload.seasons.map((season) => <td key={season.id} className="numeric">{amount(netTotals[season.id])}</td>)}
+              </tr>
+              <tr className="cashRow">
+                <td>現金残高</td>
+                {visiblePayload.seasons.map((season) => <td key={season.id} className="numeric">{amount(season.closing_balance)}</td>)}
               </tr>
             </tbody>
           </table>
