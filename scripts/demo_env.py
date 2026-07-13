@@ -15,7 +15,7 @@ from http.cookiejar import MozillaCookieJar
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 
@@ -27,6 +27,7 @@ DEFAULT_API_BASE = "http://localhost:8000"
 DEFAULT_WEB_BASE = "http://localhost:3000"
 DEFAULT_CLUBS = ["Tokyo Training FC", "Osaka Workshop SC"]
 DEFAULT_PLAYERS = ["Host GM", "Player Two", "Player Three", "Player Four", "Player Five"]
+DEFAULT_SESSION_COOKIE = "club_game_session"
 
 
 class DemoError(RuntimeError):
@@ -240,12 +241,92 @@ def seed_demo(args: argparse.Namespace) -> dict[str, Any]:
     return state
 
 
+def browser_session_token(client: DemoClient) -> str:
+    for cookie in client.cookies:
+        if cookie.name == DEFAULT_SESSION_COOKIE:
+            return cookie.value
+    raise DemoError(f"Session cookie {DEFAULT_SESSION_COOKIE} was not issued")
+
+
+def login_url(api_base: str, web_base: str, token: str) -> str:
+    next_url = quote(web_base, safe="")
+    return f"{api_base.rstrip('/')}/api/demo/session-login?token={quote(token, safe='')}&next={next_url}"
+
+
+def seed_browser_lobby(args: argparse.Namespace) -> dict[str, Any]:
+    clubs = normalize_clubs(args.clubs)
+    players = DEFAULT_PLAYERS[: len(clubs)]
+    room_name = args.room_name
+
+    host_cookie = COOKIE_DIR / "host.cookies"
+    host = DemoClient(args.api_base, host_cookie)
+    room = host.request(
+        "POST",
+        "/api/rooms",
+        {
+            "display_name": players[0],
+            "room_name": room_name,
+            "club_names": clubs,
+        },
+    )
+    invite_code = room["invite_code"]
+    all_players: list[dict[str, Any]] = [
+        {
+            "display_name": players[0],
+            "club_id": None,
+            "club_name": None,
+            "cookie_file": str(host_cookie.relative_to(ROOT)),
+            "is_host": True,
+            "login_url": login_url(args.api_base, args.web_base, browser_session_token(host)),
+        }
+    ]
+
+    for index, display_name in enumerate(players[1:], start=2):
+        cookie_file = COOKIE_DIR / f"player{index}.cookies"
+        player = DemoClient(args.api_base, cookie_file)
+        player.request(
+            "POST",
+            f"/api/rooms/{invite_code}/join",
+            {"display_name": display_name},
+        )
+        all_players.append(
+            {
+                "display_name": display_name,
+                "club_id": None,
+                "club_name": None,
+                "cookie_file": str(cookie_file.relative_to(ROOT)),
+                "is_host": False,
+                "login_url": login_url(args.api_base, args.web_base, browser_session_token(player)),
+            }
+        )
+
+    state = {
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "api_base": args.api_base,
+        "web_base": args.web_base,
+        "room_name": room_name,
+        "room_id": room["id"],
+        "game_id": room["game_id"],
+        "room_status": room["status"],
+        "invite_code": room["invite_code"],
+        "season_id": None,
+        "year_label": args.year_label or str(datetime.now().year),
+        "players": all_players,
+        "state_file": str(STATE_FILE.relative_to(ROOT)),
+        "browser_lobby": True,
+    }
+    save_state(state)
+    return state
+
+
 def delete_current_state(args: argparse.Namespace, *, missing_ok: bool) -> bool:
     state = load_state()
     if not state:
         if missing_ok:
             return False
         raise DemoError(f"No demo state found at {STATE_FILE}")
+    if missing_ok and state.get("room_status") == "deleted":
+        return False
 
     host = DemoClient(state.get("api_base", args.api_base), ROOT / state["players"][0]["cookie_file"])
     game_id = state["game_id"]
@@ -297,13 +378,15 @@ def current_status(args: argparse.Namespace) -> dict[str, Any]:
 
 def print_summary(state: dict[str, Any]) -> None:
     lan_ip = local_lan_ip()
+    api_lan = f"http://{lan_ip}:8000" if lan_ip else None
+    web_lan = f"http://{lan_ip}:3000" if lan_ip else None
     print()
     print("Demo environment is ready.")
     print(f"  Web:        {state['web_base']}")
     print(f"  API:        {state['api_base']}")
     if lan_ip:
-        print(f"  Web LAN:    http://{lan_ip}:3000")
-        print(f"  API LAN:    http://{lan_ip}:8000")
+        print(f"  Web LAN:    {web_lan}")
+        print(f"  API LAN:    {api_lan}")
     print(f"  Room:       {state['room_name']} ({state['room_status']})")
     print(f"  Invite:     {state['invite_code']}")
     print(f"  Game ID:    {state['game_id']}")
@@ -314,6 +397,11 @@ def print_summary(state: dict[str, Any]) -> None:
     for player in state["players"]:
         marker = "host" if player["is_host"] else "player"
         print(f"    - {player['display_name']} / {player['club_name']} / {marker} / {player['cookie_file']}")
+        if player.get("login_url"):
+            print(f"      local: {player['login_url']}")
+            if api_lan and web_lan:
+                token = player["login_url"].split("token=", 1)[1].split("&", 1)[0]
+                print(f"      lan:   {login_url(api_lan, web_lan, token)}")
     print()
     print("Useful next commands:")
     print("  ./scripts/demo_env.py status")
@@ -357,7 +445,7 @@ def command_up(args: argparse.Namespace) -> None:
             print("Existing demo state found. Use --reset or --force-new to create another room.")
             print_summary(state)
             return
-    state = seed_demo(args)
+    state = seed_browser_lobby(args) if args.browser_lobby else seed_demo(args)
     print_summary(state)
 
 
@@ -387,6 +475,7 @@ def build_parser() -> argparse.ArgumentParser:
     up.add_argument("--force-new", action="store_true", help="Seed a new room even if .demo state already exists.")
     up.add_argument("--no-seed", action="store_true", help="Only start Docker and run migrations.")
     up.add_argument("--lobby-only", action="store_true", help="Stop after all clubs are claimed and ready.")
+    up.add_argument("--browser-lobby", action="store_true", help="Create browser login links and leave clubs unclaimed.")
     up.add_argument("--room-name", default="Demo Training League")
     up.add_argument("--year-label")
     up.add_argument("--clubs", nargs="+")
@@ -397,6 +486,7 @@ def build_parser() -> argparse.ArgumentParser:
     reset.add_argument("--hard", action="store_true", help="Use docker compose down -v before recreating the demo.")
     reset.add_argument("--no-build", action="store_false", dest="build", help="Do not rebuild Docker images.")
     reset.add_argument("--lobby-only", action="store_true", help="Stop after all clubs are claimed and ready.")
+    reset.add_argument("--browser-lobby", action="store_true", help="Create browser login links and leave clubs unclaimed.")
     reset.add_argument("--room-name", default="Demo Training League")
     reset.add_argument("--year-label")
     reset.add_argument("--clubs", nargs="+")

@@ -3,8 +3,10 @@ from decimal import Decimal
 import secrets
 from typing import Any, Optional
 from uuid import UUID
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete as sqlalchemy_delete
 from sqlalchemy.orm import Session
@@ -197,6 +199,31 @@ def _set_browser_session(response: Response, db: Session, user: models.User):
         max_age=settings.web_session_ttl_days * 24 * 60 * 60,
         path="/",
     )
+
+
+def _set_existing_browser_session_cookie(response: Response, raw_token: str):
+    response.set_cookie(
+        settings.web_session_cookie,
+        raw_token,
+        httponly=True,
+        secure=settings.web_cookie_secure,
+        samesite="lax",
+        max_age=settings.web_session_ttl_days * 24 * 60 * 60,
+        path="/",
+    )
+
+
+def _validate_demo_redirect(next_url: str, request: Request) -> str:
+    parsed = urlparse(next_url)
+    if not parsed.scheme and not parsed.netloc:
+        if not next_url.startswith("/") or next_url.startswith("//"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid redirect URL")
+        return next_url
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid redirect URL")
+    if parsed.hostname != request.url.hostname:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Redirect host must match request host")
+    return next_url
 
 
 def _invite_code(db: Session) -> str:
@@ -608,6 +635,29 @@ def current_browser_user(user: models.User = Depends(get_web_current_user), db: 
             for room in rooms
         ],
     }
+
+
+@router.get("/demo/session-login", include_in_schema=False)
+def demo_session_login(
+    request: Request,
+    token: str = Query(..., min_length=16),
+    next: str = Query("/", min_length=1),  # noqa: A002 - query parameter name is part of the demo URL.
+    db: Session = Depends(get_db),
+):
+    session = (
+        db.query(models.WebSession)
+        .filter(
+            models.WebSession.token_hash == hash_session_token(token),
+            models.WebSession.expires_at > datetime.utcnow(),
+        )
+        .first()
+    )
+    if not session:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Demo session expired")
+
+    response = RedirectResponse(url=_validate_demo_redirect(next, request), status_code=status.HTTP_303_SEE_OTHER)
+    _set_existing_browser_session_cookie(response, token)
+    return response
 
 
 @router.get("/rooms/recent")
