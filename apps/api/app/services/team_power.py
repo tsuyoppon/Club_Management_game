@@ -4,6 +4,7 @@ v1Spec Section 8.4
 
 チーム力（TP）の計算と公開処理を行う。
 """
+
 import math
 import random
 from decimal import Decimal
@@ -31,6 +32,8 @@ from app.config.constants import (
     TEAM_POWER_DISCLOSURE_SIGMA,
     TEAM_POWER_REINFORCEMENT_DECAY,
     TEAM_POWER_REINFORCEMENT_LOOKBACK_SEASONS,
+    TEAM_POWER_JUNE_REINFORCEMENT_INPUT_WEIGHT,
+    TEAM_POWER_JULY_REINFORCEMENT_INPUT_WEIGHT,
     TEAM_POWER_TOPTEAM_BUDGET_PER_STAFF,
     TEAM_POWER_TOPTEAM_PENALTY_FACTOR,
 )
@@ -65,10 +68,14 @@ def calculate_current_reinforcement_budget_for_topteam_penalty(
     topteam人数ペナルティ判定用の対象シーズン強化費を円単位で返す。
     TP本体の加重平均とは分け、当該シーズンの予算だけを見る。
     """
-    plan = db.query(ClubReinforcementPlan).filter(
-        ClubReinforcementPlan.club_id == club_id,
-        ClubReinforcementPlan.season_id == season_id,
-    ).first()
+    plan = (
+        db.query(ClubReinforcementPlan)
+        .filter(
+            ClubReinforcementPlan.club_id == club_id,
+            ClubReinforcementPlan.season_id == season_id,
+        )
+        .first()
+    )
     return _target_reinforcement_budget_for_plan(plan, month_index)
 
 
@@ -77,10 +84,14 @@ def _topteam_staff_count(
     club_id: UUID,
     use_next_staff: bool = False,
 ) -> int:
-    staff = db.query(ClubStaff).filter(
-        ClubStaff.club_id == club_id,
-        ClubStaff.role == StaffRole.topteam,
-    ).first()
+    staff = (
+        db.query(ClubStaff)
+        .filter(
+            ClubStaff.club_id == club_id,
+            ClubStaff.role == StaffRole.topteam,
+        )
+        .first()
+    )
     if not staff:
         return 1
     if use_next_staff:
@@ -112,7 +123,9 @@ def calculate_topteam_staff_tp_multiplier(
     if required_staff <= 0:
         return Decimal("1")
 
-    staff_count = Decimal(_topteam_staff_count(db, club_id, use_next_staff=use_next_staff))
+    staff_count = Decimal(
+        _topteam_staff_count(db, club_id, use_next_staff=use_next_staff)
+    )
     coverage = staff_count / required_staff
     if coverage >= 1:
         return Decimal("1")
@@ -136,6 +149,49 @@ def apply_topteam_staff_tp_penalty(
         use_next_staff=use_next_staff,
     )
     return tp * float(multiplier)
+
+
+def _next_season_reinforcement_input_weight(month_index: int) -> Decimal:
+    if month_index == 11:
+        return TEAM_POWER_JUNE_REINFORCEMENT_INPUT_WEIGHT
+    if month_index == 12:
+        return TEAM_POWER_JULY_REINFORCEMENT_INPUT_WEIGHT
+    return Decimal("1")
+
+
+def _weighted_next_season_reinforcement_input_budget(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+) -> Decimal:
+    """
+    TP計算用の来期強化費入力を返す。
+
+    実際の支出・予算額は6月/7月入力の単純合算を維持しつつ、
+    早期に財務リスクを取る6月入力分だけをTP上は控えめに加重する。
+    """
+    rows = (
+        db.query(TurnDecision.payload_json, Turn.month_index)
+        .join(Turn, TurnDecision.turn_id == Turn.id)
+        .filter(
+            TurnDecision.club_id == club_id,
+            Turn.season_id == season_id,
+            Turn.month_index.in_([11, 12]),
+        )
+        .all()
+    )
+
+    total = Decimal("0")
+    for payload, month_index in rows:
+        if not payload:
+            continue
+        value = payload.get("reinforcement_budget")
+        if value is None:
+            continue
+        total += Decimal(str(value or 0)) * _next_season_reinforcement_input_weight(
+            month_index
+        )
+    return total
 
 
 def calculate_weighted_reinforcement_budget(
@@ -194,11 +250,15 @@ def calculate_weighted_reinforcement_budget(
 
     for offset, season in enumerate(historical_seasons):
         index = start_index + offset
-        weight = decay ** index
-        plan = db.query(ClubReinforcementPlan).filter(
-            ClubReinforcementPlan.club_id == club_id,
-            ClubReinforcementPlan.season_id == season.id,
-        ).first()
+        weight = decay**index
+        plan = (
+            db.query(ClubReinforcementPlan)
+            .filter(
+                ClubReinforcementPlan.club_id == club_id,
+                ClubReinforcementPlan.season_id == season.id,
+            )
+            .first()
+        )
         if current_budget_override is None and season.id == current_season.id:
             budget = _target_reinforcement_budget_for_plan(plan, month_index)
         else:
@@ -240,11 +300,15 @@ def calculate_past_weighted_reinforcement_budget(
     decay = TEAM_POWER_REINFORCEMENT_DECAY
 
     for index, season in enumerate(previous_seasons):
-        weight = decay ** index
-        plan = db.query(ClubReinforcementPlan).filter(
-            ClubReinforcementPlan.club_id == club_id,
-            ClubReinforcementPlan.season_id == season.id,
-        ).first()
+        weight = decay**index
+        plan = (
+            db.query(ClubReinforcementPlan)
+            .filter(
+                ClubReinforcementPlan.club_id == club_id,
+                ClubReinforcementPlan.season_id == season.id,
+            )
+            .first()
+        )
         weighted_budget += weight * _reinforcement_budget_for_plan(plan)
         weight_total += weight
 
@@ -261,10 +325,10 @@ def calculate_team_power(
 ) -> Decimal:
     """
     チーム力指標を計算
-    
+
     v1Spec Section 8.4:
     TP = α * ln(1 + B/B_ref) + β * ln(1 + A_cum/A_ref)
-    
+
     - B: 当該シーズンを含む直近最大10シーズンの年間強化費の指数減衰加重平均
     - A_cum: アカデミー累積投資
     - α = 10, β = 1
@@ -274,15 +338,25 @@ def calculate_team_power(
     )
 
     # アカデミー累積投資: シーズン固有の累積値を参照
-    academy = db.query(ClubAcademy).filter(
-        ClubAcademy.club_id == club_id,
-        ClubAcademy.season_id == season_id,
-    ).first()
-    academy_cumulative = Decimal(academy.cumulative_investment or 0) if academy else Decimal("0")
+    academy = (
+        db.query(ClubAcademy)
+        .filter(
+            ClubAcademy.club_id == club_id,
+            ClubAcademy.season_id == season_id,
+        )
+        .first()
+    )
+    academy_cumulative = (
+        Decimal(academy.cumulative_investment or 0) if academy else Decimal("0")
+    )
 
     # チーム力計算（参照係数は円ベースで保持しているため金額そのままを参照）
-    b_ratio = float(reinforcement_budget) / float(TEAM_POWER_B_REF) if TEAM_POWER_B_REF else 0
-    a_ratio = float(academy_cumulative) / float(TEAM_POWER_A_REF) if TEAM_POWER_A_REF else 0
+    b_ratio = (
+        float(reinforcement_budget) / float(TEAM_POWER_B_REF) if TEAM_POWER_B_REF else 0
+    )
+    a_ratio = (
+        float(academy_cumulative) / float(TEAM_POWER_A_REF) if TEAM_POWER_A_REF else 0
+    )
 
     tp = TP_ALPHA * math.log(1 + b_ratio) + TP_BETA * math.log(1 + a_ratio)
     penalty_budget = calculate_current_reinforcement_budget_for_topteam_penalty(
@@ -304,26 +378,45 @@ def calculate_team_power_for_july_disclosure(
     - B: 次シーズン向け強化費（6月・7月入力の合算）
     - A_cum: 当該シーズンのアカデミー累積投資
     """
-    plan = db.query(ClubReinforcementPlan).filter(
-        ClubReinforcementPlan.club_id == club_id,
-        ClubReinforcementPlan.season_id == season_id,
-    ).first()
+    plan = (
+        db.query(ClubReinforcementPlan)
+        .filter(
+            ClubReinforcementPlan.club_id == club_id,
+            ClubReinforcementPlan.season_id == season_id,
+        )
+        .first()
+    )
     next_season_budget = Decimal(plan.next_season_budget or 0) if plan else Decimal("0")
+    tp_next_season_budget = _weighted_next_season_reinforcement_input_budget(
+        db, club_id, season_id
+    )
+    if tp_next_season_budget == 0:
+        tp_next_season_budget = next_season_budget
     reinforcement_budget = calculate_weighted_reinforcement_budget(
         db,
         club_id,
         season_id,
-        current_budget_override=next_season_budget,
+        current_budget_override=tp_next_season_budget,
     )
 
-    academy = db.query(ClubAcademy).filter(
-        ClubAcademy.club_id == club_id,
-        ClubAcademy.season_id == season_id,
-    ).first()
-    academy_cumulative = Decimal(academy.cumulative_investment or 0) if academy else Decimal("0")
+    academy = (
+        db.query(ClubAcademy)
+        .filter(
+            ClubAcademy.club_id == club_id,
+            ClubAcademy.season_id == season_id,
+        )
+        .first()
+    )
+    academy_cumulative = (
+        Decimal(academy.cumulative_investment or 0) if academy else Decimal("0")
+    )
 
-    b_ratio = float(reinforcement_budget) / float(TEAM_POWER_B_REF) if TEAM_POWER_B_REF else 0
-    a_ratio = float(academy_cumulative) / float(TEAM_POWER_A_REF) if TEAM_POWER_A_REF else 0
+    b_ratio = (
+        float(reinforcement_budget) / float(TEAM_POWER_B_REF) if TEAM_POWER_B_REF else 0
+    )
+    a_ratio = (
+        float(academy_cumulative) / float(TEAM_POWER_A_REF) if TEAM_POWER_A_REF else 0
+    )
 
     tp = TP_ALPHA * math.log(1 + b_ratio) + TP_BETA * math.log(1 + a_ratio)
     tp = apply_topteam_staff_tp_penalty(
@@ -345,21 +438,35 @@ def _calculate_team_power_from_reinforcement_budget(
     topteam_penalty_budget: Optional[Decimal] = None,
     use_next_staff: bool = False,
 ) -> Decimal:
-    academy = db.query(ClubAcademy).filter(
-        ClubAcademy.club_id == club_id,
-        ClubAcademy.season_id == season_id,
-    ).first()
-    academy_cumulative = Decimal(academy.cumulative_investment or 0) if academy else Decimal("0")
+    academy = (
+        db.query(ClubAcademy)
+        .filter(
+            ClubAcademy.club_id == club_id,
+            ClubAcademy.season_id == season_id,
+        )
+        .first()
+    )
+    academy_cumulative = (
+        Decimal(academy.cumulative_investment or 0) if academy else Decimal("0")
+    )
 
-    b_ratio = float(reinforcement_budget) / float(TEAM_POWER_B_REF) if TEAM_POWER_B_REF else 0
-    a_ratio = float(academy_cumulative) / float(TEAM_POWER_A_REF) if TEAM_POWER_A_REF else 0
+    b_ratio = (
+        float(reinforcement_budget) / float(TEAM_POWER_B_REF) if TEAM_POWER_B_REF else 0
+    )
+    a_ratio = (
+        float(academy_cumulative) / float(TEAM_POWER_A_REF) if TEAM_POWER_A_REF else 0
+    )
 
     tp = TP_ALPHA * math.log(1 + b_ratio) + TP_BETA * math.log(1 + a_ratio)
     tp = apply_topteam_staff_tp_penalty(
         db,
         club_id,
         tp,
-        topteam_penalty_budget if topteam_penalty_budget is not None else reinforcement_budget,
+        (
+            topteam_penalty_budget
+            if topteam_penalty_budget is not None
+            else reinforcement_budget
+        ),
         use_next_staff=use_next_staff,
     )
     return Decimal(str(round(tp, 2)))
@@ -397,12 +504,17 @@ def calculate_team_power_for_monthly_reinforcement_input(
     指定月に入力された翌シーズン強化費だけを使って公開用TPを計算する。
     6月resolve後の暫定公開で使用する。
     """
-    input_budget = _reinforcement_budget_input_for_month(db, club_id, season_id, month_index)
+    input_budget = _reinforcement_budget_input_for_month(
+        db, club_id, season_id, month_index
+    )
+    tp_input_budget = input_budget * _next_season_reinforcement_input_weight(
+        month_index
+    )
     reinforcement_budget = calculate_weighted_reinforcement_budget(
         db,
         club_id,
         season_id,
-        current_budget_override=input_budget,
+        current_budget_override=tp_input_budget,
     )
     return _calculate_team_power_from_reinforcement_budget(
         db,
@@ -423,7 +535,9 @@ def calculate_team_power_monthly_input_with_uncertainty(
     """
     指定月入力ベースの公開用TPに、7月公開と同じ不確実性を付与する。
     """
-    actual_tp = calculate_team_power_for_monthly_reinforcement_input(db, club_id, season_id, month_index)
+    actual_tp = calculate_team_power_for_monthly_reinforcement_input(
+        db, club_id, season_id, month_index
+    )
     noise = random.gauss(0, float(TEAM_POWER_DISCLOSURE_SIGMA))
     disclosed_tp = actual_tp + Decimal(str(round(noise, 2)))
     return (disclosed_tp, actual_tp)
@@ -456,19 +570,19 @@ def calculate_team_power_with_uncertainty(
 ) -> Tuple[Decimal, Decimal]:
     """
     7月公開用：不確実性付きチーム力
-    
+
     v1Spec Section 4.2:
     - 7月ターン終了時：次シーズンのチーム力指標を公開（不確実性付き）
-    
+
     Returns:
         (disclosed_tp, actual_tp) - 公開値と実際値のタプル
     """
     actual_tp = calculate_team_power(db, club_id, season_id, month_index=month_index)
-    
+
     # ノイズを付与
     noise = random.gauss(0, float(TEAM_POWER_DISCLOSURE_SIGMA))
     disclosed_tp = actual_tp + Decimal(str(round(noise, 2)))
-    
+
     return (disclosed_tp, actual_tp)
 
 
@@ -480,44 +594,48 @@ def get_all_clubs_team_power(
 ) -> list[dict]:
     """
     シーズン内の全クラブのチーム力を取得
-    
+
     Args:
         db: データベースセッション
         season_id: シーズンID
         with_uncertainty: True=7月用（不確実性付き）、False=12月用（実際値）
-    
+
     Returns:
         クラブごとのチーム力リスト
     """
     season = db.query(Season).filter(Season.id == season_id).first()
     if not season:
         return []
-    
+
     clubs = db.query(Club).filter(Club.game_id == season.game_id).all()
-    
+
     results = []
     for club in clubs:
         if with_uncertainty:
             disclosed_tp, actual_tp = calculate_team_power_with_uncertainty(
                 db, club.id, season_id, month_index=month_index
             )
-            results.append({
-                "club_id": str(club.id),
-                "club_name": club.name,
-                "team_power": float(disclosed_tp),
-                "actual_team_power": float(actual_tp),  # 内部用（保存はしない）
-            })
+            results.append(
+                {
+                    "club_id": str(club.id),
+                    "club_name": club.name,
+                    "team_power": float(disclosed_tp),
+                    "actual_team_power": float(actual_tp),  # 内部用（保存はしない）
+                }
+            )
         else:
             tp = calculate_team_power(db, club.id, season_id, month_index=month_index)
-            results.append({
-                "club_id": str(club.id),
-                "club_name": club.name,
-                "team_power": float(tp),
-            })
-    
+            results.append(
+                {
+                    "club_id": str(club.id),
+                    "club_name": club.name,
+                    "team_power": float(tp),
+                }
+            )
+
     # チーム力順でソート
     results.sort(key=lambda x: x["team_power"], reverse=True)
-    
+
     return results
 
 
@@ -539,12 +657,14 @@ def get_all_clubs_team_power_for_july(
         disclosed_tp, actual_tp = calculate_team_power_july_with_uncertainty(
             db, club.id, season_id
         )
-        results.append({
-            "club_id": str(club.id),
-            "club_name": club.name,
-            "team_power": float(disclosed_tp),
-            "actual_team_power": float(actual_tp),
-        })
+        results.append(
+            {
+                "club_id": str(club.id),
+                "club_name": club.name,
+                "team_power": float(disclosed_tp),
+                "actual_team_power": float(actual_tp),
+            }
+        )
 
     results.sort(key=lambda x: x["team_power"], reverse=True)
 
@@ -570,12 +690,14 @@ def get_all_clubs_team_power_for_monthly_input(
         disclosed_tp, actual_tp = calculate_team_power_monthly_input_with_uncertainty(
             db, club.id, season_id, month_index
         )
-        results.append({
-            "club_id": str(club.id),
-            "club_name": club.name,
-            "team_power": float(disclosed_tp),
-            "actual_team_power": float(actual_tp),
-        })
+        results.append(
+            {
+                "club_id": str(club.id),
+                "club_name": club.name,
+                "team_power": float(disclosed_tp),
+                "actual_team_power": float(actual_tp),
+            }
+        )
 
     results.sort(key=lambda x: x["team_power"], reverse=True)
     return results

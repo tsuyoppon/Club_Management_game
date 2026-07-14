@@ -40,25 +40,29 @@ def _seed_june_preview_game(db):
     db.add_all([june_turn, july_turn])
     db.flush()
 
-    db.add_all([
-        models.TurnDecision(
-            turn_id=june_turn.id,
-            club_id=tokyo.id,
-            decision_state=models.DecisionState.locked,
-            payload_json={"reinforcement_budget": 100_000_000},
-        ),
-        models.TurnDecision(
-            turn_id=june_turn.id,
-            club_id=osaka.id,
-            decision_state=models.DecisionState.locked,
-            payload_json={"reinforcement_budget": 0},
-        ),
-    ])
+    db.add_all(
+        [
+            models.TurnDecision(
+                turn_id=june_turn.id,
+                club_id=tokyo.id,
+                decision_state=models.DecisionState.locked,
+                payload_json={"reinforcement_budget": 100_000_000},
+            ),
+            models.TurnDecision(
+                turn_id=june_turn.id,
+                club_id=osaka.id,
+                decision_state=models.DecisionState.locked,
+                payload_json={"reinforcement_budget": 0},
+            ),
+        ]
+    )
     db.flush()
     return season, june_turn, july_turn, tokyo, osaka
 
 
-def test_team_power_endpoint_returns_june_preview_only_until_july_resolve(client, db, monkeypatch):
+def test_team_power_endpoint_returns_june_preview_only_until_july_resolve(
+    client, db, monkeypatch
+):
     monkeypatch.setattr("app.services.team_power.random.gauss", lambda _mu, _sigma: 0)
     season, june_turn, july_turn, tokyo, _osaka = _seed_june_preview_game(db)
 
@@ -72,7 +76,9 @@ def test_team_power_endpoint_returns_june_preview_only_until_july_resolve(client
     assert payload["disclosure_type"] == "team_power_june_preview"
     assert payload["disclosed_data"]["disclosure_type"] == "team_power_june_preview"
     assert payload["disclosed_data"]["clubs"][0]["club_id"] == str(tokyo.id)
-    assert payload["disclosed_data"]["clubs"][0]["team_power"] == round(10 * math.log(2), 2)
+    assert payload["disclosed_data"]["clubs"][0]["team_power"] == round(
+        10 * math.log(2.1), 2
+    )
 
     july_turn.turn_state = models.TurnState.resolved
     db.add(july_turn)

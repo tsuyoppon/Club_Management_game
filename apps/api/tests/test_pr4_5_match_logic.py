@@ -27,6 +27,9 @@ from app.db.models import (
     ClubReinforcementPlan,
     ClubStaff,
     StaffRole,
+    Turn,
+    TurnDecision,
+    DecisionState,
 )
 
 
@@ -45,6 +48,7 @@ def test_calculate_er():
     assert calculate_er(15, False, 2) == 16.0
     # Streak Cap check: Streak=10 -> 0.5*10=5 -> Cap 2.0
     assert calculate_er(15, False, 10) == 17.0
+
 
 def test_calculate_win_probs():
     # Equal ER
@@ -68,13 +72,15 @@ def test_calculate_win_probs():
     assert p_home_s > p_away_s
     assert p_draw_s < 0.3
 
+
 def test_determine_outcome():
-    # Mock random to test deterministic paths if needed, 
+    # Mock random to test deterministic paths if needed,
     # but for now just check structure
     p_home, p_draw, p_away = 0.5, 0.3, 0.2
     seed = "test_seed"
     outcome = determine_outcome(p_home, p_draw, seed)
     assert outcome in ["H", "D", "A"]
+
 
 def test_determine_score():
     # Test signature and return type
@@ -82,12 +88,12 @@ def test_determine_score():
     score = determine_score("H", 20.0, 10.0, "test_seed")
     assert isinstance(score, tuple)
     assert len(score) == 2
-    assert score[0] > score[1] # Home win usually implies H > A
-    
+    assert score[0] > score[1]  # Home win usually implies H > A
+
     # Outcome "A"
     score_a = determine_score("A", 10.0, 20.0, "test_seed")
     assert score_a[1] > score_a[0]
-    
+
     # Outcome "D"
     score_d = determine_score("D", 15.0, 15.0, "test_seed")
     assert score_d[0] == score_d[1]
@@ -103,7 +109,7 @@ def test_score_candidates_respected():
     assert (2, 4) in candidates_a
     assert (3, 4) in candidates_a
     assert sum(w for _, w in SCORE_W) == pytest.approx(1.0)
-    
+
     for i in range(50):
         h, a = determine_score("H", 20.0, 10.0, f"seed_h_{i}")
         assert (h, a) in candidates_w
@@ -222,7 +228,10 @@ def test_calculate_tp_uses_weighted_current_and_past_reinforcement_budget(db):
     expected_b_i = float(weighted_budget) / 1_000_000.0
     expected_tp = 10.0 * math.log(1 + expected_b_i / 500.0)
 
-    assert calculate_weighted_reinforcement_budget(db, club.id, current.id) == weighted_budget
+    assert (
+        calculate_weighted_reinforcement_budget(db, club.id, current.id)
+        == weighted_budget
+    )
     assert calculate_tp(db, club.id, current.id) == pytest.approx(expected_tp)
 
 
@@ -279,12 +288,10 @@ def test_weighted_reinforcement_budget_applies_current_additional_from_january(d
     _create_reinforcement_plan(db, club, current, 300_000_000, 60_000_000)
 
     december_budget = (
-        Decimal("300000000")
-        + Decimal("0.6") * Decimal("120000000")
+        Decimal("300000000") + Decimal("0.6") * Decimal("120000000")
     ) / Decimal("1.6")
     january_budget = (
-        Decimal("360000000")
-        + Decimal("0.6") * Decimal("120000000")
+        Decimal("360000000") + Decimal("0.6") * Decimal("120000000")
     ) / Decimal("1.6")
 
     assert (
@@ -320,3 +327,49 @@ def test_weighted_reinforcement_budget_override_treats_input_as_next_season(db):
         )
         == weighted_budget
     )
+
+
+def _create_turn_decision(db, club, season, month_index, reinforcement_budget):
+    turn = Turn(
+        season_id=season.id,
+        month_index=month_index,
+        month_name="Jun" if month_index == 11 else "Jul",
+        month_number=6 if month_index == 11 else 7,
+    )
+    db.add(turn)
+    db.flush()
+    db.add(
+        TurnDecision(
+            turn_id=turn.id,
+            club_id=club.id,
+            decision_state=DecisionState.locked,
+            payload_json={"reinforcement_budget": reinforcement_budget},
+        )
+    )
+    db.flush()
+    return turn
+
+
+def test_july_disclosure_weights_june_reinforcement_input_above_july(db):
+    game, june_club = _create_game_club(db)
+    july_club = Club(game_id=game.id, name="July FC")
+    db.add(july_club)
+    db.flush()
+    season = _create_season(db, game, 1)
+
+    _create_reinforcement_plan(db, june_club, season, 0).next_season_budget = Decimal(
+        "100000000"
+    )
+    _create_reinforcement_plan(db, july_club, season, 0).next_season_budget = Decimal(
+        "100000000"
+    )
+    _create_topteam_staff(db, june_club, 1, next_count=2)
+    _create_topteam_staff(db, july_club, 1, next_count=2)
+    _create_turn_decision(db, june_club, season, 11, 100_000_000)
+    _create_turn_decision(db, july_club, season, 12, 100_000_000)
+
+    from app.services.team_power import calculate_team_power_for_july_disclosure
+
+    assert calculate_team_power_for_july_disclosure(
+        db, june_club.id, season.id
+    ) > calculate_team_power_for_july_disclosure(db, july_club.id, season.id)

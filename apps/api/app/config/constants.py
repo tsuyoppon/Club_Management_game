@@ -2,6 +2,7 @@
 v1Spec 係数一覧（実装用まとめ）
 このファイルに係数を集約し、プレイテストでの調整を容易にする。
 """
+
 from decimal import Decimal
 
 # =============================================================================
@@ -33,7 +34,7 @@ MATCH_OPERATION_FIXED_COST = Decimal("1000000")  # 100万円/試合
 PRIZE_AMOUNTS = {
     1: Decimal("20000000"),  # 1位: 2000万円
     2: Decimal("10000000"),  # 2位: 1000万円
-    3: Decimal("5000000"),   # 3位: 500万円
+    3: Decimal("5000000"),  # 3位: 500万円
 }
 
 # 退職金係数（年収×0.75）
@@ -89,7 +90,7 @@ G_EVENT = Decimal("0.4")  # 開幕/最終戦
 FB_EWMA_LAMBDA = Decimal("0.10")
 FB_HT_PENALTY_PHI = Decimal("0.00002")
 FB_S_PROMO_GROWTH = Decimal("10000000")  # 調整済み（PR5テスト通過値）
-FB_S_HT_GROWTH = Decimal("10000000")     # 調整済み
+FB_S_HT_GROWTH = Decimal("10000000")  # 調整済み
 FB_G0 = Decimal("-0.0005")  # 調整済み
 FB_A1 = Decimal("0.006")
 FB_A2 = Decimal("0.006")
@@ -162,6 +163,9 @@ TP_BETA = 1
 ACADEMY_DECAY_RHO = Decimal("0.5")
 TEAM_POWER_REINFORCEMENT_LOOKBACK_SEASONS = 10
 TEAM_POWER_REINFORCEMENT_DECAY = Decimal("0.6")
+# 早期（6月）に来期強化費を確定した投資をTPへやや強く反映する係数。
+TEAM_POWER_JUNE_REINFORCEMENT_INPUT_WEIGHT = Decimal("1.10")
+TEAM_POWER_JULY_REINFORCEMENT_INPUT_WEIGHT = Decimal("1.00")
 TEAM_POWER_TOPTEAM_BUDGET_PER_STAFF = Decimal("100000000")
 TEAM_POWER_TOPTEAM_PENALTY_FACTOR = Decimal("0.30")
 
@@ -176,15 +180,15 @@ DEBT_POINT_DEDUCTION = -10  # 勝点剥奪
 # =============================================================================
 
 # チーム力計算の基準値
-TEAM_POWER_B_REF = Decimal("100000000")   # 強化費基準値（1億円）
-TEAM_POWER_A_REF = Decimal("50000000")    # アカデミー基準値（5000万円）
-TEAM_POWER_DISCLOSURE_SIGMA = 1.5         # 7月公開時の不確実性（標準偏差）
+TEAM_POWER_B_REF = Decimal("100000000")  # 強化費基準値（1億円）
+TEAM_POWER_A_REF = Decimal("50000000")  # アカデミー基準値（5000万円）
+TEAM_POWER_DISCLOSURE_SIGMA = 1.5  # 7月公開時の不確実性（標準偏差）
 
 # 公開イベントの月インデックス
-DISCLOSURE_MONTH_DECEMBER = 5   # 12月 = month_index 5
-DISCLOSURE_MONTH_MAY = 10       # 5月 = month_index 10
-DISCLOSURE_MONTH_JUNE = 11      # 6月 = month_index 11
-DISCLOSURE_MONTH_JULY = 12      # 7月 = month_index 12
+DISCLOSURE_MONTH_DECEMBER = 5  # 12月 = month_index 5
+DISCLOSURE_MONTH_MAY = 10  # 5月 = month_index 10
+DISCLOSURE_MONTH_JUNE = 11  # 6月 = month_index 11
+DISCLOSURE_MONTH_JULY = 12  # 7月 = month_index 12
 
 # =============================================================================
 # Section 11: 人件費
@@ -198,8 +202,18 @@ STAFF_SALARY_ANNUAL = Decimal("4800000")  # 480万円/年
 
 # month_index: 1=8月, 2=9月, ..., 10=5月, 11=6月, 12=7月
 MONTH_INDEX_TO_CALENDAR = {
-    1: 8, 2: 9, 3: 10, 4: 11, 5: 12,
-    6: 1, 7: 2, 8: 3, 9: 4, 10: 5, 11: 6, 12: 7
+    1: 8,
+    2: 9,
+    3: 10,
+    4: 11,
+    5: 12,
+    6: 1,
+    7: 2,
+    8: 3,
+    9: 4,
+    10: 5,
+    11: 6,
+    12: 7,
 }
 
 # 四半期開始月（営業リソース配分変更可能）
