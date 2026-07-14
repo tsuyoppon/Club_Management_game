@@ -2,6 +2,9 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { downloadCsv, safeCsvFilenamePart } from './csv';
+import type { CsvCell } from './csv';
+
 type Room = {
   id: string;
   game_id: string;
@@ -312,6 +315,11 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 function amount(value: number | null | undefined) {
   if (value === null || value === undefined) return '-';
   return Math.round(value).toLocaleString('ja-JP');
+}
+
+function csvAmount(value: number | null | undefined) {
+  if (value === null || value === undefined) return null;
+  return Math.round(value);
 }
 
 function count(value: number | null | undefined) {
@@ -1077,6 +1085,7 @@ function Console({
           </>
         ) : (
           <ConsoleSectionPanel
+            clubName={ownClub?.name || null}
             consoleData={consoleData}
             financialDisclosure={financialDisclosure}
             gameId={play?.game_id || null}
@@ -1134,6 +1143,7 @@ function Console({
 }
 
 function ConsoleSectionPanel({
+  clubName,
   consoleData,
   financialDisclosure,
   gameId,
@@ -1143,6 +1153,7 @@ function ConsoleSectionPanel({
   standings,
   teamPowerDisclosure,
 }: {
+  clubName: string | null;
   consoleData: ConsoleData | null;
   financialDisclosure: PublicDisclosure<FinancialSummaryClub> | null;
   gameId: string | null;
@@ -1196,7 +1207,13 @@ function ConsoleSectionPanel({
         <StandingsPanel gameId={gameId} standings={standings} />
       ) : null}
       {consoleData && section === 'Finance' ? (
-        <FinancePanel clubId={selfClubId} gameId={gameId} report={consoleData.finance.report} seasonId={seasonId} />
+        <FinancePanel
+          clubId={selfClubId}
+          clubName={clubName}
+          gameId={gameId}
+          report={consoleData.finance.report}
+          seasonId={seasonId}
+        />
       ) : null}
       {consoleData && section === 'Fans' ? (
         <table>
@@ -1570,11 +1587,13 @@ function financeKindLabel(kind: string) {
 
 function FinancePanel({
   clubId,
+  clubName,
   gameId,
   report,
   seasonId,
 }: {
   clubId: string | null;
+  clubName: string | null;
   gameId: string | null;
   report: FinanceReport;
   seasonId: string | null;
@@ -1585,7 +1604,9 @@ function FinancePanel({
     return (
       <MonthlyFinanceTrendPage
         clubId={clubId}
+        clubName={clubName}
         gameId={gameId}
+        seasonNumber={report.period.season_number}
         seasonId={seasonId}
         onBack={() => setView('summary')}
       />
@@ -1596,6 +1617,7 @@ function FinancePanel({
     return (
       <AnnualFinanceTrendPage
         clubId={clubId}
+        clubName={clubName}
         gameId={gameId}
         onBack={() => setView('summary')}
       />
@@ -1630,12 +1652,16 @@ function FinancePanel({
 
 function MonthlyFinanceTrendPage({
   clubId,
+  clubName,
   gameId,
+  seasonNumber,
   seasonId,
   onBack,
 }: {
   clubId: string | null;
+  clubName: string | null;
   gameId: string | null;
+  seasonNumber: number;
   seasonId: string | null;
   onBack: () => void;
 }) {
@@ -1726,6 +1752,23 @@ function MonthlyFinanceTrendPage({
     };
   }, [visibleBalances, visibleLedger]);
 
+  const csvRows = useMemo<CsvCell[][]>(() => [
+    ['費目', ...seasonMonthIndexes.map(seasonMonthLabel)],
+    ...rows.map((row) => [
+      row.label,
+      ...seasonMonthIndexes.map((month) => csvAmount(row.values[month])),
+    ]),
+    ['収入合計', ...seasonMonthIndexes.map((month) => csvAmount(incomeTotals[month]))],
+    ['費用合計', ...seasonMonthIndexes.map((month) => csvAmount(expenseTotals[month]))],
+    ['純収支', ...seasonMonthIndexes.map((month) => csvAmount(netTotals[month]))],
+    ['現金残高', ...seasonMonthIndexes.map((month) => csvAmount(cashBalances[month]))],
+  ], [cashBalances, expenseTotals, incomeTotals, netTotals, rows]);
+
+  const exportCsv = () => {
+    const filenameClub = safeCsvFilenamePart(clubName || 'club');
+    downloadCsv(`${filenameClub}_月次財務_Season${seasonNumber}.csv`, csvRows);
+  };
+
   return (
     <section className="financePanel">
       <div className="paneTitle compactTitle">
@@ -1733,7 +1776,10 @@ function MonthlyFinanceTrendPage({
           <p className="eyebrow">Monthly finance</p>
           <h3>月次財務推移</h3>
         </div>
-        <button type="button" onClick={onBack}>戻る</button>
+        <div className="paneTitleActions">
+          <button type="button" disabled={!rows.length} onClick={exportCsv}>CSVエクスポート</button>
+          <button type="button" onClick={onBack}>戻る</button>
+        </div>
       </div>
       {loadError ? <p className="errorline">{loadError}</p> : null}
       {!clubId || !gameId || !seasonId ? <p className="muted">担当クラブとシーズン情報を待機中です。</p> : null}
@@ -1782,10 +1828,12 @@ function MonthlyFinanceTrendPage({
 
 function AnnualFinanceTrendPage({
   clubId,
+  clubName,
   gameId,
   onBack,
 }: {
   clubId: string | null;
+  clubName: string | null;
   gameId: string | null;
   onBack: () => void;
 }) {
@@ -1855,6 +1903,23 @@ function AnnualFinanceTrendPage({
     return { rows: sortedRows, incomeTotals: income, expenseTotals: expense, netTotals: net };
   }, [visiblePayload]);
 
+  const csvRows = useMemo<CsvCell[][]>(() => [
+    ['費目', ...visiblePayload.seasons.map((season) => `Season ${season.season_number}`)],
+    ...rows.map((row) => [
+      row.label,
+      ...visiblePayload.seasons.map((season) => csvAmount(row.values[season.id] || 0)),
+    ]),
+    ['収入合計', ...visiblePayload.seasons.map((season) => csvAmount(incomeTotals[season.id]))],
+    ['費用合計', ...visiblePayload.seasons.map((season) => csvAmount(expenseTotals[season.id]))],
+    ['累積収支', ...visiblePayload.seasons.map((season) => csvAmount(netTotals[season.id]))],
+    ['現金残高', ...visiblePayload.seasons.map((season) => csvAmount(season.closing_balance))],
+  ], [expenseTotals, incomeTotals, netTotals, rows, visiblePayload.seasons]);
+
+  const exportCsv = () => {
+    const filenameClub = safeCsvFilenamePart(clubName || 'club');
+    downloadCsv(`${filenameClub}_年次財務.csv`, csvRows);
+  };
+
   return (
     <section className="financePanel">
       <div className="paneTitle compactTitle">
@@ -1862,7 +1927,10 @@ function AnnualFinanceTrendPage({
           <p className="eyebrow">Annual finance</p>
           <h3>年次財務推移</h3>
         </div>
-        <button type="button" onClick={onBack}>戻る</button>
+        <div className="paneTitleActions">
+          <button type="button" disabled={!visiblePayload.seasons.length} onClick={exportCsv}>CSVエクスポート</button>
+          <button type="button" onClick={onBack}>戻る</button>
+        </div>
       </div>
       {loadError ? <p className="errorline">{loadError}</p> : null}
       {!clubId || !gameId ? <p className="muted">担当クラブ情報を待機中です。</p> : null}

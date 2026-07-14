@@ -419,6 +419,13 @@ h3 {
   align-items: end;
 }
 
+.paneTitleActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .compactSelect {
   min-width: 240px;
 }
@@ -680,6 +687,19 @@ h3 {
 
   .roomActions {
     justify-content: stretch;
+  }
+
+  .compactTitle {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paneTitleActions {
+    justify-content: stretch;
+  }
+
+  .paneTitleActions button {
+    flex: 1;
   }
 
   .roomActions button,
