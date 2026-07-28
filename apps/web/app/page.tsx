@@ -289,6 +289,15 @@ const financeKindOrder = [
   'admin_cost',
   'tax',
 ];
+const financeIncomeKinds = new Set([
+  'sponsor_annual',
+  'sponsor',
+  'ticket_rev',
+  'distribution_revenue',
+  'prize_revenue',
+  'merchandise_rev',
+  'academy_transfer_fee',
+]);
 const moneyKeys = new Set([
   'sales_expense',
   'promo_expense',
@@ -1903,17 +1912,30 @@ function AnnualFinanceTrendPage({
     return { rows: sortedRows, incomeTotals: income, expenseTotals: expense, netTotals: net };
   }, [visiblePayload]);
 
+  const incomeRows = useMemo(
+    () => rows.filter((row) => financeIncomeKinds.has(row.kind)),
+    [rows],
+  );
+  const expenseRows = useMemo(
+    () => rows.filter((row) => !financeIncomeKinds.has(row.kind)),
+    [rows],
+  );
+
   const csvRows = useMemo<CsvCell[][]>(() => [
     ['費目', ...visiblePayload.seasons.map((season) => `Season ${season.season_number}`)],
-    ...rows.map((row) => [
+    ...incomeRows.map((row) => [
       row.label,
       ...visiblePayload.seasons.map((season) => csvAmount(row.values[season.id] || 0)),
     ]),
     ['収入合計', ...visiblePayload.seasons.map((season) => csvAmount(incomeTotals[season.id]))],
+    ...expenseRows.map((row) => [
+      row.label,
+      ...visiblePayload.seasons.map((season) => csvAmount(row.values[season.id] || 0)),
+    ]),
     ['費用合計', ...visiblePayload.seasons.map((season) => csvAmount(expenseTotals[season.id]))],
     ['累積収支', ...visiblePayload.seasons.map((season) => csvAmount(netTotals[season.id]))],
     ['現金残高', ...visiblePayload.seasons.map((season) => csvAmount(season.closing_balance))],
-  ], [expenseTotals, incomeTotals, netTotals, rows, visiblePayload.seasons]);
+  ], [expenseRows, expenseTotals, incomeRows, incomeTotals, netTotals, visiblePayload.seasons]);
 
   const exportCsv = () => {
     const filenameClub = safeCsvFilenamePart(clubName || 'club');
@@ -1949,7 +1971,7 @@ function AnnualFinanceTrendPage({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {incomeRows.map((row) => (
                 <tr key={row.kind}>
                   <td>{row.label}</td>
                   {visiblePayload.seasons.map((season) => (
@@ -1961,6 +1983,14 @@ function AnnualFinanceTrendPage({
                 <td>収入合計</td>
                 {visiblePayload.seasons.map((season) => <td key={season.id} className="numeric">{amount(incomeTotals[season.id])}</td>)}
               </tr>
+              {expenseRows.map((row) => (
+                <tr key={row.kind}>
+                  <td>{row.label}</td>
+                  {visiblePayload.seasons.map((season) => (
+                    <td key={season.id} className="numeric">{amount(row.values[season.id] || 0)}</td>
+                  ))}
+                </tr>
+              ))}
               <tr className="totalRow">
                 <td>費用合計</td>
                 {visiblePayload.seasons.map((season) => <td key={season.id} className="numeric">{amount(expenseTotals[season.id])}</td>)}
