@@ -5,8 +5,10 @@ v1Spec Section 4
 12月・7月のターン終了時に行う情報公開処理を実装。
 """
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 from collections import defaultdict
+from copy import deepcopy
+import random
 from typing import Optional, List, Dict
 from uuid import UUID
 
@@ -15,7 +17,7 @@ from sqlalchemy import select, and_
 
 from app.db.models import (
     Season, Turn, Club, ClubFinancialSnapshot, ClubFinancialLedger,
-    SeasonPublicDisclosure, SeasonFinalStanding, TurnState,
+    SeasonPublicDisclosure, SeasonFinalStanding, TurnDecision, TurnState,
 )
 from app.config.constants import (
     DISCLOSURE_MONTH_DECEMBER,
@@ -27,6 +29,62 @@ from app.services.team_power import (
     get_all_clubs_team_power_for_july,
     get_all_clubs_team_power_for_monthly_input,
 )
+
+
+_RESOLVED_TURN_STATES = (TurnState.resolved, TurnState.acked)
+
+
+def _randomized_reinforcement_amount(value: object) -> int:
+    """Return a stable-once-published estimate within 80% to 120% of the input."""
+    actual = Decimal(str(value or 0))
+    if actual <= 0:
+        # Zero has no distinct value inside a +/-20% range.
+        return 0
+
+    lower = int((actual * Decimal("0.8")).to_integral_value(rounding=ROUND_CEILING))
+    upper = int((actual * Decimal("1.2")).to_integral_value(rounding=ROUND_FLOOR))
+    factor = Decimal(str(random.uniform(0.8, 1.2)))
+    estimate = int((actual * factor).to_integral_value(rounding=ROUND_HALF_UP))
+    estimate = min(max(estimate, lower), upper)
+
+    if Decimal(estimate) == actual:
+        # Avoid disclosing the exact positive input, even if randomization rounds back to it.
+        minimum_offset = max(
+            1,
+            int(
+                (actual * Decimal("0.01")).to_integral_value(
+                    rounding=ROUND_CEILING
+                )
+            ),
+        )
+        if estimate + minimum_offset <= upper:
+            estimate += minimum_offset
+        elif estimate - minimum_offset >= lower:
+            estimate -= minimum_offset
+
+    return estimate
+
+
+def _add_reinforcement_estimates(
+    db: Session,
+    turn_id: UUID,
+    club_rows: list[dict],
+    input_key: str,
+    label: str,
+) -> None:
+    decisions = db.query(TurnDecision).filter(TurnDecision.turn_id == turn_id).all()
+    estimates_by_club = {
+        str(decision.club_id): _randomized_reinforcement_amount(
+            (decision.payload_json or {}).get(input_key, 0)
+        )
+        for decision in decisions
+    }
+
+    for club_row in club_rows:
+        club_row["estimated_reinforcement_budget"] = estimates_by_club.get(
+            club_row["club_id"], 0
+        )
+        club_row["reinforcement_estimate_label"] = label
 
 
 def publish_financial_summary(
@@ -130,6 +188,13 @@ def publish_team_power_december(
         with_uncertainty=False,
         month_index=DISCLOSURE_MONTH_DECEMBER,
     )
+    _add_reinforcement_estimates(
+        db,
+        turn_id,
+        team_powers,
+        "additional_reinforcement",
+        "追加強化費（概算）",
+    )
     
     disclosed_data = {
         "clubs": team_powers,
@@ -187,6 +252,14 @@ def publish_team_power_july(
             "team_power": tp["team_power"],
         }
         public_team_powers.append(public_tp)
+
+    _add_reinforcement_estimates(
+        db,
+        turn_id,
+        public_team_powers,
+        "reinforcement_budget",
+        "来期強化費（概算）",
+    )
     
     disclosed_data = {
         "clubs": public_team_powers,
@@ -243,6 +316,14 @@ def publish_team_power_june_preview(
             "team_power": tp["team_power"],
         })
 
+    _add_reinforcement_estimates(
+        db,
+        turn_id,
+        public_team_powers,
+        "reinforcement_budget",
+        "来期強化費（概算）",
+    )
+
     disclosed_data = {
         "clubs": public_team_powers,
         "disclosure_type": "team_power_june_preview",
@@ -294,12 +375,62 @@ def get_visible_team_power_june_preview(
 
     if not june_turn or not july_turn:
         return None
-    if june_turn.turn_state not in (TurnState.resolved, TurnState.acked):
+    if june_turn.turn_state not in _RESOLVED_TURN_STATES:
         return None
-    if july_turn.turn_state in (TurnState.resolved, TurnState.acked):
+    if july_turn.turn_state in _RESOLVED_TURN_STATES:
         return None
 
     return get_latest_disclosure(db, season_id, "team_power_june_preview")
+
+
+def hide_expired_reinforcement_estimates(
+    db: Session,
+    disclosure: dict,
+) -> dict:
+    """Remove estimates once the turn immediately after the input month resolves."""
+    result = deepcopy(disclosure)
+    clubs = result.get("disclosed_data", {}).get("clubs", [])
+    if not any("estimated_reinforcement_budget" in club for club in clubs):
+        return result
+
+    disclosure_type = result.get("disclosure_type")
+    season_id = result.get("season_id")
+    next_turn = None
+
+    if disclosure_type == "team_power_december":
+        next_turn = db.query(Turn).filter(
+            Turn.season_id == season_id,
+            Turn.month_index == DISCLOSURE_MONTH_DECEMBER + 1,
+        ).first()
+    elif disclosure_type == "team_power_june_preview":
+        next_turn = db.query(Turn).filter(
+            Turn.season_id == season_id,
+            Turn.month_index == DISCLOSURE_MONTH_JULY,
+        ).first()
+    elif disclosure_type == "team_power_july_carried":
+        next_turn = db.query(Turn).filter(
+            Turn.season_id == season_id,
+            Turn.month_index == 1,
+        ).first()
+    elif disclosure_type == "team_power_july":
+        source_season = db.query(Season).filter(Season.id == season_id).first()
+        if source_season:
+            next_season = db.query(Season).filter(
+                Season.game_id == source_season.game_id,
+                Season.season_number == source_season.season_number + 1,
+            ).first()
+            if next_season:
+                next_turn = db.query(Turn).filter(
+                    Turn.season_id == next_season.id,
+                    Turn.month_index == 1,
+                ).first()
+
+    if next_turn and next_turn.turn_state in _RESOLVED_TURN_STATES:
+        for club in clubs:
+            club.pop("estimated_reinforcement_budget", None)
+            club.pop("reinforcement_estimate_label", None)
+
+    return result
 
 
 def get_latest_disclosure(
@@ -320,7 +451,7 @@ def get_latest_disclosure(
     if not disclosure:
         return None
     
-    return {
+    result = {
         "id": str(disclosure.id),
         "season_id": str(disclosure.season_id),
         "disclosure_type": disclosure.disclosure_type,
@@ -328,6 +459,7 @@ def get_latest_disclosure(
         "disclosed_data": disclosure.disclosed_data,
         "created_at": disclosure.created_at.isoformat(),
     }
+    return hide_expired_reinforcement_estimates(db, result)
 
 
 def get_all_disclosures(
@@ -342,14 +474,14 @@ def get_all_disclosures(
     ).order_by(SeasonPublicDisclosure.created_at.desc()).all()
     
     return [
-        {
+        hide_expired_reinforcement_estimates(db, {
             "id": str(d.id),
             "season_id": str(d.season_id),
             "disclosure_type": d.disclosure_type,
             "disclosure_month": d.disclosure_month,
             "disclosed_data": d.disclosed_data,
             "created_at": d.created_at.isoformat(),
-        }
+        })
         for d in disclosures
     ]
 

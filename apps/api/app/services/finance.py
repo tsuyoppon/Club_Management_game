@@ -219,9 +219,6 @@ def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
         staff.process_staff_cost(db, club.id, turn_id, turn.month_index, season_id)
         academy.process_monthly_cost(db, club.id, season_id, turn_id)
         
-        if turn.month_index == 12: # July
-            academy.process_transfer_fee(db, club.id, season_id, turn_id)
-            
         # PR6: 月次入力費用の計上（decision_expenseサービス経由）
         if decision and decision.payload_json:
             decision_expense.process_decision_expenses(db, club.id, turn_id, decision.payload_json)

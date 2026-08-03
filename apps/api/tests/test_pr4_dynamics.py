@@ -1,8 +1,9 @@
 import pytest
 from app.db import models
 from app.db.models import StaffRole
+from app.services import academy as academy_service
 
-def test_pr4_dynamics(client, db, auth_headers):
+def test_pr4_dynamics(client, db, auth_headers, monkeypatch):
     # 1. Setup Game, Club, Season
     resp = client.post("/api/games", json={"name": "PR4 Game"}, headers=auth_headers)
     game_id = resp.json()["id"]
@@ -117,22 +118,31 @@ def test_pr4_dynamics(client, db, auth_headers):
     t11_id = resp.json()["id"]
     process_turn(t11_id)
     
+    # Transfer revenue is intentionally not implemented yet. Keep this guard
+    # deterministic so a future accidental July hook cannot pass by chance.
+    def fail_if_transfer_fee_is_processed(*_args, **_kwargs):
+        raise AssertionError("academy transfer fee processing must remain disabled")
+
+    monkeypatch.setattr(
+        academy_service,
+        "process_transfer_fee",
+        fail_if_transfer_fee_is_processed,
+        raising=False,
+    )
+
     # Resolve July (12)
     resp = client.get(f"/api/turns/seasons/{season_id}/current", headers=auth_headers)
     t12_id = resp.json()["id"]
     process_turn(t12_id)
     
-    # Verify End of Year Processing
-    # 1. Sponsor Determination (July)
-    # 2. Academy Transfer Fee (July)
+    # Verify end-of-year processing. Sponsor determination remains active,
+    # while academy transfer fee revenue must not be posted.
     
     ledgers = db.query(models.ClubFinancialLedger).filter(
         models.ClubFinancialLedger.club_id == club_id,
         models.ClubFinancialLedger.turn_id == t12_id
     ).all()
     kinds = [l.kind for l in ledgers]
-    # Academy Transfer Fee is probabilistic (1% per 10M). 
-    # Investment is 0, so prob is 0. So no ledger expected.
     assert "academy_transfer_fee" not in kinds
     
     # Verify Sponsor State updated (next_sponsors determined)

@@ -1,15 +1,9 @@
 from uuid import UUID
 from decimal import Decimal
-import random
 from sqlalchemy.orm import Session
 from sqlalchemy import select, desc
 from app.db import models
 from app.config.constants import INITIAL_ACADEMY_ANNUAL_BUDGET, INITIAL_ACADEMY_CUMULATIVE_INVESTMENT
-
-# Assumed v1Spec Constants
-TRANSFER_FEE_PROBABILITY_BASE = 0.01 # 1% per 10M cumulative investment
-TRANSFER_FEE_MIN = 50000000 # 50M
-TRANSFER_FEE_MAX = 200000000 # 200M
 
 def ensure_academy_state(db: Session, club_id: UUID, season_id: UUID):
     state = db.execute(select(models.ClubAcademy).where(
@@ -108,46 +102,3 @@ def process_monthly_cost(db: Session, club_id: UUID, season_id: UUID, turn_id: U
             # Usually monthly.
             state.cumulative_investment += monthly_cost
             db.add(state)
-
-def process_transfer_fee(db: Session, club_id: UUID, season_id: UUID, turn_id: UUID):
-    """
-    July (Month 12). Probabilistic revenue.
-    """
-    state = ensure_academy_state(db, club_id, season_id)
-    
-    # Check idempotency
-    existing = db.execute(select(models.ClubFinancialLedger).where(
-        models.ClubFinancialLedger.club_id == club_id,
-        models.ClubFinancialLedger.turn_id == turn_id,
-        models.ClubFinancialLedger.kind == "academy_transfer_fee"
-    )).scalar_one_or_none()
-    
-    if existing:
-        return
-        
-    # Calculate Probability
-    # 1% per 10M.
-    prob = float(state.cumulative_investment) / 10000000.0 * TRANSFER_FEE_PROBABILITY_BASE
-    prob = min(0.5, prob) # Cap at 50%
-    
-    seed = f"{season_id}-{club_id}-academy-transfer"
-    rng = random.Random(seed)
-    
-    if rng.random() < prob:
-        # Success
-        amount = rng.randint(TRANSFER_FEE_MIN, TRANSFER_FEE_MAX)
-        
-        ledger = models.ClubFinancialLedger(
-            club_id=club_id,
-            turn_id=turn_id,
-            kind="academy_transfer_fee",
-            amount=amount,
-            meta={"description": "Academy Transfer Fee Revenue", "prob": prob}
-        )
-        db.add(ledger)
-        
-        # Record in history
-        history = list(state.transfer_fee_history) if state.transfer_fee_history else []
-        history.append({"season_id": str(season_id), "amount": amount})
-        state.transfer_fee_history = history
-        db.add(state)

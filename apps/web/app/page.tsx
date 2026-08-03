@@ -191,6 +191,8 @@ type TeamPowerClub = {
   club_id: string;
   club_name: string;
   team_power: number;
+  estimated_reinforcement_budget?: number;
+  reinforcement_estimate_label?: string;
 };
 
 type PublicDisclosure<TClub = FinancialSummaryClub> = {
@@ -1320,6 +1322,9 @@ function TeamPowerPanel({
 }) {
   const clubs = disclosure?.disclosed_data?.clubs || [];
   const disclosureType = disclosure?.disclosed_data?.disclosure_type || disclosure?.disclosure_type;
+  const reinforcementEstimateLabel = clubs.find(
+    (club) => club.reinforcement_estimate_label,
+  )?.reinforcement_estimate_label;
 
   if (!disclosure || clubs.length === 0) {
     return <p className="muted">7月ターン終了後または12月ターン終了後に、全クラブのチーム力指標が公開されます。</p>;
@@ -1332,6 +1337,9 @@ function TeamPowerPanel({
         <span>公開月 {seasonMonthLabel(disclosure.disclosure_month)} / {new Date(disclosure.created_at).toLocaleString('ja-JP')}</span>
       </div>
       {disclosure.disclosed_data.note ? <p className="muted">{disclosure.disclosed_data.note}</p> : null}
+      {reinforcementEstimateLabel ? (
+        <p className="muted">強化費は入力額を基準に、約±20%の範囲で概算表示しています。</p>
+      ) : null}
       <div className="disclosureTableWrap compactDisclosureTable">
         <table>
           <thead>
@@ -1339,6 +1347,7 @@ function TeamPowerPanel({
               <th>順位</th>
               <th>クラブ</th>
               <th>チーム力</th>
+              {reinforcementEstimateLabel ? <th>{reinforcementEstimateLabel}</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -1347,6 +1356,11 @@ function TeamPowerPanel({
                 <td>{index + 1}</td>
                 <td>{club.club_name}</td>
                 <td className="numeric">{club.team_power.toFixed(2)}</td>
+                {reinforcementEstimateLabel ? (
+                  <td className="numeric">
+                    約 {amount(club.estimated_reinforcement_budget)}円
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
