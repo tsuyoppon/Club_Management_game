@@ -430,6 +430,27 @@ h3 {
   min-width: 240px;
 }
 
+.matchHistoryPanel {
+  display: grid;
+  gap: 14px;
+}
+
+.matchHistoryToolbar {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.matchHistoryToolbar p {
+  margin-bottom: 0;
+}
+
+.matchTableWrap table {
+  min-width: 720px;
+}
+
 .detailList {
   display: grid;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;

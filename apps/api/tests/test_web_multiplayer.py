@@ -208,6 +208,71 @@ def test_browser_room_start_and_turn_console():
     assert committed.status_code == 200
 
 
+def test_match_history_returns_current_and_past_seasons(db):
+    host = TestClient(app)
+    player = TestClient(app)
+    room, host_club, player_club = _ready_two_player_room(host, player)
+
+    assert host.post(f"/api/rooms/{room['id']}/start", json={"year_label": "2026"}).status_code == 200
+
+    current_season = (
+        db.query(models.Season)
+        .filter(models.Season.game_id == room["game_id"])
+        .one()
+    )
+    current_season.season_number = 2
+    db.flush()
+    past_season = models.Season(
+        game_id=room["game_id"],
+        season_number=1,
+        year_label="2025",
+        status=models.SeasonStatus.finished,
+        is_finalized=True,
+    )
+    db.add(past_season)
+    db.flush()
+    past_fixture = models.Fixture(
+        season_id=past_season.id,
+        match_month_index=1,
+        match_month_name="Aug",
+        home_club_id=host_club["id"],
+        away_club_id=player_club["id"],
+        weather="rain",
+        total_attendance=4321,
+    )
+    db.add(past_fixture)
+    db.flush()
+    db.add(models.Match(
+        fixture_id=past_fixture.id,
+        status=models.MatchStatus.played,
+        home_goals=3,
+        away_goals=1,
+    ))
+    db.commit()
+
+    response = player.get(
+        f"/api/games/{room['game_id']}/clubs/{player_club['id']}/match-history"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [season["season_number"] for season in payload["seasons"]] == [2, 1]
+    assert len(payload["fixtures"][str(current_season.id)]) == 10
+    past_matches = payload["fixtures"][str(past_season.id)]
+    assert len(past_matches) == 1
+    assert past_matches[0]["opponent"] == "Tokyo"
+    assert past_matches[0]["home"] is False
+    assert past_matches[0]["score"] == [3, 1]
+    assert past_matches[0]["score_for_club"] == [1, 3]
+    assert past_matches[0]["weather"] == "rain"
+    assert past_matches[0]["total_attendance"] == 4321
+
+    forbidden = player.get(
+        f"/api/games/{room['game_id']}/clubs/{host_club['id']}/match-history"
+    )
+    assert forbidden.status_code == 403
+
+
 def test_recent_rooms_restore_candidates_and_archive_visibility():
     host = TestClient(app)
     player = TestClient(app)

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete as sqlalchemy_delete
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
 from app.db import models
@@ -477,6 +477,37 @@ def _finance_report(
         "cumulative": _statement_from_ledgers(cumulative_ledgers),
         "opening_balance": float(first_snapshot.opening_balance if first_snapshot else snapshot.opening_balance),
         "closing_balance": float(snapshot.closing_balance),
+    }
+
+
+def _serialize_club_fixture(
+    fixture: models.Fixture,
+    club_id: UUID,
+    club_names: dict[UUID, str],
+) -> dict[str, Any]:
+    match = fixture.match
+    has_score = bool(match and match.home_goals is not None and match.away_goals is not None)
+    opponent_id = fixture.away_club_id if fixture.home_club_id == club_id else fixture.home_club_id
+    return {
+        "id": str(fixture.id),
+        "month_index": fixture.match_month_index,
+        "month": fixture.match_month_name,
+        "home": fixture.home_club_id == club_id,
+        "opponent": club_names.get(opponent_id),
+        "is_bye": fixture.is_bye,
+        "status": match.status.value if match else "scheduled",
+        "score": [match.home_goals, match.away_goals] if has_score else None,
+        "score_for_club": (
+            [match.home_goals, match.away_goals]
+            if has_score and fixture.home_club_id == club_id
+            else [match.away_goals, match.home_goals]
+            if has_score and fixture.away_club_id == club_id
+            else None
+        ),
+        "weather": fixture.weather,
+        "home_attendance": fixture.home_attendance,
+        "away_attendance": fixture.away_attendance,
+        "total_attendance": fixture.total_attendance,
     }
 
 
@@ -1084,33 +1115,70 @@ def turn_console(
             for staff in staffs
         ],
         "fixtures": [
-            {
-                "id": str(fixture.id),
-                "month_index": fixture.match_month_index,
-                "month": fixture.match_month_name,
-                "home": fixture.home_club_id == club_id,
-                "opponent": club_names.get(fixture.away_club_id if fixture.home_club_id == club_id else fixture.home_club_id),
-                "is_bye": fixture.is_bye,
-                "status": fixture.match.status.value if fixture.match else "scheduled",
-                "score": (
-                    [fixture.match.home_goals, fixture.match.away_goals]
-                    if fixture.match and fixture.match.home_goals is not None else None
-                ),
-                "score_for_club": (
-                    [fixture.match.home_goals, fixture.match.away_goals]
-                    if fixture.match and fixture.match.home_goals is not None and fixture.home_club_id == club_id
-                    else [fixture.match.away_goals, fixture.match.home_goals]
-                    if fixture.match and fixture.match.home_goals is not None and fixture.away_club_id == club_id
-                    else None
-                ),
-                "weather": fixture.weather,
-                "home_attendance": fixture.home_attendance,
-                "away_attendance": fixture.away_attendance,
-                "total_attendance": fixture.total_attendance,
-            }
+            _serialize_club_fixture(fixture, club_id, club_names)
             for fixture in fixtures
         ],
         "standings": StandingsCalculator(db, season.id).calculate(),
+    }
+
+
+@router.get("/games/{game_id}/clubs/{club_id}/match-history")
+def club_match_history(
+    game_id: UUID,
+    club_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _room_for_game_or_404(db, game_id)
+    _ensure_game_active(room)
+    _web_club_access(db, room, user, club_id)
+
+    seasons = (
+        db.query(models.Season)
+        .filter(models.Season.game_id == game_id)
+        .order_by(models.Season.season_number.desc(), models.Season.created_at.desc())
+        .all()
+    )
+    season_ids = [season.id for season in seasons]
+    fixtures = []
+    if season_ids:
+        fixtures = (
+            db.query(models.Fixture)
+            .options(selectinload(models.Fixture.match))
+            .filter(
+                models.Fixture.season_id.in_(season_ids),
+                (
+                    (models.Fixture.home_club_id == club_id)
+                    | (models.Fixture.away_club_id == club_id)
+                    | (models.Fixture.bye_club_id == club_id)
+                ),
+            )
+            .order_by(models.Fixture.match_month_index)
+            .all()
+        )
+
+    clubs = db.query(models.Club).filter(models.Club.game_id == game_id).all()
+    club_names = {club.id: club.name for club in clubs}
+    fixtures_by_season: dict[str, list[dict[str, Any]]] = {
+        str(season.id): [] for season in seasons
+    }
+    for fixture in fixtures:
+        fixtures_by_season[str(fixture.season_id)].append(
+            _serialize_club_fixture(fixture, club_id, club_names)
+        )
+
+    return {
+        "seasons": [
+            {
+                "id": str(season.id),
+                "game_id": str(season.game_id),
+                "season_number": season.season_number,
+                "year_label": season.year_label,
+                "status": season.status.value,
+            }
+            for season in seasons
+        ],
+        "fixtures": fixtures_by_season,
     }
 
 

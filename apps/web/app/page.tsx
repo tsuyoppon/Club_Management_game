@@ -163,6 +163,15 @@ type ConsoleData = {
   standings: PlayState['standings'];
 };
 
+type MatchFixture = ConsoleData['fixtures'][number];
+
+type MatchHistoryPayload = {
+  seasons: SeasonOption[];
+  fixtures: Record<string, MatchFixture[]>;
+};
+
+const emptyMatchHistoryPayload: MatchHistoryPayload = { seasons: [], fixtures: {} };
+
 type FinancialSummaryClub = {
   club_id: string;
   club_name: string;
@@ -1193,26 +1202,14 @@ function ConsoleSectionPanel({
           <h2>{titleMap[section]}</h2>
         </div>
       </div>
-      {!consoleData && section !== 'Disclosures' && section !== 'Team Power' ? <p className="muted">担当クラブの情報を待機中です。</p> : null}
-      {consoleData && section === 'Matches' ? (
-        <table>
-          <thead>
-            <tr><th>月</th><th>H/A</th><th>相手</th><th>状態</th><th>結果</th><th>入場者数</th><th>天気</th></tr>
-          </thead>
-          <tbody>
-            {consoleData.fixtures.map((fixture) => (
-              <tr key={fixture.id}>
-                <td>{fixture.month}</td>
-                <td>{fixture.is_bye ? 'bye' : fixture.home ? 'H' : 'A'}</td>
-                <td>{fixture.opponent || '-'}</td>
-                <td>{fixture.status}</td>
-                <td>{fixture.score_for_club ? fixture.score_for_club.join('-') : '-'}</td>
-                <td>{count(fixture.total_attendance)}</td>
-                <td>{fixture.weather || '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {!consoleData && section !== 'Matches' && section !== 'Disclosures' && section !== 'Team Power' ? <p className="muted">担当クラブの情報を待機中です。</p> : null}
+      {section === 'Matches' ? (
+        <MatchHistoryPanel
+          currentFixtures={consoleData?.fixtures || null}
+          currentSeasonId={seasonId}
+          gameId={gameId}
+          selfClubId={selfClubId}
+        />
       ) : null}
       {section === 'Table' ? (
         <StandingsPanel gameId={gameId} standings={standings} />
@@ -1271,6 +1268,130 @@ function ConsoleSectionPanel({
         <FinancialDisclosurePanel disclosure={financialDisclosure} selfClubId={selfClubId} />
       ) : null}
     </article>
+  );
+}
+
+function MatchHistoryPanel({
+  currentFixtures,
+  currentSeasonId,
+  gameId,
+  selfClubId,
+}: {
+  currentFixtures: MatchFixture[] | null;
+  currentSeasonId: string | null;
+  gameId: string | null;
+  selfClubId: string | null;
+}) {
+  const [payload, setPayload] = useState<MatchHistoryPayload>(emptyMatchHistoryPayload);
+  const [payloadSource, setPayloadSource] = useState('');
+  const [selectedSeasonId, setSelectedSeasonId] = useState(currentSeasonId || '');
+  const [loadFailure, setLoadFailure] = useState({ source: '', message: '' });
+  const source = gameId && selfClubId ? `${gameId}:${selfClubId}` : '';
+
+  useEffect(() => {
+    if (!source || !gameId || !selfClubId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    api<MatchHistoryPayload>(`/api/games/${gameId}/clubs/${selfClubId}/match-history`)
+      .then((data) => {
+        if (cancelled) return;
+        setPayload(data);
+        setPayloadSource(source);
+        setLoadFailure({ source, message: '' });
+        setSelectedSeasonId((selected) => {
+          if (selected && data.seasons.some((season) => season.id === selected)) return selected;
+          if (currentSeasonId && data.seasons.some((season) => season.id === currentSeasonId)) {
+            return currentSeasonId;
+          }
+          return data.seasons[0]?.id || '';
+        });
+      })
+      .catch((cause: Error) => {
+        if (!cancelled) setLoadFailure({ source, message: friendlyError(cause.message) });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSeasonId, gameId, selfClubId, source]);
+
+  const visiblePayload = payloadSource === source ? payload : emptyMatchHistoryPayload;
+  const loadError = loadFailure.source === source ? loadFailure.message : '';
+  const loading = Boolean(source && payloadSource !== source && !loadError);
+  const selectedSeason = visiblePayload.seasons.find((season) => season.id === selectedSeasonId);
+  const historicalFixtures = selectedSeasonId ? visiblePayload.fixtures[selectedSeasonId] || [] : [];
+  const fixtures = selectedSeasonId === currentSeasonId && currentFixtures
+    ? currentFixtures
+    : historicalFixtures;
+
+  if (!selfClubId) {
+    return <p className="muted">担当クラブの情報を待機中です。</p>;
+  }
+
+  return (
+    <section className="matchHistoryPanel">
+      <div className="matchHistoryToolbar">
+        <p className="muted">
+          {selectedSeason
+            ? `対象: Season ${selectedSeason.season_number} / ${selectedSeason.year_label}`
+            : loading
+            ? 'シーズン情報を読み込み中です。'
+            : loadError
+            ? 'シーズン情報を取得できませんでした。'
+            : '閲覧できるシーズンはまだありません。'}
+        </p>
+        <label className="compactSelect">
+          シーズン
+          <select
+            aria-label="試合結果を表示するシーズン"
+            disabled={loading || !visiblePayload.seasons.length}
+            value={visiblePayload.seasons.length ? selectedSeasonId : ''}
+            onChange={(event) => setSelectedSeasonId(event.target.value)}
+          >
+            {!visiblePayload.seasons.length ? (
+              <option value="">{loading ? '読み込み中' : '未登録'}</option>
+            ) : null}
+            {visiblePayload.seasons.map((season) => (
+              <option key={season.id} value={season.id}>
+                Season {season.season_number} / {season.year_label}
+                {season.id === currentSeasonId ? '（現在）' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {loadError ? <p className="errorline">{loadError}</p> : null}
+      {!loading && !loadError && !visiblePayload.seasons.length ? (
+        <p className="muted">閲覧できるシーズンはまだありません。</p>
+      ) : null}
+      {!loading && selectedSeason && !fixtures.length ? (
+        <p className="muted">このシーズンの試合はありません。</p>
+      ) : null}
+      {fixtures.length ? (
+        <div className="wideTableWrap matchTableWrap">
+          <table>
+            <thead>
+              <tr><th>月</th><th>H/A</th><th>相手</th><th>状態</th><th>結果</th><th>入場者数</th><th>天気</th></tr>
+            </thead>
+            <tbody>
+              {fixtures.map((fixture) => (
+                <tr key={fixture.id}>
+                  <td>{fixture.month}</td>
+                  <td>{fixture.is_bye ? 'bye' : fixture.home ? 'H' : 'A'}</td>
+                  <td>{fixture.opponent || '-'}</td>
+                  <td>{fixture.status}</td>
+                  <td>{fixture.score_for_club ? fixture.score_for_club.join('-') : '-'}</td>
+                  <td>{count(fixture.total_attendance)}</td>
+                  <td>{fixture.weather || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -2151,7 +2272,11 @@ function BudgetEventActions({
 
   return (
     <section className="eventActions">
-      <p className="eventline">{event.title}: {event.input_label}を設定できます。</p>
+      <p className="eventline">
+        {event.key === 'additional_reinforcement'
+          ? '12月イベント: シーズン中の移籍ウインドウ-追加強化費を設定できます'
+          : `${event.title}: ${event.input_label}を設定できます。`}
+      </p>
       <div className="inputGrid">
         <label>
           {event.input_label}
