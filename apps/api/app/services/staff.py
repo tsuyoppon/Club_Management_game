@@ -1,5 +1,4 @@
 from uuid import UUID
-import random
 from decimal import Decimal
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -40,11 +39,30 @@ def ensure_staff_state(db: Session, club_id: UUID):
             db.add(staff)
     db.flush()
 
-def resolve_hiring(db: Session, club_id: UUID, season_id: UUID):
+def resolve_hiring(
+    db: Session,
+    club_id: UUID,
+    season_id: UUID,
+    *,
+    only_if_pending: bool = False,
+) -> bool:
     """
-    Resolve hiring requests in August (Month 1).
+    Apply the staffing plan carried over from the previous season.
+
+    This is called when the new season is created so the opening roster is
+    already correct before the first turn is resolved.
     """
     ensure_staff_state(db, club_id)
+
+    staffs = db.execute(
+        select(models.ClubStaff).where(models.ClubStaff.club_id == club_id)
+    ).scalars().all()
+    has_pending_plan = any(
+        staff.next_count is not None or staff.hiring_target is not None
+        for staff in staffs
+    )
+    if only_if_pending and not has_pending_plan:
+        return False
     
     # Get Firing Penalty
     fin_state = db.execute(select(models.ClubFinancialState).where(
@@ -64,11 +82,6 @@ def resolve_hiring(db: Session, club_id: UUID, season_id: UUID):
     # If I fired in May, I want it to affect THIS August hiring.
     # So decay should happen AFTER hiring resolution or BEFORE adding new penalty?
     # Let's apply decay at the END of this function (preparing for next year).
-    
-    staffs = db.execute(select(models.ClubStaff).where(models.ClubStaff.club_id == club_id)).scalars().all()
-    
-    seed = f"{season_id}-{club_id}-hiring"
-    rng = random.Random(seed)
     
     for staff in staffs:
         # 1. Handle Firing (next_count < count) - Already handled in May?
@@ -98,6 +111,7 @@ def resolve_hiring(db: Session, club_id: UUID, season_id: UUID):
         db.add(fin_state)
         
     db.flush()
+    return True
 
 def process_severance_pay(db: Session, club_id: UUID, turn_id: UUID):
     """
@@ -144,15 +158,18 @@ def process_severance_pay(db: Session, club_id: UUID, turn_id: UUID):
 def process_staff_cost(db: Session, club_id: UUID, turn_id: UUID, month_index: int, season_id: UUID = None):
     """
     Calculate monthly staff cost.
-    Also handle hiring/firing updates in August.
+
+    New-season hiring and firing are applied by create_season_core before the
+    first turn opens, rather than as a side effect of resolving August.
     """
     ensure_staff_state(db, club_id)
-    
-    # 1. Update counts if it's August (Month 1)
-    if month_index == 1 and season_id:
-        resolve_hiring(db, club_id, season_id)
 
-    # 2. Calculate Monthly Cost
+    # Compatibility for a season created before staffing was moved to season
+    # creation. A pending plan is an unambiguous signal that it was not applied.
+    if month_index == 1 and season_id:
+        resolve_hiring(db, club_id, season_id, only_if_pending=True)
+
+    # Calculate Monthly Cost
     total_cost = 0
     staffs = db.execute(select(models.ClubStaff).where(models.ClubStaff.club_id == club_id)).scalars().all()
     

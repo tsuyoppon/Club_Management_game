@@ -990,6 +990,15 @@ def turn_console(
     if not turn or not season:
         return {"turn": None, "available_inputs": [], "available_actions": []}
 
+    # Repair seasons that were created before new-season staffing was applied
+    # at creation time. This makes an already-open August Staff tab correct
+    # immediately, without waiting for resolve. New seasons have no pending plan
+    # here, so the operation is a no-op and cannot double-apply the transition.
+    if turn.month_index == 1 and staff_service.resolve_hiring(
+        db, club_id, season.id, only_if_pending=True
+    ):
+        db.commit()
+
     decision = (
         db.query(models.TurnDecision)
         .filter(models.TurnDecision.turn_id == turn.id, models.TurnDecision.club_id == club_id)

@@ -10,6 +10,8 @@ from app.routers.web_multiplayer import (
     _saved_payload_value,
     _statement_from_ledgers,
 )
+from app.routers.seasons import create_season_core
+from app.services import staff as staff_service
 from app.services.public_disclosure import _build_financial_summary
 
 
@@ -206,6 +208,109 @@ def test_browser_room_start_and_turn_console():
     assert saved.status_code == 200
     committed = player.post(f"/api/games/{room['game_id']}/clubs/{player_club['id']}/turn-commit")
     assert committed.status_code == 200
+
+
+def test_new_season_staff_console_applies_previous_season_plan_before_first_resolve(db):
+    host = TestClient(app)
+    player = TestClient(app)
+    room, _, player_club = _ready_two_player_room(host, player)
+
+    assert host.post(f"/api/rooms/{room['id']}/start", json={"year_label": "2026"}).status_code == 200
+
+    first_season = (
+        db.query(models.Season)
+        .filter(models.Season.game_id == room["game_id"])
+        .one()
+    )
+    first_season.status = models.SeasonStatus.finished
+
+    sales = db.query(models.ClubStaff).filter_by(
+        club_id=player_club["id"], role=models.StaffRole.sales
+    ).one()
+    sales.count = 4
+    sales.next_count = 1
+
+    promotion = db.query(models.ClubStaff).filter_by(
+        club_id=player_club["id"], role=models.StaffRole.promotion
+    ).one()
+    promotion.count = 2
+    promotion.hiring_target = 5
+
+    financial_state = db.query(models.ClubFinancialState).filter_by(
+        club_id=player_club["id"]
+    ).one()
+    financial_state.staff_firing_penalty = 0.4
+    db.commit()
+
+    game = db.query(models.Game).filter(models.Game.id == room["game_id"]).one()
+    second_season = create_season_core(db, game, "2027")
+
+    response = player.get(
+        f"/api/games/{room['game_id']}/clubs/{player_club['id']}/turn-console"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["turn"]["season_id"] == str(second_season.id)
+    assert payload["turn"]["month_index"] == 1
+    assert payload["turn"]["state"] == "collecting"
+    staff_by_role = {entry["role"]: entry for entry in payload["staff"]}
+    assert staff_by_role["sales"] == {
+        "role": "sales",
+        "count": 1,
+        "next_count": None,
+        "hiring_target": None,
+        "input_count": None,
+    }
+    assert staff_by_role["promotion"] == {
+        "role": "promotion",
+        "count": 5,
+        "next_count": None,
+        "hiring_target": None,
+        "input_count": None,
+    }
+    assert float(financial_state.staff_firing_penalty) == 0.2
+
+    first_turn = db.query(models.Turn).filter_by(
+        season_id=second_season.id, month_index=1
+    ).one()
+    staff_service.process_staff_cost(
+        db, player_club["id"], first_turn.id, first_turn.month_index, second_season.id
+    )
+    db.flush()
+    assert float(financial_state.staff_firing_penalty) == 0.2
+
+
+def test_staff_console_repairs_pending_plan_in_already_created_first_turn(db):
+    host = TestClient(app)
+    player = TestClient(app)
+    room, _, player_club = _ready_two_player_room(host, player)
+
+    assert host.post(f"/api/rooms/{room['id']}/start", json={"year_label": "2026"}).status_code == 200
+
+    sales = db.query(models.ClubStaff).filter_by(
+        club_id=player_club["id"], role=models.StaffRole.sales
+    ).one()
+    sales.count = 4
+    sales.next_count = 1
+    promotion = db.query(models.ClubStaff).filter_by(
+        club_id=player_club["id"], role=models.StaffRole.promotion
+    ).one()
+    promotion.count = 2
+    promotion.hiring_target = 5
+    db.commit()
+
+    response = player.get(
+        f"/api/games/{room['game_id']}/clubs/{player_club['id']}/turn-console"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["turn"]["month_index"] == 1
+    staff_by_role = {entry["role"]: entry for entry in response.json()["staff"]}
+    assert staff_by_role["sales"]["count"] == 1
+    assert staff_by_role["promotion"]["count"] == 5
+    assert staff_by_role["sales"]["input_count"] is None
+    assert staff_by_role["promotion"]["input_count"] is None
 
 
 def test_match_history_returns_current_and_past_seasons(db):

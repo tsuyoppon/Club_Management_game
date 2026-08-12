@@ -28,7 +28,7 @@ from app.schemas import FixtureGenerateRequest, SeasonCreate, SeasonRead, Standi
 from app.services.fixtures import generate_round_robin
 from app.services.standings import StandingsCalculator
 from app.services.season_finalize import SeasonFinalizer
-from app.services import reinforcement, sponsor, academy, finance
+from app.services import reinforcement, sponsor, academy, finance, staff
 from app.services.public_disclosure import copy_team_power_july_to_new_season
 from app.config.constants import INITIAL_CASH_BALANCE
 
@@ -222,6 +222,13 @@ def create_season_core(db: Session, game: Game, year_label: str) -> Season:
             if state.last_applied_turn_id is None and Decimal(state.balance or 0) == Decimal("0"):
                 state.balance = INITIAL_CASH_BALANCE
                 db.add(state)
+
+    # The May staffing plan belongs to the opening roster of the next season.
+    # Apply both hires and departures now so every pre-resolution view and every
+    # August calculation sees the same current headcount.
+    for club in clubs:
+        finance.ensure_finance_initialized_for_club(db, club.id)
+        staff.resolve_hiring(db, club.id, season.id)
 
     db.commit()
 
