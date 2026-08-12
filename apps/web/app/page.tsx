@@ -337,6 +337,11 @@ function amount(value: number | null | undefined) {
   return Math.round(value).toLocaleString('ja-JP');
 }
 
+function expenseAmount(value: number | null | undefined) {
+  if (value === null || value === undefined) return '-';
+  return Math.round(Math.abs(value)).toLocaleString('ja-JP');
+}
+
 function csvAmount(value: number | null | undefined) {
   if (value === null || value === undefined) return null;
   return Math.round(value);
@@ -1415,7 +1420,11 @@ function teamPowerDisclosureLabel(type: string | undefined) {
   return type || 'チーム力開示';
 }
 
-const financialDisclosureRows = [
+const financialDisclosureRows: ReadonlyArray<{
+  label: string;
+  keys: readonly string[];
+  isExpense?: boolean;
+}> = [
   { label: 'スポンサー収入', keys: ['Sponsor_revenue'] },
   { label: '入場料収入', keys: ['ticket_revenue'] },
   { label: '配分金', keys: ['distribution_revenue'] },
@@ -1423,16 +1432,16 @@ const financialDisclosureRows = [
   { label: '物販収入', keys: ['merchandise_revenue'] },
   { label: '移籍金収入', keys: ['academy_transfer_fee'] },
   { label: '収入合計', keys: ['total_revenue'] },
-  { label: '強化費', keys: ['reinforcement_cost'] },
-  { label: '試合関連経費', keys: ['match_operation_cost'] },
-  { label: 'トップチーム運営経費', keys: ['team_operation_cost'] },
-  { label: 'アカデミー運営経費', keys: ['academy_cost'] },
-  { label: '物販原価', keys: ['merchandise_cost'] },
-  { label: '人件費', keys: ['staff_cost'] },
-  { label: '費用合計', keys: ['total_expense', 'total expense'] },
+  { label: '強化費', keys: ['reinforcement_cost'], isExpense: true },
+  { label: '試合関連経費', keys: ['match_operation_cost'], isExpense: true },
+  { label: 'トップチーム運営経費', keys: ['team_operation_cost'], isExpense: true },
+  { label: 'アカデミー運営経費', keys: ['academy_cost'], isExpense: true },
+  { label: '物販原価', keys: ['merchandise_cost'], isExpense: true },
+  { label: '人件費', keys: ['staff_cost'], isExpense: true },
+  { label: '費用合計', keys: ['total_expense', 'total expense'], isExpense: true },
   { label: '純利益', keys: ['net_income'] },
   { label: '期末残高', keys: ['ending_balance'] },
-] as const;
+];
 
 function TeamPowerPanel({
   disclosure,
@@ -1681,7 +1690,9 @@ function FinancialDisclosurePanel({
                 <th scope="row">{row.label}</th>
                 {clubs.map((club) => (
                   <td key={club.club_id} className={club.club_id === selfClubId ? 'numeric selfColumn' : 'numeric'}>
-                    {amount(disclosureValue(club, row.keys))}
+                    {row.isExpense
+                      ? expenseAmount(disclosureValue(club, row.keys))
+                      : amount(disclosureValue(club, row.keys))}
                   </td>
                 ))}
               </tr>
@@ -1942,7 +1953,11 @@ function MonthlyFinanceTrendPage({
                 <tr key={row.kind}>
                   <td>{row.label}</td>
                   {seasonMonthIndexes.map((month) => (
-                    <td key={month} className="numeric">{amount(row.values[month])}</td>
+                    <td key={month} className="numeric">
+                      {financeIncomeKinds.has(row.kind)
+                        ? amount(row.values[month])
+                        : expenseAmount(row.values[month])}
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -1952,7 +1967,7 @@ function MonthlyFinanceTrendPage({
               </tr>
               <tr className="totalRow">
                 <td>費用合計</td>
-                {seasonMonthIndexes.map((month) => <td key={month} className="numeric">{amount(expenseTotals[month])}</td>)}
+                {seasonMonthIndexes.map((month) => <td key={month} className="numeric">{expenseAmount(expenseTotals[month])}</td>)}
               </tr>
               <tr className="netRow">
                 <td>純収支</td>
@@ -2122,13 +2137,13 @@ function AnnualFinanceTrendPage({
                 <tr key={row.kind}>
                   <td>{row.label}</td>
                   {visiblePayload.seasons.map((season) => (
-                    <td key={season.id} className="numeric">{amount(row.values[season.id] || 0)}</td>
+                    <td key={season.id} className="numeric">{expenseAmount(row.values[season.id] || 0)}</td>
                   ))}
                 </tr>
               ))}
               <tr className="totalRow">
                 <td>費用合計</td>
-                {visiblePayload.seasons.map((season) => <td key={season.id} className="numeric">{amount(expenseTotals[season.id])}</td>)}
+                {visiblePayload.seasons.map((season) => <td key={season.id} className="numeric">{expenseAmount(expenseTotals[season.id])}</td>)}
               </tr>
               <tr className="netRow">
                 <td>累積収支</td>
@@ -2172,12 +2187,12 @@ function FinanceStatementTable({
           {statement.expenses.length ? statement.expenses.map((line) => (
             <tr key={line.kind}>
               <td>{line.label}</td>
-              <td>{amount(line.amount)}</td>
+              <td>{expenseAmount(line.amount)}</td>
             </tr>
           )) : (
             <tr><td>費用なし</td><td>{amount(0)}</td></tr>
           )}
-          <tr className="totalRow"><td>費用合計</td><td>{amount(statement.expense_total)}</td></tr>
+          <tr className="totalRow"><td>費用合計</td><td>{expenseAmount(statement.expense_total)}</td></tr>
           <tr className="netRow"><td>純収支</td><td>{amount(statement.net)}</td></tr>
         </tbody>
       </table>
@@ -2322,7 +2337,7 @@ function SummaryTables({
         <dl>
           <dt>残高</dt><dd>{amount(consoleData?.finance.balance)}</dd>
           <dt>直近収入</dt><dd>{amount(consoleData?.finance.latest_income)}</dd>
-          <dt>直近費用</dt><dd>{amount(consoleData?.finance.latest_expense)}</dd>
+          <dt>直近費用</dt><dd>{expenseAmount(consoleData?.finance.latest_expense)}</dd>
         </dl>
       </article>
       <article className="pane metricPane">
