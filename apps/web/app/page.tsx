@@ -1424,6 +1424,7 @@ const financialDisclosureRows: ReadonlyArray<{
   label: string;
   keys: readonly string[];
   isExpense?: boolean;
+  totalKind?: 'income' | 'expense';
 }> = [
   { label: 'スポンサー収入', keys: ['Sponsor_revenue'] },
   { label: '入場料収入', keys: ['ticket_revenue'] },
@@ -1431,14 +1432,14 @@ const financialDisclosureRows: ReadonlyArray<{
   { label: '賞金', keys: ['prize_revenue'] },
   { label: '物販収入', keys: ['merchandise_revenue'] },
   { label: '移籍金収入', keys: ['academy_transfer_fee'] },
-  { label: '収入合計', keys: ['total_revenue'] },
+  { label: '収入合計', keys: ['total_revenue'], totalKind: 'income' },
   { label: '強化費', keys: ['reinforcement_cost'], isExpense: true },
   { label: '試合関連経費', keys: ['match_operation_cost'], isExpense: true },
   { label: 'トップチーム運営経費', keys: ['team_operation_cost'], isExpense: true },
   { label: 'アカデミー運営経費', keys: ['academy_cost'], isExpense: true },
   { label: '物販原価', keys: ['merchandise_cost'], isExpense: true },
   { label: '人件費', keys: ['staff_cost'], isExpense: true },
-  { label: '費用合計', keys: ['total_expense', 'total expense'], isExpense: true },
+  { label: '費用合計', keys: ['total_expense', 'total expense'], isExpense: true, totalKind: 'expense' },
   { label: '純利益', keys: ['net_income'] },
   { label: '期末残高', keys: ['ending_balance'] },
 ];
@@ -1686,7 +1687,10 @@ function FinancialDisclosurePanel({
           </thead>
           <tbody>
             {financialDisclosureRows.map((row) => (
-              <tr key={row.label}>
+              <tr
+                key={row.label}
+                className={row.totalKind ? `totalRow ${row.totalKind}TotalRow` : undefined}
+              >
                 <th scope="row">{row.label}</th>
                 {clubs.map((club) => (
                   <td key={club.club_id} className={club.club_id === selfClubId ? 'numeric selfColumn' : 'numeric'}>
@@ -1907,6 +1911,15 @@ function MonthlyFinanceTrendPage({
     };
   }, [visibleBalances, visibleLedger]);
 
+  const incomeRows = useMemo(
+    () => rows.filter((row) => financeIncomeKinds.has(row.kind)),
+    [rows],
+  );
+  const expenseRows = useMemo(
+    () => rows.filter((row) => !financeIncomeKinds.has(row.kind)),
+    [rows],
+  );
+
   const csvRows = useMemo<CsvCell[][]>(() => [
     ['費目', ...seasonMonthIndexes.map(seasonMonthLabel)],
     ...rows.map((row) => [
@@ -1949,23 +1962,27 @@ function MonthlyFinanceTrendPage({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {incomeRows.map((row) => (
                 <tr key={row.kind}>
                   <td>{row.label}</td>
                   {seasonMonthIndexes.map((month) => (
-                    <td key={month} className="numeric">
-                      {financeIncomeKinds.has(row.kind)
-                        ? amount(row.values[month])
-                        : expenseAmount(row.values[month])}
-                    </td>
+                    <td key={month} className="numeric">{amount(row.values[month])}</td>
                   ))}
                 </tr>
               ))}
-              <tr className="totalRow">
+              <tr className="totalRow incomeTotalRow">
                 <td>収入合計</td>
                 {seasonMonthIndexes.map((month) => <td key={month} className="numeric">{amount(incomeTotals[month])}</td>)}
               </tr>
-              <tr className="totalRow">
+              {expenseRows.map((row) => (
+                <tr key={row.kind}>
+                  <td>{row.label}</td>
+                  {seasonMonthIndexes.map((month) => (
+                    <td key={month} className="numeric">{expenseAmount(row.values[month])}</td>
+                  ))}
+                </tr>
+              ))}
+              <tr className="totalRow expenseTotalRow">
                 <td>費用合計</td>
                 {seasonMonthIndexes.map((month) => <td key={month} className="numeric">{expenseAmount(expenseTotals[month])}</td>)}
               </tr>
@@ -2129,7 +2146,7 @@ function AnnualFinanceTrendPage({
                   ))}
                 </tr>
               ))}
-              <tr className="totalRow">
+              <tr className="totalRow incomeTotalRow">
                 <td>収入合計</td>
                 {visiblePayload.seasons.map((season) => <td key={season.id} className="numeric">{amount(incomeTotals[season.id])}</td>)}
               </tr>
@@ -2141,7 +2158,7 @@ function AnnualFinanceTrendPage({
                   ))}
                 </tr>
               ))}
-              <tr className="totalRow">
+              <tr className="totalRow expenseTotalRow">
                 <td>費用合計</td>
                 {visiblePayload.seasons.map((season) => <td key={season.id} className="numeric">{expenseAmount(expenseTotals[season.id])}</td>)}
               </tr>
@@ -2182,7 +2199,7 @@ function FinanceStatementTable({
           )) : (
             <tr><td>収入なし</td><td>{amount(0)}</td></tr>
           )}
-          <tr className="totalRow"><td>収入合計</td><td>{amount(statement.income_total)}</td></tr>
+          <tr className="totalRow incomeTotalRow"><td>収入合計</td><td>{amount(statement.income_total)}</td></tr>
           <tr className="sectionRow"><th colSpan={2}>費用</th></tr>
           {statement.expenses.length ? statement.expenses.map((line) => (
             <tr key={line.kind}>
@@ -2192,7 +2209,7 @@ function FinanceStatementTable({
           )) : (
             <tr><td>費用なし</td><td>{amount(0)}</td></tr>
           )}
-          <tr className="totalRow"><td>費用合計</td><td>{expenseAmount(statement.expense_total)}</td></tr>
+          <tr className="totalRow expenseTotalRow"><td>費用合計</td><td>{expenseAmount(statement.expense_total)}</td></tr>
           <tr className="netRow"><td>純収支</td><td>{amount(statement.net)}</td></tr>
         </tbody>
       </table>
