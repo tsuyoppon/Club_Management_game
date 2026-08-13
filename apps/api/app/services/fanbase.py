@@ -71,7 +71,7 @@ def update_fanbase_for_turn(
     state: ClubFanbaseState, 
     promo_spend: Decimal, 
     ht_spend: Decimal,
-    perf_val: float, # 0.0 to 1.0 (normalized rank, 1.0 is best)
+    perf_val: float, # 0.0 to 1.0 (fixed-step current-rank score)
     hist_perf_val: float # 0.0 to 1.0
 ) -> ClubFanbaseState:
     # 1. Update Cumulative Promo

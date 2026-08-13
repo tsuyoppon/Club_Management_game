@@ -27,7 +27,7 @@ def calculate_attendance(
     home_fb: int,
     away_fb: int,
     weather: str,
-    perf_val: float, # 0.0-1.0 (normalized rank)
+    perf_val: float, # 0.0-1.0 (fixed-step current-rank score)
     hist_perf_val: float, # 0.0-1.0
     next_promo_spend: Decimal, # Promo spend for THIS match (input in previous month)
     is_event: bool = False

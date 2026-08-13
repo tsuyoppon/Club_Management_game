@@ -11,6 +11,7 @@ from app.services import weather as weather_service
 from app.services import attendance as attendance_service
 from app.services import standings as standings_service
 from app.services import historical_performance
+from app.services.current_performance import calculate_current_rank_score
 from app.services.team_power import (
     apply_topteam_staff_tp_penalty,
     calculate_current_reinforcement_budget_for_topteam_penalty,
@@ -290,6 +291,13 @@ def process_matches_for_turn(db: Session, season_id: UUID, turn_id: UUID, month_
         models.Fixture.season_id == season_id,
         models.Fixture.match_month_index == month_index
     )).scalars().all()
+
+    season = db.query(models.Season).filter(models.Season.id == season_id).first()
+    club_count = (
+        db.query(models.Club).filter(models.Club.game_id == season.game_id).count()
+        if season
+        else 0
+    )
     
     hist_perf_cache = {}
 
@@ -323,7 +331,7 @@ def process_matches_for_turn(db: Session, season_id: UUID, turn_id: UUID, month_
         home_fb_count = fb_home.fb_count if fb_home else INITIAL_FANBASE_COUNT
         away_fb_count = fb_away.fb_count if fb_away else INITIAL_FANBASE_COUNT
         
-        # 3. Get Performance (Rank)
+        # 3. Get fixed-step current-rank score
         perf_val = 0.5
         if fixture.home_club_id not in hist_perf_cache:
             hist_perf_cache[fixture.home_club_id] = (
@@ -339,14 +347,12 @@ def process_matches_for_turn(db: Session, season_id: UUID, turn_id: UUID, month_
             standings = calc.calculate(up_to_month=month_index-1)
             
             # Find home club rank
-            num_clubs = len(standings)
-            if num_clubs > 1:
-                for s in standings:
-                    if s["club_id"] == fixture.home_club_id:
-                        rank = s["rank"]
-                        # Normalize: 1st -> 1.0, Last -> 0.0
-                        perf_val = 1.0 - (rank - 1) / (num_clubs - 1)
-                        break
+            for standing in standings:
+                if standing["club_id"] == fixture.home_club_id:
+                    perf_val = calculate_current_rank_score(
+                        standing["rank"], club_count
+                    )
+                    break
         
         # 4. Get Promo Spend (Next Home Promo)
         # Input in previous month (month_index - 1)

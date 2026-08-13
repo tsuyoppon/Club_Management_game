@@ -79,6 +79,12 @@ HOME_ATTENDANCE_BETA_3 = Decimal("0.6")  # 前月ホーム向けプロモ
 HOME_ATTENDANCE_BETA_4 = Decimal("0.3")  # 相手FB効果
 HOME_ATTENDANCE_BETA_5 = Decimal("0.5")  # イベント効果
 
+# 今期順位スコア
+# リーグ中央を0.5とし、2〜5クラブのいずれでも1順位差を0.225に固定する。
+# 入場モデルの係数0.8との積は0.18で、2クラブ制の旧1位/2位差0.8の22.5%。
+CURRENT_RANK_SCORE_NEUTRAL = Decimal("0.5")
+CURRENT_RANK_SCORE_STEP = Decimal("0.225")
+
 FB_REF = 60000
 S_PROMO = Decimal("10000000")  # プロモスケール
 G_EVENT = Decimal("0.4")  # 開幕/最終戦

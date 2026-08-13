@@ -130,6 +130,7 @@ from app.services import distribution, decision_expense, merchandise, match_oper
 from app.services import team_operation
 from app.services import sales_effort
 from app.services import historical_performance
+from app.services.current_performance import calculate_current_rank_score
 
 def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
     """
@@ -150,11 +151,11 @@ def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
     if turn.month_index > 1:
         calc = standings.StandingsCalculator(db, season_id)
         st = calc.calculate(up_to_month=turn.month_index - 1)
-        num_clubs = len(st)
-        if num_clubs > 1:
-            for s in st:
-                rank = s["rank"]
-                perf_map[s["club_id"]] = 1.0 - (rank - 1) / (num_clubs - 1)
+        club_count = len(clubs)
+        for standing in st:
+            perf_map[standing["club_id"]] = calculate_current_rank_score(
+                standing["rank"], club_count
+            )
     
     hist_perf_cache = {}
 

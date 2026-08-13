@@ -2,6 +2,8 @@ import pytest
 from uuid import uuid4
 from app.db.models import Match, Club, MatchStatus, Season, Game, GameStatus, Fixture, Turn, TurnState
 from app.services.match_results import process_matches_for_turn
+from app.services import attendance as attendance_service
+from app.services.current_performance import calculate_current_rank_score
 from app.services.standings import StandingsCalculator
 from app.routers.seasons import season_schedule
 
@@ -63,6 +65,9 @@ def test_resolve_turn_idempotency(db):
     
     first_home_goals = m.home_goals
     first_away_goals = m.away_goals
+    first_home_attendance = f.home_attendance
+    first_away_attendance = f.away_attendance
+    first_total_attendance = f.total_attendance
     
     # Second run
     process_matches_for_turn(db, season_id, turn_id, month_index=1)
@@ -71,6 +76,58 @@ def test_resolve_turn_idempotency(db):
     assert m.status == MatchStatus.played
     assert m.home_goals == first_home_goals
     assert m.away_goals == first_away_goals
+    assert f.home_attendance == first_home_attendance
+    assert f.away_attendance == first_away_attendance
+    assert f.total_attendance == first_total_attendance
+
+
+def test_unplayed_match_uses_fixed_step_rank_score(db, monkeypatch):
+    game = create_game(db)
+    season = Season(
+        id=uuid4(), game_id=game.id, year_label="2025", status="running"
+    )
+    db.add(season)
+    db.commit()
+
+    first = create_club(db, "First", game.id)
+    second = create_club(db, "Second", game.id)
+    previous_fixture, previous_match = create_fixture(
+        db, season.id, first, second, month_index=1
+    )
+    previous_match.status = MatchStatus.played
+    previous_match.home_goals = 1
+    previous_match.away_goals = 0
+    previous_fixture.weather = "sunny"
+    previous_fixture.home_attendance = 1_000
+    previous_fixture.away_attendance = 180
+    previous_fixture.total_attendance = 1_180
+    db.commit()
+
+    current_fixture, current_match = create_fixture(
+        db, season.id, first, second, month_index=2
+    )
+    monkeypatch.setattr("app.services.weather.determine_weather", lambda: "sunny")
+
+    process_matches_for_turn(db, season.id, uuid4(), month_index=2)
+    db.commit()
+    db.refresh(current_fixture)
+    db.refresh(current_match)
+
+    expected = attendance_service.calculate_attendance(
+        home_fb=10_000,
+        away_fb=10_000,
+        weather="sunny",
+        perf_val=calculate_current_rank_score(1, 2),
+        hist_perf_val=0.5,
+        next_promo_spend=0,
+        is_event=False,
+    )
+    assert current_match.status == MatchStatus.played
+    assert (
+        current_fixture.home_attendance,
+        current_fixture.away_attendance,
+        current_fixture.total_attendance,
+    ) == expected
 
 def test_schedule_standings_consistency(db):
     game = create_game(db)
