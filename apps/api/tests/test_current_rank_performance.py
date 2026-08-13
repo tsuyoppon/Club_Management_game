@@ -2,6 +2,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.config import constants
 from app.services import attendance, fanbase, finance, match_results
 from app.services.current_performance import calculate_current_rank_score
 
@@ -51,9 +52,28 @@ def test_attendance_and_fanbase_use_the_same_shared_rank_score():
 
     first = calculate_current_rank_score(1, 2)
     second = calculate_current_rank_score(2, 2)
-    assert attendance.BETA_1 * (first - second) == pytest.approx(0.18)
+    assert float(constants.HOME_ATTENDANCE_BETA_1) * (
+        first - second
+    ) == pytest.approx(0.18)
     fanbase_growth_gap = fanbase.A3 * Decimal(str(first - second))
     assert float(fanbase_growth_gap) == pytest.approx(0.00225)
+
+
+def test_attendance_reads_rank_coefficient_from_central_constants(monkeypatch):
+    common = {
+        "home_fb": 10_000,
+        "away_fb": 10_000,
+        "hist": 0.5,
+        "promo": 0,
+        "weather": "sunny",
+        "event": False,
+    }
+    monkeypatch.setattr(constants, "HOME_ATTENDANCE_BETA_1", Decimal("0"))
+
+    first, _ = _home_attendance(perf=1.0, **common)
+    second, _ = _home_attendance(perf=0.0, **common)
+
+    assert first == second
 
 
 def _home_attendance(*, home_fb, away_fb, perf, hist, promo, weather, event):
