@@ -9,6 +9,17 @@ def sigmoid(x):
     return 1 / (1 + math.exp(-x))
 
 
+def calculate_next_home_promo_effect(next_promo_spend: Decimal) -> float:
+    """Return the bounded logit contribution for next-home promotion spend."""
+    promo_val = float(next_promo_spend)
+    if promo_val < 0:
+        raise ValueError("next_promo_spend must be non-negative")
+
+    max_effect = float(constants.NEXT_HOME_PROMO_MAX_LOGIT_EFFECT)
+    scale = float(constants.NEXT_HOME_PROMO_SATURATION_SCALE)
+    return max_effect * (1 - math.exp(-promo_val / scale))
+
+
 def calculate_attendance(
     home_fb: int,
     away_fb: int,
@@ -21,12 +32,9 @@ def calculate_attendance(
     # 1. Home Attendance Rate
     g_w = get_weather_effect(weather)
     
-    # z = beta_0 + beta_W*g_W + beta_1*Perf + beta_2*HistPerf + beta_3*ln(1+Promo/S_promo) + beta_4*ln(FB_opp/FB_ref) + beta_5*g_event
-    
-    promo_val = float(next_promo_spend)
-    term_promo = float(constants.HOME_ATTENDANCE_BETA_3) * math.log(
-        1 + promo_val / float(constants.S_PROMO)
-    )
+    # z = beta_0 + beta_W*g_W + beta_1*Perf + beta_2*HistPerf
+    #     + bounded_next_home_promo + beta_4*ln(FB_opp/FB_ref) + beta_5*g_event
+    term_promo = calculate_next_home_promo_effect(next_promo_spend)
     
     fb_opp_ratio = away_fb / constants.FB_REF
     if fb_opp_ratio < 0.001: fb_opp_ratio = 0.001

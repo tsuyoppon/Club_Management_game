@@ -1,12 +1,21 @@
 import os
 import pytest
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
-# Force DB host to localhost for local testing BEFORE importing app modules
-# This assumes the developer is running tests from the host machine against a port-forwarded DB
+# Default to a dedicated local test database before importing app modules.
 if "DATABASE_URL" not in os.environ:
-    os.environ["DATABASE_URL"] = "postgresql+psycopg2://postgres:postgres@localhost:5432/club_game"
+    os.environ["DATABASE_URL"] = (
+        "postgresql+psycopg2://postgres:postgres@localhost:5432/club_game_test"
+    )
+
+test_database_name = make_url(os.environ["DATABASE_URL"]).database or ""
+if not test_database_name.endswith("_test"):
+    raise RuntimeError(
+        "Refusing to run destructive tests against a database whose name does not end "
+        "with '_test'."
+    )
 
 from app.db import Base
 from app.db.session import engine

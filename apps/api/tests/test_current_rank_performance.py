@@ -110,18 +110,18 @@ def test_two_club_rank_effect_is_between_twenty_and_twenty_five_percent_of_old()
 
     effect_ratio = (new_first - new_second) / (old_first - old_second)
     assert 0.20 <= effect_ratio <= 0.25
-    assert effect_ratio == pytest.approx(251 / 1122)
+    assert effect_ratio == pytest.approx(297 / 1322)
     assert new_away == old_away
 
 
 @pytest.mark.parametrize(
     "home_fb, away_fb, rank, hist, promo, weather, event, expected",
     [
-        (10_422, 9_528, 2, 1.0, 1_000_000, "sunny", False, 1_515),
-        (10_579, 9_361, 1, 1.0, 1_000_000, "sunny", False, 1_782),
-        (10_745, 9_194, 1, 1.0, 1_000_000, "sunny", False, 1_802),
-        (10_917, 9_028, 1, 1.0, 1_000_000, "sunny", False, 1_823),
-        (11_076, 8_917, 1, 1.0, 1_000_000, "sunny", True, 2_172),
+        (10_422, 9_528, 2, 1.0, 1_000_000, "sunny", False, 1_880),
+        (10_579, 9_361, 1, 1.0, 1_000_000, "sunny", False, 2_197),
+        (10_745, 9_194, 1, 1.0, 1_000_000, "sunny", False, 2_222),
+        (10_917, 9_028, 1, 1.0, 1_000_000, "sunny", False, 2_248),
+        (11_076, 8_917, 1, 1.0, 1_000_000, "sunny", True, 2_657),
         (8_745, 11_247, 1, 0.0, 0, "cloudy", False, 873),
         (8_783, 11_194, 1, 0.0, 0, "sunny", False, 1_047),
         (8_804, 11_181, 1, 0.0, 0, "rain", False, 608),
@@ -168,8 +168,8 @@ def test_neutral_rank_keeps_opening_match_unchanged():
                 (10_917, 9_028, 1.0, 1_000_000, "sunny", False),
                 (11_076, 8_917, 1.0, 1_000_000, "sunny", True),
             ],
-            1_182.5,
-            265.25,
+            1_388.5,
+            312.0,
         ),
         (
             [

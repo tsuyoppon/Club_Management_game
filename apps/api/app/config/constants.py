@@ -75,9 +75,14 @@ HOME_ATTENDANCE_BETA_0 = Decimal("-1.986")
 HOME_ATTENDANCE_BETA_W = Decimal("1.0")  # 天候
 HOME_ATTENDANCE_BETA_1 = Decimal("0.8")  # 今期順位
 HOME_ATTENDANCE_BETA_2 = Decimal("0.4")  # 過去平均成績
-HOME_ATTENDANCE_BETA_3 = Decimal("0.6")  # 前月ホーム向けプロモ
 HOME_ATTENDANCE_BETA_4 = Decimal("0.3")  # 相手FB効果
 HOME_ATTENDANCE_BETA_5 = Decimal("0.5")  # イベント効果
+
+# 翌月ホーム向けプロモ
+# 低〜中額帯では十分な効果を持たせつつ、高額帯では効果を滑らかに頭打ちにする。
+# PromoTerm = MAX_EFFECT * (1 - exp(-Spend / SATURATION_SCALE))
+NEXT_HOME_PROMO_MAX_LOGIT_EFFECT = Decimal("0.8")
+NEXT_HOME_PROMO_SATURATION_SCALE = Decimal("2000000")
 
 # 今期順位スコア
 # リーグ中央を0.5とし、2〜5クラブのいずれでも1順位差を0.225に固定する。
@@ -86,7 +91,6 @@ CURRENT_RANK_SCORE_NEUTRAL = Decimal("0.5")
 CURRENT_RANK_SCORE_STEP = Decimal("0.225")
 
 FB_REF = 60000
-S_PROMO = Decimal("10000000")  # プロモスケール
 G_EVENT = Decimal("0.4")  # 開幕/最終戦
 
 # =============================================================================
