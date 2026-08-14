@@ -397,8 +397,10 @@ $$ E^{ret}(t)=w_s^{ret}RetStaff(t)+w_m^{ret}\frac{RetSpend(t)}{10^6} $$
 $$ E^{new}(t)=w_s^{new}NewStaff(t)+w_m^{new}\frac{NewSpend(t)}{10^6} $$
 
 v1係数（要望反映）：
-- $w_s^{ret}=1.4, w_m^{ret}=0.12$
-- $w_s^{new}=1.6, w_m^{new}=0.08$
+- $w_s^{ret}=1.4, w_m^{ret}=1.1666666667$
+- $w_s^{new}=1.6, w_m^{new}=1.3333333333$
+
+月給40万円を基準に、同額投資時のスタッフ寄与が営業費寄与の約3倍になるよう校正する。
 
 ### 10.4 累積営業努力（EWMA、既存/新規でλ分離）
 
@@ -415,8 +417,10 @@ $$ N^{exist}_{next}=round(N_{this}(1-Churn)) $$
 $$ Churn=clip\Big( c_0-c_1\ln(1+C^{ret}(7月)) -c_2(\overline{Perf}_{this}-0.5) -c_3(FanGrowth_{this}) ,\ c_{min},c_{max} \Big) $$
 
 v1係数：
-- $c_0=0.22, c_1=0.05, c_2=0.06, c_3=0.04$
+- $c_0=0.40, c_1=0.20, c_2=0.06, c_3=0.04$
 - $c_{min}=0.05, c_{max}=0.45$
+
+維持営業努力が0で成績・ファン成長が中立の場合、脱落率は40%を目安とする。通常水準の維持努力では15〜20%程度まで改善する。
 
 ※FanGrowth は内部はFBで計算（表示はしない）
 
@@ -426,7 +430,7 @@ v1係数：
 $$ L=round\Big( L_0+\ell_1\ln(1+C^{new}(7月)) +\ell_2\ln(1+N_{this}) +\ell_3(\overline{Perf}^{past}-0.5) +\ell_4\ln(1+Followers(7月)) \Big) $$
 
 v1係数：
-- $L_0=8, \ell_1=4.0, \ell_2=1.2, \ell_3=2.0, \ell_4=0.8$
+- $L_0=4, \ell_1=4.0, \ell_2=1.2, \ell_3=2.0, \ell_4=0.8$
 
 成約率：
 $$ p=\sigma\Big( a_0+a_1\ln(1+C^{new}(7月)) +a_2(\overline{Perf}_{this}-0.5) +a_3\ln(1+Followers(7月)) \Big) $$

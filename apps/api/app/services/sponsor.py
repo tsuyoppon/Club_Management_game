@@ -14,6 +14,15 @@ from app.config.constants import (
     PIPELINE_PROB_EXISTING, PIPELINE_PROB_NEW,
 )
 
+
+def _calculate_churn_rate(c_ret: float, perf: float, fan_growth: float) -> float:
+    """Return the clipped existing-sponsor churn rate for a season."""
+    term_c = float(CHURN_C1) * math.log(1 + c_ret)
+    term_p = float(CHURN_C2) * (perf - 0.5)
+    term_f = float(CHURN_C3) * fan_growth
+    churn_raw = float(CHURN_C0) - term_c - term_p - term_f
+    return max(float(CHURN_MIN), min(float(CHURN_MAX), churn_raw))
+
 def ensure_sponsor_state(db: Session, club_id: UUID, season_id: UUID):
     state = db.execute(select(models.ClubSponsorState).where(
         models.ClubSponsorState.club_id == club_id,
@@ -244,11 +253,7 @@ def _calculate_forecast_next_counts(
     rng = random.Random(seed)
     
     # Churn calculation
-    term_c = float(CHURN_C1) * math.log(1 + c_ret)
-    term_p = float(CHURN_C2) * (perf - 0.5)
-    term_f = float(CHURN_C3) * fan_growth
-    churn_raw = float(CHURN_C0) - term_c - term_p - term_f
-    churn = max(float(CHURN_MIN), min(float(CHURN_MAX), churn_raw))
+    churn = _calculate_churn_rate(c_ret, perf, fan_growth)
     n_exist_next = round(state.count * (1.0 - churn))
     
     # Leads calculation

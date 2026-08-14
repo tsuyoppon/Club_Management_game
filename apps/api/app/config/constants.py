@@ -118,24 +118,30 @@ SPONSOR_PRICE_PER_COMPANY = Decimal("5000000")  # 500万円/社
 
 # 営業努力係数
 SALES_EFFORT_WS_RET = Decimal("1.4")
-SALES_EFFORT_WM_RET = Decimal("0.12")
+# 月給40万円を基準に、同額のスタッフ投資が営業費の約3倍の努力を生むよう校正。
+# w_m = w_s * 1,000,000 / (400,000 * 3)
+SALES_EFFORT_WM_RET = Decimal("1.1666666667")
 SALES_EFFORT_WS_NEW = Decimal("1.6")
-SALES_EFFORT_WM_NEW = Decimal("0.08")
+SALES_EFFORT_WM_NEW = Decimal("1.3333333333")
+SALES_EFFORT_REFERENCE_MONTHLY_SALARY = Decimal("400000")
+SALES_EFFORT_STAFF_TO_SPEND_EFFICIENCY = Decimal("3")
 
 # EWMA λ（累積営業努力）
 SALES_EFFORT_LAMBDA_RET = Decimal("0.12")
 SALES_EFFORT_LAMBDA_NEW = Decimal("0.05")
 
 # Churn（既存スポンサー脱落率）
-CHURN_C0 = Decimal("0.22")
-CHURN_C1 = Decimal("0.05")
+# 維持努力ゼロ・成績/ファン成長が中立なら脱落率40%。
+# 通常水準の維持努力（C_ret≒2）では従来に近い15〜20%まで改善する。
+CHURN_C0 = Decimal("0.40")
+CHURN_C1 = Decimal("0.20")
 CHURN_C2 = Decimal("0.06")
 CHURN_C3 = Decimal("0.04")
 CHURN_MIN = Decimal("0.05")
 CHURN_MAX = Decimal("0.45")
 
 # Leads（見込み顧客）
-LEADS_L0 = Decimal("8.0")
+LEADS_L0 = Decimal("4.0")
 LEADS_L1 = Decimal("4.0")
 LEADS_L2 = Decimal("1.2")
 LEADS_L3 = Decimal("2.0")
