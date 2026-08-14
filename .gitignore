@@ -23,3 +23,6 @@ build/
 .game.json
 .season.json
 .demo/
+
+# Local recovery and database preservation artifacts
+.recovery/

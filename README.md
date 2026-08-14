@@ -41,10 +41,14 @@ to delete saved game data.
   ```bash
   docker compose exec api alembic upgrade head
   ```
-- Run tests (inside the API container):
+- Run tests against the dedicated disposable test database (never inherit the
+  normal API service `DATABASE_URL`):
   ```bash
-  docker compose exec api pytest
+  docker compose run --rm \
+    -e DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/club_game_test \
+    api pytest -q
   ```
+  The test database name must end in `_test`; `club_game` is never a test target.
 - Health check locally (after `docker compose up`):
   ```bash
   curl http://localhost:8000/api/health

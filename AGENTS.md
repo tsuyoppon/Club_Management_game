@@ -219,4 +219,3 @@ Before declaring any implementation complete, explicitly confirm:
 - [ ] Any unrelated full-suite failures were reported rather than hidden.
 - [ ] Migration and deployment steps were validated in proportion to risk.
 - [ ] Backups and recovery artifacts were not staged or committed accidentally.
-
