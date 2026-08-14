@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
+from app.config.constants import TICKET_PRICE
 from app.db.base import Base
 
 
@@ -401,7 +402,9 @@ class ClubFinancialProfile(Base):
     
     # PR4: Ticket Revenue
     base_attendance = Column(Integer, nullable=False, default=10000)
-    ticket_price = Column(Numeric(14, 2), nullable=False, default=2000)
+    # Ticket revenue uses the central configuration as its source of truth.
+    # Keep this profile value synchronized for backward compatibility.
+    ticket_price = Column(Numeric(14, 2), nullable=False, default=TICKET_PRICE)
     
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

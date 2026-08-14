@@ -1,7 +1,7 @@
 from uuid import UUID
-import random
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from app.config import constants
 from app.db import models
 
 def process_ticket_revenue(db: Session, club_id: UUID, season_id: UUID, turn_id: UUID, month_index: int):
@@ -24,8 +24,13 @@ def process_ticket_revenue(db: Session, club_id: UUID, season_id: UUID, turn_id:
         models.ClubFinancialProfile.club_id == club_id
     )).scalar_one()
     
-    base_attendance = profile.base_attendance
-    ticket_price = profile.ticket_price
+    # The central configuration is the source of truth.  The profile column is
+    # retained for backward compatibility and synchronized so that old rows do
+    # not advertise a price different from the one used by the calculation.
+    ticket_price = constants.TICKET_PRICE
+    if profile.ticket_price != ticket_price:
+        profile.ticket_price = ticket_price
+        db.add(profile)
     
     for fixture in fixtures:
         # Idempotency Key

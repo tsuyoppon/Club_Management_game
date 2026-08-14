@@ -49,7 +49,7 @@ POPULATION = 1000000
 STADIUM_CAPACITY = 20000
 INITIAL_FB_RATE = Decimal("0.01")  # f(0) = 0.01 -> FB(0) = 10,000
 FB_MAX_RATE = Decimal("0.25")  # f_max
-TICKET_PRICE = Decimal("2500")  # チケット単価
+TICKET_PRICE = Decimal("2000")  # チケット単価
 
 # 天候確率
 WEATHER_PROBABILITIES = {
