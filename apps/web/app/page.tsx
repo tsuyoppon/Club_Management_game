@@ -317,6 +317,10 @@ const moneyKeys = new Set([
   'additional_reinforcement',
   'reinforcement_budget',
 ]);
+const integerDigitsPattern = /^\d+$/;
+const optionalIntegerDigitsPattern = /^\d*$/;
+const thousandsSeparatorPattern = /\B(?=(\d{3})+(?!\d))/g;
+const commaPattern = /,/g;
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -350,6 +354,32 @@ function csvAmount(value: number | null | undefined) {
 function count(value: number | null | undefined) {
   if (value === null || value === undefined) return '-';
   return Math.round(value).toLocaleString('ja-JP');
+}
+
+function formatIntegerInput(value: string) {
+  if (!integerDigitsPattern.test(value)) return value;
+  return value.replace(thousandsSeparatorPattern, ',');
+}
+
+function FormattedIntegerInput({
+  value,
+  onValueChange,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+}) {
+  return (
+    <input
+      inputMode="numeric"
+      pattern="[0-9,]*"
+      type="text"
+      value={formatIntegerInput(value)}
+      onChange={(event) => {
+        const digits = event.target.value.replace(commaPattern, '');
+        if (optionalIntegerDigitsPattern.test(digits)) onValueChange(digits);
+      }}
+    />
+  );
 }
 
 function statusText(state: string | null | undefined) {
@@ -1064,15 +1094,22 @@ function Console({
                       <label key={input.key}>
                         {input.label}
                         <span className="moneyField">
-                          <input
-                            inputMode="decimal"
-                            min="0"
-                            max={input.key === 'sales_allocation_new' ? '1' : undefined}
-                            step={input.key === 'sales_allocation_new' ? '0.01' : '100000'}
-                            type="number"
-                            value={formValues[input.key] || ''}
-                            onChange={(event) => onFormValue(input.key, event.target.value)}
-                          />
+                          {moneyKeys.has(input.key) ? (
+                            <FormattedIntegerInput
+                              value={formValues[input.key] || ''}
+                              onValueChange={(value) => onFormValue(input.key, value)}
+                            />
+                          ) : (
+                            <input
+                              inputMode="decimal"
+                              min="0"
+                              max="1"
+                              step="0.01"
+                              type="number"
+                              value={formValues[input.key] || ''}
+                              onChange={(event) => onFormValue(input.key, event.target.value)}
+                            />
+                          )}
                           <small>{moneyKeys.has(input.key) ? 'JPY' : '0..1'}</small>
                         </span>
                       </label>
@@ -2271,14 +2308,14 @@ function MayActions({
         <label>
           来季目標人数
           <span className="moneyField">
-            <input min="1" type="number" value={count} onChange={(event) => setCount(event.target.value)} />
+            <FormattedIntegerInput value={count} onValueChange={setCount} />
             <button disabled={busy} onClick={() => onStaffPlan(role, Math.max(1, Number(count) || 1))} type="button">保存</button>
           </span>
         </label>
         <label>
           翌年度アカデミー予算
           <span className="moneyField">
-            <input min="0" step="100000" type="number" value={budget} onChange={(event) => setBudget(event.target.value)} />
+            <FormattedIntegerInput value={budget} onValueChange={setBudget} />
             <button disabled={busy} onClick={() => onAcademyBudget(Math.max(0, Number(budget) || 0))} type="button">保存</button>
           </span>
         </label>
@@ -2313,13 +2350,7 @@ function BudgetEventActions({
         <label>
           {event.input_label}
           <span className="moneyField">
-            <input
-              min="0"
-              step="100000"
-              type="number"
-              value={budget}
-              onChange={(changeEvent) => setBudget(changeEvent.target.value)}
-            />
+            <FormattedIntegerInput value={budget} onValueChange={setBudget} />
             <button
               disabled={busy}
               onClick={() => onBudgetEvent(event.key, Math.max(0, Number(budget) || 0))}
