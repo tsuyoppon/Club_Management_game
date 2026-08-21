@@ -3,10 +3,10 @@ from decimal import Decimal
 import secrets
 from typing import Any, Optional
 from uuid import UUID
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete as sqlalchemy_delete
 from sqlalchemy.orm import Session, selectinload
@@ -24,6 +24,8 @@ from app.services.decision_validation import (
     validate_decision_payload,
 )
 from app.services.standings import StandingsCalculator
+from app.services import final_results as final_results_service
+from app.services import result_exports, result_summary
 from app.services import academy as academy_service
 from app.services import finance as finance_service
 from app.services import staff as staff_service
@@ -43,6 +45,7 @@ DECISION_LABELS = {
 }
 
 EVENT_INPUT_KEYS = {"additional_reinforcement", "reinforcement_budget"}
+AUXILIARY_INPUT_KEYS = {"staff_plan", "academy_budget"}
 
 FINANCE_LABELS = {
     "academy_cost": "アカデミー運営経費",
@@ -155,6 +158,8 @@ def _room_for_game_or_404(db: Session, game_id: UUID) -> models.GameRoom:
 def _ensure_game_active(room: models.GameRoom):
     if room.status == "archived" or room.game.status == models.GameStatus.archived:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Game is archived")
+    if room.status == "completed" or room.game.status == models.GameStatus.completed:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Game is completed")
 
 
 def _room_member(db: Session, room: models.GameRoom, user: models.User) -> models.GameRoomMember:
@@ -240,12 +245,15 @@ def _serialize_room(db: Session, room: models.GameRoom, viewer: models.User) -> 
     members = db.query(models.GameRoomMember).filter(models.GameRoomMember.room_id == room.id).all()
     member_by_club = {member.club_id: member for member in members if member.club_id}
     viewer_member = next((member for member in members if member.user_id == viewer.id), None)
+    completion = result_summary.active_completion(db, room.game_id)
     return {
         "id": str(room.id),
         "game_id": str(room.game_id),
         "status": room.status,
         "invite_code": room.invite_code,
         "is_host": room.host_user_id == viewer.id,
+        "game_status": room.game.status.value,
+        "completed_at": completion.completed_at.isoformat() if completion else None,
         "self": {
             "user_id": str(viewer.id),
             "display_name": viewer.display_name,
@@ -312,6 +320,7 @@ def _game_delete_counts(db: Session, game: models.Game, exclude_user_id: Optiona
         "bankruptcy_states": _count_query(db.query(models.ClubBankruptcyState).filter(models.ClubBankruptcyState.season_id.in_(season_ids))) if season_ids else 0,
         "public_disclosures": _count_query(db.query(models.SeasonPublicDisclosure).filter(models.SeasonPublicDisclosure.season_id.in_(season_ids))) if season_ids else 0,
         "final_results": _count_query(db.query(models.GameFinalResult).filter(models.GameFinalResult.game_id == game.id)),
+        "completions": _count_query(db.query(models.GameCompletion).filter(models.GameCompletion.game_id == game.id)),
         "rooms": 1 if room else 0,
         "room_members": _count_query(db.query(models.GameRoomMember).filter(models.GameRoomMember.room_id == room.id)) if room else 0,
     }
@@ -738,6 +747,11 @@ def recent_rooms(
                 } if season else None,
                 "turn": _turn_label(turn),
                 "last_seen_at": membership.updated_at.isoformat() if membership.updated_at else None,
+                "completed_at": (
+                    completion.completed_at.isoformat()
+                    if (completion := result_summary.active_completion(db, room.game_id))
+                    else None
+                ),
             }
         )
     return {"rooms": rooms}
@@ -752,6 +766,174 @@ def get_room(
     room = _room_or_404(db, room_id)
     _room_member(db, room, user)
     return _serialize_room(db, room, user)
+
+
+def _summary_for_viewer(
+    db: Session,
+    game_id: UUID,
+    user: models.User,
+) -> tuple[models.GameRoom, dict[str, Any]]:
+    room = _room_for_game_or_404(db, game_id)
+    member = _room_member(db, room, user)
+    if room.game.status == models.GameStatus.archived and room.host_user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Archived results are host-only")
+    completion = result_summary.active_completion(db, game_id)
+    if not completion or room.game.status not in (models.GameStatus.completed, models.GameStatus.archived):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Game results are not finalized")
+    summary = result_summary.filter_summary_for_viewer(
+        completion.summary_json,
+        is_host=room.host_user_id == user.id,
+        club_id=member.club_id,
+    )
+    return room, summary
+
+
+@router.post("/games/{game_id}/complete")
+def complete_game(
+    game_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = (
+        db.query(models.GameRoom)
+        .filter(models.GameRoom.game_id == game_id)
+        .with_for_update()
+        .first()
+    )
+    if not room:
+        _not_found("Game room not found")
+    member = _room_member(db, room, user)
+    _require_host(room, user)
+
+    existing = result_summary.active_completion(db, game_id)
+    if existing and room.game.status == models.GameStatus.completed:
+        return result_summary.filter_summary_for_viewer(existing.summary_json, is_host=True, club_id=member.club_id)
+
+    eligibility = result_summary.completion_eligibility(db, room)
+    if not eligibility["eligible"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"message": "Game cannot be completed", **eligibility},
+        )
+
+    season = db.query(models.Season).filter(models.Season.id == eligibility["season_id"]).with_for_update().one()
+    from app.services.season_finalize import SeasonFinalizer
+
+    SeasonFinalizer(db, season.id).finalize(commit=False)
+    season.status = models.SeasonStatus.finished
+    db.add(season)
+    final_results_service.generate_final_results(db, game_id)
+    db.flush()
+
+    completed_at = datetime.utcnow()
+    summary = result_summary.build_summary(db, room.game, completed_at)
+    completion = models.GameCompletion(
+        game_id=game_id,
+        completed_by_user_id=user.id,
+        completed_at=completed_at,
+        summary_schema_version=result_summary.SUMMARY_SCHEMA_VERSION,
+        summary_json=summary,
+    )
+    db.add(completion)
+    room.game.status = models.GameStatus.completed
+    room.status = "completed"
+    db.commit()
+    return result_summary.filter_summary_for_viewer(summary, is_host=True, club_id=member.club_id)
+
+
+@router.post("/games/{game_id}/reopen")
+def reopen_game(
+    game_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = (
+        db.query(models.GameRoom)
+        .filter(models.GameRoom.game_id == game_id)
+        .with_for_update()
+        .first()
+    )
+    if not room:
+        _not_found("Game room not found")
+    _room_member(db, room, user)
+    _require_host(room, user)
+    if room.game.status != models.GameStatus.completed or room.status != "completed":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only a completed game can be reopened")
+    completion = result_summary.active_completion(db, game_id)
+    if not completion:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Active completion record not found")
+    completion.reopened_by_user_id = user.id
+    completion.reopened_at = datetime.utcnow()
+    latest_season = (
+        db.query(models.Season)
+        .filter(models.Season.game_id == game_id)
+        .order_by(models.Season.season_number.desc(), models.Season.created_at.desc())
+        .first()
+    )
+    if latest_season:
+        latest_season.status = models.SeasonStatus.running
+    room.game.status = models.GameStatus.active
+    room.status = "active"
+    db.commit()
+    return {"game_id": str(game_id), "status": "active", "room_status": "active"}
+
+
+@router.get("/games/{game_id}/result-summary")
+def result_summary_endpoint(
+    game_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    _, summary = _summary_for_viewer(db, game_id, user)
+    return summary
+
+
+@router.get("/games/{game_id}/result-summary/exports/pdf")
+def result_summary_pdf(
+    game_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room, summary = _summary_for_viewer(db, game_id, user)
+    content = result_exports.build_pdf(summary)
+    filename = result_exports.safe_export_filename(
+        f"{room.game.name}_result-summary_{summary['game']['completed_at'][:10]}"
+    )
+    encoded_filename = quote(f"{filename}.pdf")
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="result-summary.pdf"; filename*=UTF-8\'\'{encoded_filename}'
+            ),
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
+@router.get("/games/{game_id}/result-summary/exports/csv-zip")
+def result_summary_csv_zip(
+    game_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room, summary = _summary_for_viewer(db, game_id, user)
+    content = result_exports.build_csv_zip(summary)
+    filename = result_exports.safe_export_filename(
+        f"{room.game.name}_result-summary_{summary['game']['completed_at'][:10]}"
+    )
+    encoded_filename = quote(f"{filename}.zip")
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="result-summary.zip"; filename*=UTF-8\'\'{encoded_filename}'
+            ),
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @router.post("/games/{game_id}/archive")
@@ -945,6 +1127,8 @@ def play_state(
             "status": room.status,
         },
         "game_id": str(game_id),
+        "game_status": room.game.status.value,
+        "completion": result_summary.completion_eligibility(db, room),
         "season": {
             "id": str(season.id),
             "number": season.season_number,
@@ -1383,8 +1567,12 @@ def save_turn_draft(
         if decision and decision.payload_json
         else {}
     )
-    preserved_events = {key: existing_payload[key] for key in EVENT_INPUT_KEYS if key in existing_payload}
-    merged_payload = {**preserved_events, **normalized}
+    preserved = {
+        key: existing_payload[key]
+        for key in EVENT_INPUT_KEYS | AUXILIARY_INPUT_KEYS
+        if key in existing_payload
+    }
+    merged_payload = {**preserved, **normalized}
     parsed = parse_decision_payload(merged_payload)
     errors = validate_decision_payload(db, turn, club_id, parsed)
     if errors:
@@ -1398,6 +1586,40 @@ def save_turn_draft(
         draft.payload_json = merged_payload
     db.commit()
     return {"payload": draft.payload_json, "updated_at": draft.updated_at}
+
+
+def _save_auxiliary_decision_input(
+    db: Session,
+    turn: models.Turn,
+    club_id: UUID,
+    user_id: UUID,
+    key: str,
+    value: Any,
+) -> None:
+    draft = (
+        db.query(models.WebTurnDraft)
+        .filter(models.WebTurnDraft.turn_id == turn.id, models.WebTurnDraft.club_id == club_id)
+        .first()
+    )
+    decision = (
+        db.query(models.TurnDecision)
+        .filter(models.TurnDecision.turn_id == turn.id, models.TurnDecision.club_id == club_id)
+        .first()
+    )
+    merged = dict(draft.payload_json) if draft else dict(decision.payload_json or {}) if decision else {}
+    merged[key] = value
+    if draft:
+        draft.payload_json = merged
+        draft.user_id = user_id
+    else:
+        db.add(
+            models.WebTurnDraft(
+                turn_id=turn.id,
+                club_id=club_id,
+                user_id=user_id,
+                payload_json=merged,
+            )
+        )
 
 
 @router.post("/games/{game_id}/clubs/{club_id}/turn-budget-event")
@@ -1479,6 +1701,16 @@ def save_web_staff_plan(
         row = staff_service.update_staff_plan(db, club_id, role, payload.count, turn.month_index, turn.id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    existing_plan = {}
+    existing_draft = (
+        db.query(models.WebTurnDraft)
+        .filter(models.WebTurnDraft.turn_id == turn.id, models.WebTurnDraft.club_id == club_id)
+        .first()
+    )
+    if existing_draft:
+        existing_plan = dict((existing_draft.payload_json or {}).get("staff_plan") or {})
+    existing_plan[role.value] = payload.count
+    _save_auxiliary_decision_input(db, turn, club_id, user.id, "staff_plan", existing_plan)
     db.commit()
     return {
         "role": row.role.value,
@@ -1506,6 +1738,7 @@ def save_web_academy_budget(
     if turn.month_index != 10:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Academy budget only opens in May")
     row = academy_service.update_academy_plan(db, club_id, season.id, payload.annual_budget)
+    _save_auxiliary_decision_input(db, turn, club_id, user.id, "academy_budget", payload.annual_budget)
     db.commit()
     return {"annual_budget": payload.annual_budget, "club_id": str(row.club_id)}
 

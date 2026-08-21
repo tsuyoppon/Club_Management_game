@@ -6,7 +6,7 @@ from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.db.models import Membership, MembershipRole, User, WebSession
+from app.db.models import Game, GameStatus, Membership, MembershipRole, User, WebSession
 from app.db.session import SessionLocal, get_db
 
 settings = get_settings()
@@ -86,11 +86,20 @@ def require_role(
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role")
 
 
+def require_game_editable(game: Game) -> None:
+    if game.status != GameStatus.active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Game is not editable while status is {game.status.value}",
+        )
+
+
 __all__ = [
     "get_db",
     "SessionLocal",
     "get_current_user",
     "get_web_current_user",
     "hash_session_token",
+    "require_game_editable",
     "require_role",
 ]

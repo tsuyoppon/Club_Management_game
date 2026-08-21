@@ -689,6 +689,130 @@ h3 {
   text-align: right;
 }
 
+.resultShell {
+  display: grid;
+  gap: 14px;
+}
+
+.resultHeader {
+  align-items: center;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+}
+
+.resultHeader h2 {
+  font-size: 1.45rem;
+  margin-bottom: 6px;
+}
+
+.resultActions,
+.resultTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.resultTabs button {
+  flex: 1;
+  min-width: 150px;
+}
+
+.resultTabs button.active {
+  background: #235e55;
+  border-color: var(--focus);
+}
+
+.resultPane {
+  min-width: 0;
+}
+
+.resultTable {
+  min-width: 1250px;
+}
+
+.resultTable small {
+  color: var(--muted);
+}
+
+.resultSeason + .resultSeason {
+  border-top: 1px solid var(--line);
+  margin-top: 22px;
+  padding-top: 20px;
+}
+
+.resultHighlights {
+  background: rgba(88, 184, 199, .06);
+  border: 1px solid rgba(88, 184, 199, .2);
+  border-radius: 7px;
+  margin-top: 18px;
+  padding: 14px;
+}
+
+.resultHighlights p:last-child {
+  margin-bottom: 0;
+}
+
+.resultCharts {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  margin-bottom: 18px;
+}
+
+.resultCharts section {
+  background: #0b0f0e;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 12px;
+}
+
+.resultTrendChart {
+  height: 180px;
+  overflow: visible;
+  width: 100%;
+}
+
+.resultTrendChart circle {
+  fill: var(--focus);
+}
+
+.resultTrendChart text {
+  fill: var(--muted);
+  font-size: 5px;
+}
+
+.resultTrendLine {
+  stroke: var(--focus);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.decisionCell {
+  min-width: 280px;
+}
+
+.decisionCell span {
+  display: block;
+}
+
+.resultPane td > small {
+  color: var(--muted);
+  display: block;
+  margin-top: 3px;
+  white-space: nowrap;
+}
+
+.resultLoading {
+  min-height: 180px;
+}
+
+.completionReason {
+  display: block;
+  line-height: 1.4;
+}
+
 @media (max-width: 1080px) {
   .consoleGrid {
     grid-template-columns: 1fr;
@@ -702,7 +826,8 @@ h3 {
 
   .rightStack,
   .summaryGrid,
-  .financeStatements {
+  .financeStatements,
+  .resultCharts {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -723,6 +848,15 @@ h3 {
   .summaryGrid,
   .financeStatements {
     grid-template-columns: 1fr;
+  }
+
+  .resultHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .resultActions button {
+    flex: 1;
   }
 
   .roomCard {

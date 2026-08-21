@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.db import models
 from app.db.models import MembershipRole, User, StaffRole
-from app.dependencies import get_current_user, get_db, require_role
+from app.dependencies import get_current_user, get_db, require_game_editable, require_role
 from app.schemas import (
     AcademyBudgetUpdate,
     SponsorEffortUpdate,
@@ -38,6 +38,7 @@ def set_sponsor_effort(
     user: User = Depends(get_current_user),
 ):
     club = get_club_or_404(db, club_id)
+    require_game_editable(club.game)
     require_role(user, db, club.game_id, MembershipRole.club_owner, club_id=club_id)
     
     sponsor.record_sales_effort(db, club_id, season_id, turn_id, payload.effort)
@@ -53,6 +54,7 @@ def set_staff_plan(
     user: User = Depends(get_current_user),
 ):
     club = get_club_or_404(db, club_id)
+    require_game_editable(club.game)
     require_role(user, db, club.game_id, MembershipRole.club_owner, club_id=club_id)
     
     turn = get_turn_or_404(db, turn_id)
@@ -162,6 +164,7 @@ def set_academy_budget(
     user: User = Depends(get_current_user),
 ):
     club = get_club_or_404(db, club_id)
+    require_game_editable(club.game)
     require_role(user, db, club.game_id, MembershipRole.club_owner, club_id=club_id)
 
     season = db.query(models.Season).filter(models.Season.id == season_id).first()

@@ -8,7 +8,9 @@ import type { CsvCell } from './csv';
 type Room = {
   id: string;
   game_id: string;
-  status: 'lobby' | 'active' | 'archived';
+  status: 'lobby' | 'active' | 'completed' | 'archived';
+  game_status: 'draft' | 'active' | 'completed' | 'archived';
+  completed_at: string | null;
   invite_code: string;
   is_host: boolean;
   self: { user_id: string; display_name: string; club_id: string | null; ready: boolean };
@@ -43,6 +45,7 @@ type RecentRoom = {
   season: { id: string; number: number; year_label: string; status: string } | null;
   turn: PlayState['turn'];
   last_seen_at: string | null;
+  completed_at: string | null;
 };
 
 type DeletePreview = {
@@ -58,6 +61,8 @@ type DeletePreview = {
 type PlayState = {
   room: { id: string; invite_code: string; status: string };
   game_id: string;
+  game_status: string;
+  completion: { eligible: boolean; blockers: string[]; season_id: string | null; turn_id: string | null };
   season: { id: string; number: number; year_label: string; status: string } | null;
   turn: {
     id: string;
@@ -82,6 +87,93 @@ type PlayState = {
     gd: number;
     points: number;
   }>;
+};
+
+type ResultOverall = {
+  club_id: string;
+  club_name: string;
+  final_sales_amount?: number;
+  final_sales_rank?: number;
+  final_equity_amount?: number;
+  final_equity_rank?: number;
+  championship_count?: number;
+  runner_up_count?: number;
+  average_rank?: number;
+  average_home_attendance?: number;
+  attendance_rank?: number;
+  final_fanbase?: number | null;
+  fanbase_rank?: number | null;
+  final_followers?: number | null;
+  followers_rank?: number | null;
+  final_sponsor_count?: number | null;
+  sponsor_rank?: number | null;
+  next_sponsor_count?: number | null;
+};
+
+type ResultSeasonStanding = StandingRow & {
+  season_id: string;
+  season_number: number;
+  year_label: string;
+};
+
+type ResultSeasonMetric = {
+  season_id: string;
+  season_number: number;
+  year_label: string;
+  rank: number | null;
+  points: number | null;
+  revenue: number | null;
+  expense: number | null;
+  net: number | null;
+  closing_balance: number | null;
+  average_home_attendance: number | null;
+  fanbase: number | null;
+  followers: number | null;
+  sponsor_count: number | null;
+  next_sponsor_count: number | null;
+  team_power: number | null;
+  bankrupt: boolean;
+  points_penalty: number;
+};
+
+type ResultDecision = {
+  season_number: number;
+  year_label: string;
+  month_index: number;
+  month_name: string;
+  decision_state: string;
+  inputs: Record<string, unknown>;
+  committed_by: string | null;
+  committed_at: string | null;
+  income: number | null;
+  expense: number | null;
+  closing_balance: number | null;
+  rank: number | null;
+  points: number | null;
+  matches: Array<{
+    opponent: string | null;
+    home: boolean;
+    score_for: number | null;
+    score_against: number | null;
+  }>;
+};
+
+type ResultClubReview = {
+  club_id: string;
+  club_name: string;
+  season_metrics: ResultSeasonMetric[];
+  decisions: ResultDecision[];
+  highlights: Array<{ category: string; message: string; club_name: string }>;
+};
+
+type ResultSummary = {
+  schema_version: number;
+  game: { id: string; name: string; created_at: string; started_at: string; completed_at: string; seasons_played: number };
+  overall_results: ResultOverall[];
+  season_standings: ResultSeasonStanding[];
+  club_reviews: ResultClubReview[];
+  highlights: Array<{ club_id: string; club_name: string; category: string; message: string }>;
+  viewer_scope: string;
 };
 
 type SeasonOption = {
@@ -317,6 +409,26 @@ const moneyKeys = new Set([
   'additional_reinforcement',
   'reinforcement_budget',
 ]);
+const resultDecisionLabels: Record<string, string> = {
+  sales_expense: '営業費',
+  promo_expense: 'プロモーション費',
+  hometown_expense: 'ホームタウン活動費',
+  next_home_promo: '翌月ホーム向けプロモ',
+  sales_allocation_new: '新規スポンサー営業配分',
+  additional_reinforcement: '追加強化費',
+  reinforcement_budget: '翌シーズン強化費',
+  staff_plan: 'スタッフ計画',
+  academy_budget: 'アカデミー予算',
+};
+
+const completionBlockerLabels: Record<string, string> = {
+  game_not_active: 'ゲームが進行中ではありません',
+  season_missing: '対象シーズンがありません',
+  july_turn_missing: '7月ターンがありません',
+  july_not_resolved: '7月の結果が未確定です',
+  clubs_not_acknowledged: '全クラブのackが必要です',
+  matches_incomplete: '未処理または不整合の試合があります',
+};
 const integerDigitsPattern = /^\d+$/;
 const optionalIntegerDigitsPattern = /^\d*$/;
 const thousandsSeparatorPattern = /\B(?=(\d{3})+(?!\d))/g;
@@ -411,7 +523,8 @@ export default function Home() {
   const [teamPowerDisclosure, setTeamPowerDisclosure] = useState<PublicDisclosure<TeamPowerClub> | null>(null);
   const [recentRooms, setRecentRooms] = useState<RecentRoom[]>([]);
   const [archivedRooms, setArchivedRooms] = useState<RecentRoom[]>([]);
-  const [stage, setStage] = useState<'entry' | 'lobby' | 'console'>('entry');
+  const [resultSummary, setResultSummary] = useState<ResultSummary | null>(null);
+  const [stage, setStage] = useState<'entry' | 'lobby' | 'console' | 'result'>('entry');
   const [displayName, setDisplayName] = useState('');
   const [roomName, setRoomName] = useState('研修リーグ');
   const [inviteCode, setInviteCode] = useState('');
@@ -434,8 +547,20 @@ export default function Home() {
   const loadRoom = useCallback(async (roomId: string) => {
     const nextRoom = await api<Room>(`/api/rooms/${roomId}`);
     setRoom(nextRoom);
-    setStage(nextRoom.status === 'active' ? 'console' : 'lobby');
+    setStage(
+      nextRoom.status === 'completed' || (nextRoom.status === 'archived' && nextRoom.completed_at)
+        ? 'result'
+        : nextRoom.status === 'active'
+        ? 'console'
+        : 'lobby',
+    );
     return nextRoom;
+  }, []);
+
+  const loadResultSummary = useCallback(async (gameId: string) => {
+    const summary = await api<ResultSummary>(`/api/games/${gameId}/result-summary`);
+    setResultSummary(summary);
+    return summary;
   }, []);
 
   const loadRecentRooms = useCallback(async () => {
@@ -468,21 +593,16 @@ export default function Home() {
   const loadPlay = useCallback(async (gameId: string) => {
     const nextPlay = await api<PlayState>(`/api/games/${gameId}/play-state`);
     setPlay(nextPlay);
-    if (nextPlay.season) {
-      setFinancialDisclosure(await loadFinancialDisclosure(nextPlay.season.id));
-      setTeamPowerDisclosure(await loadTeamPowerDisclosure(nextPlay.season.id));
-    } else {
-      setFinancialDisclosure(null);
-      setTeamPowerDisclosure(null);
-    }
-    if (nextPlay.self.club_id) {
-      const nextConsole = await api<ConsoleData>(
-        `/api/games/${gameId}/clubs/${nextPlay.self.club_id}/turn-console`,
-      );
-      setConsoleData(nextConsole);
-    } else {
-      setConsoleData(null);
-    }
+    const [financial, teamPower, nextConsole] = await Promise.all([
+      nextPlay.season ? loadFinancialDisclosure(nextPlay.season.id) : Promise.resolve(null),
+      nextPlay.season ? loadTeamPowerDisclosure(nextPlay.season.id) : Promise.resolve(null),
+      nextPlay.self.club_id
+        ? api<ConsoleData>(`/api/games/${gameId}/clubs/${nextPlay.self.club_id}/turn-console`)
+        : Promise.resolve(null),
+    ]);
+    setFinancialDisclosure(financial);
+    setTeamPowerDisclosure(teamPower);
+    setConsoleData(nextConsole);
   }, [loadFinancialDisclosure, loadTeamPowerDisclosure]);
 
   useEffect(() => {
@@ -512,6 +632,20 @@ export default function Home() {
       window.clearInterval(interval);
     };
   }, [loadPlay, room, stage]);
+
+  useEffect(() => {
+    if (!room || stage !== 'result') return undefined;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      loadResultSummary(room.game_id).catch((cause: Error) => {
+        if (!cancelled) setError(friendlyError(cause.message));
+      });
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [loadResultSummary, room, stage]);
 
   useEffect(() => {
     if (!consoleData?.turn || restoredTurnId.current === consoleData.turn.id) return;
@@ -618,6 +752,59 @@ export default function Home() {
     );
   }
 
+  async function completeGame() {
+    if (!room) return;
+    if (!window.confirm('このシーズンでゲームを終了し、結果サマリーを確定します。終了は後から取り消せます。')) return;
+    await report(
+      api<ResultSummary>(`/api/games/${room.game_id}/complete`, { method: 'POST' }).then(async (summary) => {
+        setResultSummary(summary);
+        await loadRoom(room.id);
+      }),
+    );
+  }
+
+  async function reopenGame() {
+    if (!room) return;
+    if (!window.confirm('ゲーム終了を取り消し、7月の結果確認状態へ戻しますか？')) return;
+    await report(
+      api(`/api/games/${room.game_id}/reopen`, { method: 'POST' }).then(async () => {
+        setResultSummary(null);
+        await loadRoom(room.id);
+      }),
+    );
+  }
+
+  async function downloadResultExport(format: 'pdf' | 'csv-zip') {
+    if (!room) return;
+    setError('');
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/games/${room.game_id}/result-summary/exports/${format}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(typeof payload?.detail === 'string' ? payload.detail : `HTTP ${response.status}`);
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const encodedFilename = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      const filename = (encodedFilename ? decodeURIComponent(encodedFilename) : null)
+        || disposition.match(/filename="([^"]+)"/)?.[1]
+        || `${safeCsvFilenamePart(resultSummary?.game.name || 'game')}_result-summary.${format === 'pdf' ? 'pdf' : 'zip'}`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (cause) {
+      setError(friendlyError((cause as Error).message));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function hostUncommit(clubId: string) {
     if (!room) return;
     await report(
@@ -672,6 +859,7 @@ export default function Home() {
     setConsoleData(null);
     setFinancialDisclosure(null);
     setTeamPowerDisclosure(null);
+    setResultSummary(null);
     setFormValues({});
     setDraftDirty(false);
     setDraftState('未保存');
@@ -784,9 +972,21 @@ export default function Home() {
           onAcademyBudget={saveAcademyBudget}
           onBudgetEvent={saveBudgetEvent}
           onArchive={() => archiveGame()}
+          onComplete={completeGame}
           onHostAction={hostAction}
           onHostUncommit={hostUncommit}
           onStaffPlan={saveStaffPlan}
+        />
+      ) : null}
+      {stage === 'result' && room ? (
+        <ResultSummaryView
+          busy={busy}
+          room={room}
+          summary={resultSummary}
+          onArchive={() => archiveGame()}
+          onBack={() => clearCurrentGame()}
+          onExport={downloadResultExport}
+          onReopen={reopenGame}
         />
       ) : null}
     </main>
@@ -845,17 +1045,17 @@ function Entry({
                   <div>
                     <strong>{item.room_name}</strong>
                     <p className="muted">
-                      {item.club_name || (item.is_host ? 'ホスト' : '未割当')} / {item.season ? `S${item.season.number}` : 'ロビー'} / {item.turn?.month_name || item.room_status}
+                      {item.club_name || (item.is_host ? 'ホスト' : '未割当')} / {item.season ? `S${item.season.number}` : 'ロビー'} / {item.room_status === 'completed' ? '終了済み' : item.turn?.month_name || item.room_status}
                     </p>
                   </div>
                   <div className="roomActions">
-                    {item.is_host ? (
+                    {item.is_host && item.room_status !== 'completed' ? (
                       <button disabled={busy} onClick={() => onArchive(item)} type="button">
                         アーカイブ
                       </button>
                     ) : null}
                     <button className="primary" disabled={busy} onClick={() => onResume(item.room_id)} type="button">
-                      再開
+                      {item.room_status === 'completed' ? '結果を見る' : '再開'}
                     </button>
                   </div>
                 </div>
@@ -871,9 +1071,14 @@ function Entry({
                     <strong>{item.room_name}</strong>
                     <p className="muted">招待コード {item.invite_code}</p>
                   </div>
-                  <button disabled={busy} onClick={() => onDeleteArchived(item)} type="button">
-                    完全削除
-                  </button>
+                  <div className="roomActions">
+                    {item.completed_at ? (
+                      <button disabled={busy} onClick={() => onResume(item.room_id)} type="button">結果を見る</button>
+                    ) : null}
+                    <button disabled={busy} onClick={() => onDeleteArchived(item)} type="button">
+                      完全削除
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -991,6 +1196,208 @@ function Lobby({
   );
 }
 
+type ResultSection = 'overall' | 'seasons' | 'club' | 'decisions';
+
+function ResultTrendChart({
+  metrics,
+  metric,
+  invert = false,
+}: {
+  metrics: ResultSeasonMetric[];
+  metric: keyof ResultSeasonMetric;
+  invert?: boolean;
+}) {
+  const points = metrics
+    .map((row, index) => ({ index, value: typeof row[metric] === 'number' ? Number(row[metric]) : null }))
+    .filter((row): row is { index: number; value: number } => row.value !== null);
+  if (!points.length) return <p className="muted">記録なし</p>;
+  const values = points.map((row) => row.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const path = points.map((point, pointIndex) => {
+    const x = metrics.length <= 1 ? 50 : 6 + (point.index / (metrics.length - 1)) * 88;
+    const normalized = (point.value - min) / range;
+    const y = 86 - (invert ? 1 - normalized : normalized) * 70;
+    return `${pointIndex ? 'L' : 'M'} ${x} ${y}`;
+  }).join(' ');
+  return (
+    <svg aria-label={`${String(metric)}のシーズン推移`} className="resultTrendChart" role="img" viewBox="0 0 100 100">
+      <path className="resultTrendLine" d={path} fill="none" />
+      {points.map((point) => {
+        const x = metrics.length <= 1 ? 50 : 6 + (point.index / (metrics.length - 1)) * 88;
+        const normalized = (point.value - min) / range;
+        const y = 86 - (invert ? 1 - normalized : normalized) * 70;
+        return <circle key={`${point.index}-${point.value}`} cx={x} cy={y} r="2.5" />;
+      })}
+      {metrics.map((row, index) => (
+        <text key={row.season_id} x={metrics.length <= 1 ? 50 : 6 + (index / (metrics.length - 1)) * 88} y="98" textAnchor="middle">
+          S{row.season_number}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
+function ResultSummaryView({
+  busy,
+  room,
+  summary,
+  onArchive,
+  onBack,
+  onExport,
+  onReopen,
+}: {
+  busy: boolean;
+  room: Room;
+  summary: ResultSummary | null;
+  onArchive: () => void;
+  onBack: () => void;
+  onExport: (format: 'pdf' | 'csv-zip') => void;
+  onReopen: () => void;
+}) {
+  const [section, setSection] = useState<ResultSection>('overall');
+  const [selectedClubId, setSelectedClubId] = useState('');
+  const reviews = summary?.club_reviews || [];
+  const selectedReview = reviews.find((review) => review.club_id === selectedClubId) || reviews[0] || null;
+  const seasons = Array.from(new Map((summary?.season_standings || []).map((row) => [row.season_id, {
+    id: row.season_id,
+    number: row.season_number,
+    year: row.year_label,
+  }])).values());
+
+  if (!summary) {
+    return <section className="pane resultLoading"><h2>結果サマリーを生成中...</h2></section>;
+  }
+
+  return (
+    <section className="resultShell">
+      <article className="pane resultHeader">
+        <div>
+          <p className="eyebrow">Completed game</p>
+          <h2>{summary.game.name} 結果サマリー</h2>
+          <p className="muted">
+            {summary.game.seasons_played}シーズン / {new Date(summary.game.started_at || summary.game.created_at).toLocaleDateString('ja-JP')}
+            {' 〜 '}{new Date(summary.game.completed_at).toLocaleString('ja-JP')}
+          </p>
+        </div>
+        <div className="resultActions">
+          <button disabled={busy} onClick={() => onExport('pdf')} type="button">PDF出力</button>
+          <button disabled={busy} onClick={() => onExport('csv-zip')} type="button">CSV一括出力</button>
+          {room.is_host && room.status === 'completed' ? (
+            <button disabled={busy} onClick={onReopen} type="button">終了を取り消す</button>
+          ) : null}
+          {room.is_host && room.status !== 'archived' ? (
+            <button disabled={busy} onClick={onArchive} type="button">アーカイブ</button>
+          ) : null}
+          <button disabled={busy} onClick={onBack} type="button">一覧へ</button>
+        </div>
+      </article>
+
+      <nav className="pane resultTabs" aria-label="Result summary sections">
+        {([
+          ['overall', '総合結果'],
+          ['seasons', 'シーズン推移'],
+          ['club', 'クラブレビュー'],
+          ['decisions', '意思決定タイムライン'],
+        ] as Array<[ResultSection, string]>).map(([key, label]) => (
+          <button aria-pressed={section === key} className={section === key ? 'active' : ''} key={key} onClick={() => setSection(key)} type="button">
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {section === 'overall' ? (
+        <article className="pane resultPane">
+          <h2>総合結果</h2>
+          <p className="muted">単一の総合優勝者は決定せず、複数の評価軸で結果を表示します。</p>
+          <div className="wideTableWrap">
+            <table className="resultTable">
+              <thead><tr><th>クラブ</th><th>売上</th><th>純資産</th><th>優勝/準優勝</th><th>平均順位</th><th>平均入場者</th><th>ファンベース</th><th>フォロワー</th><th>スポンサー</th><th>次年度スポンサー</th></tr></thead>
+              <tbody>
+                {summary.overall_results.map((row) => (
+                  <tr key={row.club_id}>
+                    <td>{row.club_name}</td>
+                    <td>{amount(row.final_sales_amount)} <small>#{row.final_sales_rank ?? '-'}</small></td>
+                    <td>{amount(row.final_equity_amount)} <small>#{row.final_equity_rank ?? '-'}</small></td>
+                    <td>{count(row.championship_count)} / {count(row.runner_up_count)}</td>
+                    <td>{row.average_rank ?? '-'}</td>
+                    <td>{count(row.average_home_attendance)} <small>#{row.attendance_rank ?? '-'}</small></td>
+                    <td>{count(row.final_fanbase)} <small>#{row.fanbase_rank ?? '-'}</small></td>
+                    <td>{count(row.final_followers)} <small>#{row.followers_rank ?? '-'}</small></td>
+                    <td>{count(row.final_sponsor_count)} <small>#{row.sponsor_rank ?? '-'}</small></td>
+                    <td>{count(row.next_sponsor_count)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <section className="resultHighlights">
+            <h3>ゲームのハイライト</h3>
+            {summary.highlights.length ? summary.highlights.map((row, index) => (
+              <p key={`${row.club_id}-${row.category}-${index}`}><strong>{row.club_name}</strong> — {row.message}</p>
+            )) : <p className="muted">抽出できるハイライトはありません。</p>}
+          </section>
+        </article>
+      ) : null}
+
+      {section === 'seasons' ? (
+        <article className="pane resultPane">
+          <h2>シーズン別最終順位</h2>
+          {seasons.map((season) => (
+            <section className="resultSeason" key={season.id}>
+              <h3>Season {season.number} / {season.year}</h3>
+              <div className="wideTableWrap"><table><thead><tr><th>順位</th><th>クラブ</th><th>試合</th><th>勝</th><th>分</th><th>敗</th><th>得点</th><th>失点</th><th>得失点</th><th>勝点</th></tr></thead>
+                <tbody>{summary.season_standings.filter((row) => row.season_id === season.id).map((row) => (
+                  <tr key={row.club_id}><td>{row.rank}</td><td>{row.club_name}</td><td>{row.played}</td><td>{row.won}</td><td>{row.drawn}</td><td>{row.lost}</td><td>{row.gf}</td><td>{row.ga}</td><td>{row.gd}</td><td>{row.points}</td></tr>
+                ))}</tbody>
+              </table></div>
+            </section>
+          ))}
+        </article>
+      ) : null}
+
+      {(section === 'club' || section === 'decisions') ? (
+        <article className="pane resultPane">
+          <div className="paneTitle">
+            <h2>{section === 'club' ? 'クラブレビュー' : '意思決定タイムライン'}</h2>
+            {reviews.length > 1 ? (
+              <label className="compactSelect">クラブ
+                <select value={selectedReview?.club_id || ''} onChange={(event) => setSelectedClubId(event.target.value)}>
+                  {reviews.map((review) => <option key={review.club_id} value={review.club_id}>{review.club_name}</option>)}
+                </select>
+              </label>
+            ) : null}
+          </div>
+          {!selectedReview ? <p className="muted">閲覧可能なクラブ詳細はありません。</p> : null}
+          {selectedReview && section === 'club' ? (
+            <>
+              <div className="resultCharts">
+                <section><h3>順位推移</h3><ResultTrendChart invert metric="rank" metrics={selectedReview.season_metrics} /></section>
+                <section><h3>期末残高推移</h3><ResultTrendChart metric="closing_balance" metrics={selectedReview.season_metrics} /></section>
+                <section><h3>ファンベース推移</h3><ResultTrendChart metric="fanbase" metrics={selectedReview.season_metrics} /></section>
+              </div>
+              <div className="wideTableWrap"><table><thead><tr><th>Season</th><th>順位</th><th>売上</th><th>費用</th><th>純収支</th><th>残高</th><th>入場者</th><th>ファン</th><th>フォロワー</th><th>スポンサー</th><th>チーム力</th><th>債務超過</th></tr></thead>
+                <tbody>{selectedReview.season_metrics.map((row) => (
+                  <tr key={row.season_id}><td>S{row.season_number}</td><td>{row.rank ?? '-'}</td><td>{amount(row.revenue)}</td><td>{expenseAmount(row.expense)}</td><td>{amount(row.net)}</td><td>{amount(row.closing_balance)}</td><td>{count(row.average_home_attendance)}</td><td>{count(row.fanbase)}</td><td>{count(row.followers)}</td><td>{count(row.sponsor_count)}</td><td>{row.team_power?.toFixed(2) ?? '-'}</td><td>{row.bankrupt ? 'あり' : 'なし'}</td></tr>
+                ))}</tbody>
+              </table></div>
+              <div className="resultHighlights">{selectedReview.highlights.map((row, index) => <p key={`${row.category}-${index}`}>{row.message}</p>)}</div>
+            </>
+          ) : null}
+          {selectedReview && section === 'decisions' ? (
+            <div className="wideTableWrap"><table><thead><tr><th>Season</th><th>月</th><th>意思決定</th><th>確定者/日時</th><th>試合結果</th><th>収入</th><th>費用</th><th>残高</th><th>順位</th><th>勝点</th></tr></thead>
+              <tbody>{selectedReview.decisions.map((row, index) => (
+                <tr key={`${row.season_number}-${row.month_index}-${index}`}><td>S{row.season_number}</td><td>{row.month_name}</td><td className="decisionCell">{Object.keys(row.inputs).length ? Object.entries(row.inputs).map(([key, value]) => <span key={key}>{resultDecisionLabels[key] || key}: {typeof value === 'object' ? JSON.stringify(value) : amount(Number(value))}</span>) : '記録なし'}</td><td>{row.committed_by || '-'}<small>{row.committed_at ? new Date(row.committed_at).toLocaleString('ja-JP') : '記録なし'}</small></td><td className="decisionCell">{row.matches.length ? row.matches.map((match, matchIndex) => <span key={`${match.opponent}-${matchIndex}`}>{match.home ? 'H' : 'A'} vs {match.opponent || '記録なし'}: {match.score_for ?? '-'}-{match.score_against ?? '-'}</span>) : '記録なし'}</td><td>{amount(row.income)}</td><td>{expenseAmount(row.expense)}</td><td>{amount(row.closing_balance)}</td><td>{row.rank ?? '-'}</td><td>{row.points ?? '-'}</td></tr>
+              ))}</tbody>
+            </table></div>
+          ) : null}
+        </article>
+      ) : null}
+    </section>
+  );
+}
+
 function Console({
   busy,
   consoleData,
@@ -1004,6 +1411,7 @@ function Console({
   onArchive,
   onBudgetEvent,
   onCommit,
+  onComplete,
   onFormValue,
   onHostAction,
   onHostUncommit,
@@ -1021,6 +1429,7 @@ function Console({
   onArchive: () => void;
   onBudgetEvent: (key: string, amount: number) => void;
   onCommit: () => void;
+  onComplete: () => void;
   onFormValue: (key: string, value: string) => void;
   onHostAction: (action: string) => void;
   onHostUncommit: (clubId: string) => void;
@@ -1046,7 +1455,11 @@ function Console({
     if (!play?.turn) return 'ゲーム開始または次ターンを待っています。';
     if (!play.self.club_id) return play.self.is_host ? 'ホスト操作と公開進捗を確認できます。' : '担当クラブの割当を待っています。';
     if (turnState === 'locked') return 'ホストが結果計算を実行するまで待機してください。';
-    if (turnState === 'resolved') return acked ? '全員のack後、ホストが次ターンへ進めます。' : '結果を確認してackしてください。';
+    if (turnState === 'resolved') return acked
+      ? play.turn?.month_index === 12
+        ? '全員のack後、ホストが次シーズンへ進むかゲームを終了します。'
+        : '全員のack後、ホストが次ターンへ進めます。'
+      : '結果を確認してackしてください。';
     if (committed) return '入力確定済みです。全クラブ確定後、ホストが締切できます。';
     return '表示されている項目を入力し、入力を確定してください。';
   })();
@@ -1163,7 +1576,11 @@ function Console({
         <article className="pane progressPane">
           <h2>対戦進捗</h2>
           <p className="muted progressHint">
-            {turnState === 'resolved' ? '全クラブのack後にadvanceできます。' : '全クラブのcommit後にlockできます。'}
+            {turnState === 'resolved'
+              ? play?.turn?.month_index === 12
+                ? '全クラブのack後に次シーズンかゲーム終了を選べます。'
+                : '全クラブのack後にadvanceできます。'
+              : '全クラブのcommit後にlockできます。'}
           </p>
           <table>
             <tbody>
@@ -1193,8 +1610,27 @@ function Console({
           {play?.self.is_host ? (
             <div className="hostButtons">
               {['open', 'lock', 'resolve', 'advance'].map((action) => (
-                <button key={action} disabled={hostActionDisabled(action)} onClick={() => onHostAction(action)}>{action}</button>
+                <button key={action} disabled={hostActionDisabled(action)} onClick={() => onHostAction(action)}>
+                  {action === 'advance' && play?.turn?.month_index === 12 ? '次シーズンへ' : action}
+                </button>
               ))}
+              {play?.turn?.month_index === 12 ? (
+                <>
+                  <button
+                    className="primary"
+                    disabled={busy || !play.completion?.eligible}
+                    onClick={onComplete}
+                    type="button"
+                  >
+                    ゲーム終了
+                  </button>
+                  {!play.completion?.eligible ? (
+                    <small className="muted completionReason">
+                      {(play.completion?.blockers || []).map((blocker) => completionBlockerLabels[blocker] || blocker).join(' / ')}
+                    </small>
+                  ) : null}
+                </>
+              ) : null}
               <button disabled={busy} onClick={onArchive} type="button">アーカイブ</button>
             </div>
           ) : <p className="muted">ホストが締切と解決を進めます。</p>}

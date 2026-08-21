@@ -58,7 +58,7 @@ class SeasonFinalizer:
             "warnings": warnings
         }
 
-    def finalize(self) -> List[Dict[str, Any]]:
+    def finalize(self, *, commit: bool = True) -> List[Dict[str, Any]]:
         season = self.db.query(models.Season).filter(models.Season.id == self.season_id).with_for_update().first()
         if not season:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
@@ -101,7 +101,10 @@ class SeasonFinalizer:
         season.is_finalized = True
         season.finalized_at = datetime.utcnow()
         self.db.add(season)
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        else:
+            self.db.flush()
 
         return standings
 
