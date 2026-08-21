@@ -130,7 +130,12 @@ type ConsoleData = {
       fb_count: number | null;
     }>;
   };
-  sponsor: { count: number; confirmed_next: number };
+  sponsor: {
+    count: number;
+    confirmed_next: number;
+    confirmed_next_new: number;
+    confirmed_next_existing: number;
+  };
   event_budget: {
     key: string;
     title: string;
@@ -1285,6 +1290,8 @@ function ConsoleSectionPanel({
         <dl className="detailList">
           <dt>現スポンサー数</dt><dd>{consoleData.sponsor.count}</dd>
           <dt>翌期確定見込み</dt><dd>{consoleData.sponsor.confirmed_next}</dd>
+          <dt className="detailSubLabel">└ 新規</dt><dd>{consoleData.sponsor.confirmed_next_new}</dd>
+          <dt className="detailSubLabel">└ 既存</dt><dd>{consoleData.sponsor.confirmed_next_existing}</dd>
         </dl>
       ) : null}
       {consoleData && section === 'Staff' ? (

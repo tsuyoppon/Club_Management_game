@@ -182,7 +182,7 @@ def test_saved_payload_value_prefers_draft_over_decision():
     assert _saved_payload_value(None, decision, "additional_reinforcement") is None
 
 
-def test_browser_room_start_and_turn_console():
+def test_browser_room_start_and_turn_console(db):
     host = TestClient(app)
     player = TestClient(app)
 
@@ -196,8 +196,23 @@ def test_browser_room_start_and_turn_console():
     assert play_state.json()["turn"]["state"] == "collecting"
     assert play_state.json()["self"]["club_id"] == player_club["id"]
 
+    sponsor_state = (
+        db.query(models.ClubSponsorState)
+        .filter(models.ClubSponsorState.club_id == player_club["id"])
+        .one()
+    )
+    sponsor_state.pipeline_confirmed_new = 3
+    sponsor_state.pipeline_confirmed_exist = 5
+    db.commit()
+
     turn_console = player.get(f"/api/games/{room['game_id']}/clubs/{player_club['id']}/turn-console")
     assert turn_console.status_code == 200
+    assert turn_console.json()["sponsor"] == {
+        "count": sponsor_state.count,
+        "confirmed_next": 8,
+        "confirmed_next_new": 3,
+        "confirmed_next_existing": 5,
+    }
     available = {item["key"] for item in turn_console.json()["available_inputs"]}
     assert {"sales_expense", "promo_expense", "hometown_expense"}.issubset(available)
 

@@ -1108,6 +1108,8 @@ def turn_console(
                 sponsor.pipeline_confirmed_exist + sponsor.pipeline_confirmed_new
                 if sponsor else 0
             ),
+            "confirmed_next_new": sponsor.pipeline_confirmed_new if sponsor else 0,
+            "confirmed_next_existing": sponsor.pipeline_confirmed_exist if sponsor else 0,
         },
         "academy": {
             "annual_budget": float(academy.annual_budget) if academy else 0,
