@@ -26,6 +26,7 @@ build/
 
 # Local recovery and database preservation artifacts
 .recovery/
+.backups/
 
 # Local-only player guide documents
 club_management_game_player_guide_ver2_revised.docx
