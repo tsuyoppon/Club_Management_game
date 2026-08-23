@@ -8,6 +8,7 @@ from app.dependencies import get_current_user, get_db, require_role
 from app.db.models import (
     Club,
     DecisionState,
+    GameStatus,
     MembershipRole,
     Season,
     SeasonStatus,
@@ -34,6 +35,14 @@ def _state_conflict(turn: Turn, message: str):
         status_code=status.HTTP_409_CONFLICT,
         detail=f"{message}; current state is {turn.turn_state.value}",
     )
+
+
+def _ensure_game_active(turn: Turn) -> None:
+    if turn.season.game.status != GameStatus.active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Game is not editable while status is {turn.season.game.status.value}",
+        )
 
 
 def _decision_to_response(decision: TurnDecision, turn: Turn, available_inputs: Optional[list] = None, available_actions: Optional[list] = None) -> DecisionRead:
@@ -105,6 +114,7 @@ def get_current_decision(
 @router.post("/{turn_id}/open")
 def open_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     turn = _get_turn(db, turn_id)
+    _ensure_game_active(turn)
     require_role(user, db, turn.season.game_id, MembershipRole.gm)
     if turn.turn_state not in (TurnState.open, TurnState.collecting):
         _state_conflict(turn, "Only an unopened turn can collect decisions")
@@ -123,6 +133,7 @@ def commit_decision(
     user=Depends(get_current_user),
 ):
     turn = _get_turn(db, turn_id)
+    _ensure_game_active(turn)
     require_role(user, db, turn.season.game_id, MembershipRole.club_owner, club_id)
     if turn.turn_state not in (TurnState.open, TurnState.collecting):
         _state_conflict(turn, "Decisions can only be committed while a turn is collecting")
@@ -193,6 +204,7 @@ def get_decision(
 @router.post("/{turn_id}/lock")
 def lock_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     turn = _get_turn(db, turn_id)
+    _ensure_game_active(turn)
     require_role(user, db, turn.season.game_id, MembershipRole.gm)
     if turn.turn_state not in (TurnState.open, TurnState.collecting):
         _state_conflict(turn, "Only a collecting turn can be locked")
@@ -243,6 +255,7 @@ def get_decision_history(
 @router.post("/{turn_id}/resolve")
 def resolve_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     turn = _get_turn(db, turn_id)
+    _ensure_game_active(turn)
     require_role(user, db, turn.season.game_id, MembershipRole.gm)
     if turn.turn_state == TurnState.resolved:
         return {"state": turn.turn_state}
@@ -278,6 +291,7 @@ def ack_turn(
     user=Depends(get_current_user),
 ):
     turn = _get_turn(db, turn_id)
+    _ensure_game_active(turn)
     require_role(user, db, turn.season.game_id, MembershipRole.club_viewer, payload.club_id)
     if turn.turn_state != TurnState.resolved:
         _state_conflict(turn, "Only a resolved turn can be acknowledged")
@@ -309,6 +323,7 @@ def ack_turn(
 @router.post("/{turn_id}/advance")
 def advance_turn(turn_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
     turn = _get_turn(db, turn_id)
+    _ensure_game_active(turn)
     require_role(user, db, turn.season.game_id, MembershipRole.gm)
     if turn.turn_state != TurnState.resolved:
         _state_conflict(turn, "Only a resolved turn can advance")

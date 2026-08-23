@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -24,6 +25,7 @@ from app.db.base import Base
 class GameStatus(str, enum.Enum):
     draft = "draft"
     active = "active"
+    completed = "completed"
     archived = "archived"
 
 
@@ -73,6 +75,7 @@ class Game(Base):
     memberships = relationship("Membership", back_populates="game", cascade="all, delete-orphan")
     seasons = relationship("Season", back_populates="game", cascade="all, delete-orphan")
     room = relationship("GameRoom", back_populates="game", uselist=False, cascade="all, delete-orphan")
+    completions = relationship("GameCompletion", back_populates="game", cascade="all, delete-orphan")
 
 
 class Club(Base):
@@ -267,6 +270,34 @@ class GameRoom(Base):
     game = relationship("Game", back_populates="room")
     host = relationship("User", foreign_keys=[host_user_id])
     members = relationship("GameRoomMember", back_populates="room", cascade="all, delete-orphan")
+
+
+class GameCompletion(Base):
+    """Immutable result snapshot for one completion/reopen lifecycle."""
+
+    __tablename__ = "game_completions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    game_id = Column(UUID(as_uuid=True), ForeignKey("games.id", ondelete="CASCADE"), nullable=False)
+    completed_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    completed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    reopened_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reopened_at = Column(DateTime, nullable=True)
+    summary_schema_version = Column(Integer, nullable=False, default=1)
+    summary_json = Column(JSONB, nullable=False)
+
+    game = relationship("Game", back_populates="completions")
+    completed_by = relationship("User", foreign_keys=[completed_by_user_id])
+    reopened_by = relationship("User", foreign_keys=[reopened_by_user_id])
+
+    __table_args__ = (
+        Index(
+            "uq_game_completions_active",
+            "game_id",
+            unique=True,
+            postgresql_where=reopened_at.is_(None),
+        ),
+    )
 
 
 class GameRoomMember(Base):

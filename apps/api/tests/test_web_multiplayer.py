@@ -1,3 +1,6 @@
+import io
+import zipfile
+from datetime import datetime
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -49,6 +52,94 @@ def _save_and_commit(client: TestClient, room: dict, club: dict, payload: dict):
     assert saved.status_code == 200
     committed = client.post(f"/api/games/{room['game_id']}/clubs/{club['id']}/turn-commit")
     assert committed.status_code == 200
+
+
+def _prepare_completed_july(db, room: dict):
+    season = db.query(models.Season).filter(models.Season.game_id == room["game_id"]).one()
+    turns = (
+        db.query(models.Turn)
+        .filter(models.Turn.season_id == season.id)
+        .order_by(models.Turn.month_index)
+        .all()
+    )
+    july = next(turn for turn in turns if turn.month_index == 12)
+    for turn in turns[:-1]:
+        turn.turn_state = models.TurnState.acked
+    july.turn_state = models.TurnState.resolved
+    july.resolved_at = datetime.utcnow()
+
+    fixtures = db.query(models.Fixture).filter(models.Fixture.season_id == season.id).all()
+    for index, fixture in enumerate(fixtures):
+        if fixture.is_bye:
+            continue
+        fixture.home_attendance = 12000 + index * 100
+        fixture.total_attendance = fixture.home_attendance
+        fixture.match.status = models.MatchStatus.played
+        fixture.match.home_goals = index % 3
+        fixture.match.away_goals = (index + 1) % 2
+        fixture.match.played_at = datetime.utcnow()
+
+    members = (
+        db.query(models.GameRoomMember)
+        .filter(models.GameRoomMember.room_id == room["id"], models.GameRoomMember.club_id.isnot(None))
+        .all()
+    )
+    for index, member in enumerate(members, start=1):
+        decision = db.query(models.TurnDecision).filter_by(turn_id=july.id, club_id=member.club_id).one()
+        decision.decision_state = models.DecisionState.locked
+        decision.committed_by_user_id = member.user_id
+        decision.committed_at = datetime.utcnow()
+        decision.payload_json = {
+            "sales_expense": index * 1000000,
+            "promo_expense": index * 200000,
+            "staff_plan": {"sales": index + 1},
+            "private_note_for_test": f"club-{member.club_id}",
+        }
+        db.add(models.TurnAck(
+            turn_id=july.id,
+            club_id=member.club_id,
+            user_id=member.user_id,
+            ack=True,
+            acked_at=datetime.utcnow(),
+        ))
+
+        fanbase = db.query(models.ClubFanbaseState).filter_by(
+            club_id=member.club_id,
+            season_id=season.id,
+        ).first()
+        if not fanbase:
+            fanbase = models.ClubFanbaseState(club_id=member.club_id, season_id=season.id)
+            db.add(fanbase)
+        fanbase.fb_count = 10000 + index * 1000
+        fanbase.followers_public = 5000 + index * 500
+
+        sponsor = db.query(models.ClubSponsorState).filter_by(
+            club_id=member.club_id,
+            season_id=season.id,
+        ).first()
+        if not sponsor:
+            sponsor = models.ClubSponsorState(club_id=member.club_id, season_id=season.id)
+            db.add(sponsor)
+        sponsor.count = 3 + index
+        sponsor.next_count = 4 + index
+
+        snapshot = db.query(models.ClubFinancialSnapshot).filter_by(
+            club_id=member.club_id,
+            turn_id=july.id,
+        ).first()
+        if not snapshot:
+            db.add(models.ClubFinancialSnapshot(
+                club_id=member.club_id,
+                season_id=season.id,
+                turn_id=july.id,
+                month_index=12,
+                opening_balance=10000000,
+                income_total=index * 5000000,
+                expense_total=index * -2000000,
+                closing_balance=10000000 + index * 3000000,
+            ))
+    db.commit()
+    return season, july, members
 
 
 def test_finance_label_dynamic_fixture_kinds_are_localized():
@@ -586,3 +677,141 @@ def test_browser_multiplayer_full_turn_can_advance():
     )
     assert finance_report["cumulative"]["net"] == finance_report["monthly"]["net"]
     assert finance_report["closing_balance"] is not None
+
+
+def test_game_completion_summary_exports_reopen_and_advance(db):
+    from pypdf import PdfReader
+
+    host = TestClient(app)
+    player = TestClient(app)
+    room, host_club, player_club = _ready_two_player_room(host, player)
+    assert host.post(f"/api/rooms/{room['id']}/start", json={"year_label": "2026"}).status_code == 200
+
+    too_early = host.post(f"/api/games/{room['game_id']}/complete")
+    assert too_early.status_code == 409
+    assert "july_not_resolved" in too_early.json()["detail"]["blockers"]
+
+    season, july, _ = _prepare_completed_july(db, room)
+    assert player.post(f"/api/games/{room['game_id']}/complete").status_code == 403
+
+    completed = host.post(f"/api/games/{room['game_id']}/complete")
+    assert completed.status_code == 200
+    host_summary = completed.json()
+    assert host_summary["viewer_scope"] == "host_all"
+    assert len(host_summary["overall_results"]) == 2
+    assert len(host_summary["club_reviews"]) == 2
+    assert {row["final_fanbase"] for row in host_summary["overall_results"]} == {11000, 12000}
+    assert {row["final_followers"] for row in host_summary["overall_results"]} == {5500, 6000}
+    assert {row["final_sponsor_count"] for row in host_summary["overall_results"]} == {4, 5}
+
+    db.expire_all()
+    game = db.query(models.Game).filter(models.Game.id == room["game_id"]).one()
+    stored_season = db.query(models.Season).filter(models.Season.id == season.id).one()
+    assert game.status == models.GameStatus.completed
+    assert stored_season.status == models.SeasonStatus.finished
+    assert stored_season.is_finalized is True
+    assert db.query(models.Season).filter(models.Season.game_id == room["game_id"]).count() == 1
+    assert db.query(models.GameCompletion).filter(models.GameCompletion.game_id == room["game_id"]).count() == 1
+
+    repeated = host.post(f"/api/games/{room['game_id']}/complete")
+    assert repeated.status_code == 200
+    assert db.query(models.GameCompletion).filter(models.GameCompletion.game_id == room["game_id"]).count() == 1
+
+    player_summary_response = player.get(f"/api/games/{room['game_id']}/result-summary")
+    assert player_summary_response.status_code == 200
+    player_summary = player_summary_response.json()
+    assert player_summary["viewer_scope"] == f"club:{player_club['id']}"
+    assert len(player_summary["overall_results"]) == 2
+    assert [row["club_id"] for row in player_summary["club_reviews"]] == [player_club["id"]]
+    assert all(row["club_id"] == player_club["id"] for row in player_summary["highlights"])
+
+    blocked_draft = player.put(
+        f"/api/games/{room['game_id']}/clubs/{player_club['id']}/turn-draft",
+        json={"payload": {"sales_expense": 1}},
+    )
+    assert blocked_draft.status_code == 409
+
+    csv_export = player.get(f"/api/games/{room['game_id']}/result-summary/exports/csv-zip")
+    assert csv_export.status_code == 200
+    assert csv_export.headers["cache-control"] == "private, no-store"
+    with zipfile.ZipFile(io.BytesIO(csv_export.content)) as archive:
+        assert set(archive.namelist()) == {
+            "manifest.csv",
+            "overall_results.csv",
+            "season_standings.csv",
+            "season_metrics.csv",
+            "decisions.csv",
+            "highlights.csv",
+        }
+        for name in archive.namelist():
+            assert archive.read(name).startswith(b"\xef\xbb\xbf")
+        decisions_csv = archive.read("decisions.csv").decode("utf-8-sig")
+        assert player_club["id"] in decisions_csv
+        assert host_club["id"] not in decisions_csv
+
+    pdf_export = player.get(f"/api/games/{room['game_id']}/result-summary/exports/pdf")
+    assert pdf_export.status_code == 200
+    assert pdf_export.headers["content-type"] == "application/pdf"
+    assert pdf_export.headers["cache-control"] == "private, no-store"
+    reader = PdfReader(io.BytesIO(pdf_export.content))
+    assert len(reader.pages) >= 3
+    assert reader.metadata.title.endswith("結果サマリー")
+
+    assert player.post(f"/api/games/{room['game_id']}/reopen").status_code == 403
+    reopened = host.post(f"/api/games/{room['game_id']}/reopen")
+    assert reopened.status_code == 200
+    assert host.get(f"/api/games/{room['game_id']}/result-summary").status_code == 409
+    assert host.get(f"/api/games/{room['game_id']}/result-summary/exports/pdf").status_code == 409
+
+    db.expire_all()
+    completion = db.query(models.GameCompletion).filter(models.GameCompletion.game_id == room["game_id"]).one()
+    assert completion.reopened_at is not None
+    assert db.query(models.Season).filter(models.Season.id == season.id).one().status == models.SeasonStatus.running
+    assert db.query(models.Turn).filter(models.Turn.id == july.id).one().turn_state == models.TurnState.resolved
+
+    advanced = host.post(
+        f"/api/games/{room['game_id']}/host/turn-action",
+        json={"action": "advance"},
+    )
+    assert advanced.status_code == 200
+    assert db.query(models.Season).filter(models.Season.game_id == room["game_id"]).count() == 2
+
+
+def test_archived_completed_results_are_host_only(db):
+    host = TestClient(app)
+    player = TestClient(app)
+    room, _, _ = _ready_two_player_room(host, player)
+    assert host.post(f"/api/rooms/{room['id']}/start", json={"year_label": "2026"}).status_code == 200
+    _prepare_completed_july(db, room)
+    assert host.post(f"/api/games/{room['game_id']}/complete").status_code == 200
+    assert host.post(f"/api/games/{room['game_id']}/archive").status_code == 200
+
+    assert player.get(f"/api/games/{room['game_id']}/result-summary").status_code == 403
+    assert player.get(f"/api/games/{room['game_id']}/result-summary/exports/csv-zip").status_code == 403
+    assert host.get(f"/api/games/{room['game_id']}/result-summary").status_code == 200
+    assert host.post(f"/api/games/{room['game_id']}/reopen").status_code == 409
+
+
+def test_csv_formula_injection_is_neutralized():
+    from app.services.result_exports import _csv_bytes
+
+    content = _csv_bytes(["value"], [["=1+1"], ["+SUM(A1:A2)"], ["-2+3"], ["@cmd"]])
+    decoded = content.decode("utf-8-sig")
+    assert "'=1+1" in decoded
+    assert "'+SUM(A1:A2)" in decoded
+    assert "'-2+3" in decoded
+    assert "'@cmd" in decoded
+
+
+def test_optional_result_ranking_uses_competition_ranks_and_excludes_missing():
+    from app.services.result_summary import _rank_optional
+
+    rows = [
+        {"value": 12},
+        {"value": None},
+        {"value": 20},
+        {"value": 20},
+    ]
+    _rank_optional(rows, "value", "rank")
+
+    assert [row["rank"] for row in rows] == [3, None, 1, 1]

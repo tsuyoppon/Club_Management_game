@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from app.db.session import get_db
 from app.db import models
+from app.dependencies import require_game_editable
 from app.services import sponsor, sales_effort
 from app.schemas import (
     SalesAllocationUpdate, SalesAllocationRead,
@@ -64,6 +65,7 @@ def set_sales_allocation(
     club = db.execute(select(models.Club).where(models.Club.id == club_id)).scalar_one_or_none()
     if not club:
         raise HTTPException(status_code=404, detail="Club not found")
+    require_game_editable(club.game)
     
     allocation = sales_effort.set_sales_allocation(
         db, club_id, season_id, quarter, Decimal(str(payload.rho_new))

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 
-from app.dependencies import get_current_user, get_db, require_role
+from app.dependencies import get_current_user, get_db, require_game_editable, require_role
 from app.db import models
 from app.db.models import MembershipRole, StaffRole
 from app.services import sponsor, reinforcement, staff
@@ -38,6 +38,7 @@ def update_reinforcement_plan(
     club = db.query(models.Club).filter(models.Club.id == club_id).first()
     if not club:
         raise HTTPException(status_code=404, detail="Club not found")
+    require_game_editable(club.game)
         
     require_role(user, db, club.game_id, MembershipRole.gm)
     
@@ -77,6 +78,7 @@ def update_staff(
     club = db.query(models.Club).filter(models.Club.id == club_id).first()
     if not club:
         raise HTTPException(status_code=404, detail="Club not found")
+    require_game_editable(club.game)
         
     require_role(user, db, club.game_id, MembershipRole.gm)
     
@@ -116,6 +118,7 @@ def update_sponsors(
     club = db.query(models.Club).filter(models.Club.id == club_id).first()
     if not club:
         raise HTTPException(status_code=404, detail="Club not found")
+    require_game_editable(club.game)
         
     require_role(user, db, club.game_id, MembershipRole.gm)
     

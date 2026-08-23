@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.db.models import MembershipRole, User
-from app.dependencies import get_current_user, get_db, require_role
+from app.dependencies import get_current_user, get_db, require_game_editable, require_role
 from app.schemas import (
     ClubFinancialProfileRead,
     ClubFinancialProfileUpdate,
@@ -36,6 +36,7 @@ def update_finance_profile(
     user: User = Depends(get_current_user),
 ):
     club = get_club_or_404(db, club_id)
+    require_game_editable(club.game)
     # Only GM can update finance profile
     require_role(user, db, club.game_id, MembershipRole.gm, club_id=club_id)
     
