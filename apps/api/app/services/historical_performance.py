@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.db import models
+from app.services.current_performance import calculate_current_rank_score
 
 
 def get_hist_perf_value(db: Session, season_id: UUID, club_id: UUID) -> float:
@@ -33,10 +34,7 @@ def get_hist_perf_value(db: Session, season_id: UUID, club_id: UUID) -> float:
         if not standing:
             continue
 
-        if num_clubs <= 1:
-            values.append(0.5)
-        else:
-            values.append(1.0 - (standing.rank - 1) / (num_clubs - 1))
+        values.append(calculate_current_rank_score(standing.rank, num_clubs))
 
     if not values:
         return 0.5

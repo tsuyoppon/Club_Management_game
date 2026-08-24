@@ -70,8 +70,23 @@ def test_hist_perf_from_single_previous_season(db):
     top_hist_perf = get_hist_perf_value(db, current_season.id, clubs[0].id)
     bottom_hist_perf = get_hist_perf_value(db, current_season.id, clubs[2].id)
 
-    assert top_hist_perf == pytest.approx(1.0)
-    assert bottom_hist_perf == pytest.approx(0.0)
+    assert top_hist_perf == pytest.approx(0.725)
+    assert bottom_hist_perf == pytest.approx(0.275)
+
+
+def test_hist_perf_uses_fixed_rank_step_for_four_clubs(db):
+    game, clubs = _create_game_with_clubs(db, 4)
+    prev_season = _create_season(db, game.id, 1, "2024", finalized=True)
+    _add_final_standings(db, prev_season.id, clubs, [1, 2, 3, 4])
+
+    current_season = _create_season(db, game.id, 2, "2025", finalized=False)
+
+    scores = [
+        get_hist_perf_value(db, current_season.id, club.id)
+        for club in clubs
+    ]
+
+    assert scores == pytest.approx([0.8375, 0.6125, 0.3875, 0.1625])
 
 
 def test_hist_perf_averages_multiple_seasons(db):
