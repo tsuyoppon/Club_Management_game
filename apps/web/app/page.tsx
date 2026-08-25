@@ -202,7 +202,18 @@ type ConsoleData = {
   turn: PlayState['turn'];
   decision: { state: string | null; payload: Record<string, unknown> | null; committed_at: string | null };
   draft: Record<string, unknown> | null;
-  available_inputs: Array<{ key: string; label: string }>;
+  available_inputs: Array<{
+    key: string;
+    label: string;
+    target?: {
+      season_number: number;
+      month_index: number;
+      month_name: string;
+      home_club_id: string;
+      opponent_club_id: string;
+      opponent_name: string;
+    };
+  }>;
   available_actions: string[];
   finance: {
     balance: number;

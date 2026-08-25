@@ -113,6 +113,21 @@ class DecisionValidationResult(BaseModel):
     errors: List[str] = []
 
 
+class DecisionInputTargetRead(BaseModel):
+    season_number: int
+    month_index: int
+    month_name: str
+    home_club_id: UUID
+    opponent_club_id: UUID
+    opponent_name: str
+
+
+class DecisionInputDetailRead(BaseModel):
+    key: str
+    label: str
+    target: Optional[DecisionInputTargetRead] = None
+
+
 class DecisionRead(BaseModel):
     """ターン入力の参照用レスポンス"""
     turn_id: UUID
@@ -124,6 +139,7 @@ class DecisionRead(BaseModel):
     decision_state: DecisionState
     payload: Optional[dict] = None
     available_inputs: List[str] = []
+    available_input_details: List[DecisionInputDetailRead] = Field(default_factory=list)
     available_actions: List[str] = []
     committed_at: Optional[datetime] = None
     committed_by_user_id: Optional[UUID] = None

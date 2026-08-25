@@ -686,7 +686,7 @@ python -m apps.cli.main show sponsor_status
 | `input --sales-expense <金額>` | 営業費用 |
 | `input --promo-expense <金額>` | プロモーション費用 |
 | `input --hometown-expense <金額>` | ホームタウン活動費 |
-| `input --next-home-promo <金額>` | 翌月ホーム向けプロモ（条件付き） |
+| `input --next-home-promo <金額>` | 次回ホーム向けプロモ（7月は翌シーズン開幕戦がホームの場合も入力可能、費用は7月計上） |
 | `input --additional-reinforcement <金額>` | 追加強化費（12月のみ） |
 | `input --reinforcement-budget <金額>` | 翌シーズン強化費（6月・7月に入力し合算） |
 | `input --rho-new <0.0-1.0>` | 新規スポンサー配分（四半期開始月のみ） |
@@ -1383,6 +1383,8 @@ cli-alpha show table
 | 3月 | 8 | 通年項目のみ |
 | 4月 | 9 | 通年項目のみ |
 | 5月 | 10 | 通年項目 + rho_new（四半期開始）+ next_home_promo |
+| 6月 | 11 | 通年項目 + reinforcement_budget |
+| 7月 | 12 | 通年項目 + reinforcement_budget + next_home_promo（翌シーズン開幕戦がホームの場合のみ） |
 
 **通年項目**: `sales_expense`, `promo_expense`, `hometown_expense`
 

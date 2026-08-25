@@ -11,6 +11,7 @@ from ..api_client import ApiClient
 from ..auth import build_headers
 from ..config import CliConfig
 from ..errors import ApiError, CliError, ValidationError
+from ..input_details import print_available_input_details
 from ..output import format_number, print_json, print_table
 from ..parsing import ensure_month_bounds, parse_month_to_index
 
@@ -791,11 +792,7 @@ def show_current_input(ctx: click.Context, season_id: Optional[str], club_id: Op
     }
     click.echo("Turn:")
     print_table([summary], ["season_number", "month_index", "month_name", "decision_state", "committed_at"], format_numbers=True)
-    available = data.get("available_inputs") if isinstance(data, dict) else None
-    if available:
-        click.echo("Available inputs this turn:")
-        for val in available:
-            click.echo(f"- {val}")
+    print_available_input_details(data)
     actions = data.get("available_actions") if isinstance(data, dict) else None
     if actions:
         click.echo("Available actions this turn:")

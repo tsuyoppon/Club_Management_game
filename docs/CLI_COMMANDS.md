@@ -73,7 +73,7 @@ CLIまたは特定コマンドのヘルプを表示します。
   - `--sales-expense <DECIMAL>`: 営業費。
   - `--promo-expense <DECIMAL>`: プロモーション費。
   - `--hometown-expense <DECIMAL>`: 地元活動費。
-  - `--next-home-promo <DECIMAL>`: 次月ホームプロモ（条件付き）。
+  - `--next-home-promo <DECIMAL>`: 次月ホームプロモ。7月は翌シーズン開幕戦がホームの場合も入力可能で、費用は7月計上。
   - `--additional-reinforcement <DECIMAL>`: 追加補強（12月のみ）。
   - `--reinforcement-budget <DECIMAL>`: 次シーズン補強予算（6月/7月のみ）。
   - `--rho-new <FLOAT>`: 新規スポンサー比率（0.0〜1.0、四半期開始月のみ）。

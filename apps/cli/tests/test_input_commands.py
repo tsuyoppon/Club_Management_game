@@ -224,11 +224,28 @@ def test_view_command(tmp_path, monkeypatch):
 
     mock_client = MockApiClient()
     mock_client.responses[("GET", "/api/turns/seasons/s1/decisions/c1/current")] = {
-        "month_index": 1,
-        "month_name": "Aug",
+        "season_number": 1,
+        "month_index": 12,
+        "month_name": "Jul",
         "decision_state": "draft",
         "committed_at": None,
         "payload": {"sales_expense": 1000000},
+        "available_inputs": ["sales_expense", "next_home_promo"],
+        "available_input_details": [
+            {"key": "sales_expense", "label": "営業費"},
+            {
+                "key": "next_home_promo",
+                "label": "翌シーズン開幕ホーム向けプロモ",
+                "target": {
+                    "season_number": 2,
+                    "month_index": 1,
+                    "month_name": "Aug",
+                    "home_club_id": "c1",
+                    "opponent_club_id": "c2",
+                    "opponent_name": "Osaka",
+                },
+            },
+        ],
     }
 
     save_draft(cfg.parent, "s1", "c1", {"promo_expense": 200000}, base_source="draft")
@@ -244,6 +261,7 @@ def test_view_command(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "Payload (server)" in result.output
     assert "Draft overrides" in result.output
+    assert "Season 2 Aug home vs Osaka" in result.output
 
 
 def test_rho_new_validation(tmp_path, monkeypatch):

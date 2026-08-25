@@ -27,6 +27,51 @@ from app.config.constants import (
 
 logger = logging.getLogger(__name__)
 
+
+def get_next_home_promo_spend(
+    db: Session,
+    season_id: UUID,
+    month_index: int,
+    home_club_id: UUID,
+) -> Decimal:
+    """Read the prior decision that targets this month's home fixture."""
+    source_turn = None
+    if month_index > 1:
+        source_turn = (
+            db.query(models.Turn)
+            .filter_by(season_id=season_id, month_index=month_index - 1)
+            .first()
+        )
+    elif month_index == 1:
+        season = db.query(models.Season).filter(models.Season.id == season_id).first()
+        if season is not None and season.season_number > 1:
+            previous_season = (
+                db.query(models.Season)
+                .filter(
+                    models.Season.game_id == season.game_id,
+                    models.Season.season_number == season.season_number - 1,
+                )
+                .first()
+            )
+            if previous_season is not None:
+                source_turn = (
+                    db.query(models.Turn)
+                    .filter_by(season_id=previous_season.id, month_index=12)
+                    .first()
+                )
+
+    if source_turn is None:
+        return Decimal("0")
+    decision = (
+        db.query(models.TurnDecision)
+        .filter_by(turn_id=source_turn.id, club_id=home_club_id)
+        .first()
+    )
+    if not decision or not decision.payload_json:
+        return Decimal("0")
+    value = decision.payload_json.get("next_home_promo")
+    return Decimal(str(value)) if value is not None else Decimal("0")
+
 # v1Spec Constants
 # ---------------------------------------------------------
 # 1. Win/Draw Probability Model
@@ -354,17 +399,13 @@ def process_matches_for_turn(db: Session, season_id: UUID, turn_id: UUID, month_
                     )
                     break
         
-        # 4. Get Promo Spend (Next Home Promo)
-        # Input in previous month (month_index - 1)
-        next_promo_spend = Decimal(0)
-        if month_index > 1:
-            prev_turn = db.query(models.Turn).filter_by(season_id=season_id, month_index=month_index-1).first()
-            if prev_turn:
-                decision = db.query(models.TurnDecision).filter_by(turn_id=prev_turn.id, club_id=fixture.home_club_id).first()
-                if decision and decision.payload_json:
-                    val = decision.payload_json.get("next_home_promo")
-                    if val is not None:
-                        next_promo_spend = Decimal(val)
+        # 4. Get Promo Spend (same-season previous month, or prior July for August)
+        next_promo_spend = get_next_home_promo_spend(
+            db,
+            season_id,
+            month_index,
+            fixture.home_club_id,
+        )
 
         # 5. Calculate Attendance
         # Event: Aug (1) or May (10)

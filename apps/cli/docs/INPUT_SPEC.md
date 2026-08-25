@@ -14,7 +14,7 @@
 
 | 項目 | フィールド名 | 許可条件 | バリデーション |
 |------|------------|----------|----------------|
-| 翌月ホーム向けプロモ費 | `next_home_promo` | 翌月がホームゲーム月の前月のみ | 非対象月は400エラー |
+| 翌月ホーム向けプロモ費 | `next_home_promo` | 翌月がホームゲーム月の前月、または翌シーズン開幕戦がホームとなる7月 | 非対象月、開幕戦がアウェイまたはbyeの場合は400エラー。7月入力は7月費用として計上 |
 | 追加強化費 | `additional_reinforcement` | 12月（month_index=5）のみ、債務超過でない | 債務超過時は400エラー |
 
 ### 1.3 年次（5月イベント時）
@@ -66,7 +66,7 @@ club-game input [OPTIONS]
   --sales-expense DECIMAL      営業費用
   --promo-expense DECIMAL      プロモーション費用
   --hometown-expense DECIMAL   ホームタウン活動費用
-  --next-home-promo DECIMAL    翌月ホーム向けプロモ費（条件付き）
+  --next-home-promo DECIMAL    次回ホーム向けプロモ費（7月は来季開幕戦も対象、条件付き）
   --additional-reinforcement DECIMAL  追加強化費（12月のみ）
   --rho-new FLOAT              営業リソース新規配分比率（四半期開始月のみ）
   --season-id UUID             シーズンID（config優先）

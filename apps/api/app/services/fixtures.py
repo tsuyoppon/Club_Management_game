@@ -2,6 +2,10 @@ from dataclasses import dataclass
 from typing import List, Optional
 from uuid import UUID
 
+from sqlalchemy.orm import Session
+
+from app.db import models
+
 
 @dataclass
 class FixtureSpec:
@@ -86,3 +90,22 @@ def generate_round_robin(club_ids: List[UUID], match_months: int = 10) -> List[F
 
     return fixtures
 
+
+def ordered_clubs_for_game(db: Session, game_id: UUID) -> List[models.Club]:
+    """Return clubs in the stable order used for every fixture plan."""
+    return (
+        db.query(models.Club)
+        .filter(models.Club.game_id == game_id)
+        .order_by(models.Club.created_at.asc(), models.Club.id.asc())
+        .all()
+    )
+
+
+def generate_game_round_robin(
+    db: Session,
+    game_id: UUID,
+    match_months: int = 10,
+) -> List[FixtureSpec]:
+    """Build the deterministic fixture plan for a game without persisting it."""
+    clubs = ordered_clubs_for_game(db, game_id)
+    return generate_round_robin([club.id for club in clubs], match_months=match_months)

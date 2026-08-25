@@ -51,7 +51,11 @@ def _parse_float_ratio(value: Optional[float], label: str) -> Optional[float]:
 @click.option("--sales-expense", type=str, help="Sales expense (Decimal)")
 @click.option("--promo-expense", type=str, help="Promotion expense (Decimal)")
 @click.option("--hometown-expense", type=str, help="Hometown activity expense (Decimal)")
-@click.option("--next-home-promo", type=str, help="Next-month home promo (Decimal, conditional)")
+@click.option(
+    "--next-home-promo",
+    type=str,
+    help="Next home promo (July may target next-season opener; Decimal, conditional)",
+)
 @click.option("--additional-reinforcement", type=str, help="Additional reinforcement (Decimal, Dec only)")
 @click.option("--reinforcement-budget", type=str, help="Next-season reinforcement budget (Decimal, Jun/Jul only)")
 @click.option("--rho-new", type=float, help="New sponsor allocation ratio 0.0-1.0 (Q-start months only)")

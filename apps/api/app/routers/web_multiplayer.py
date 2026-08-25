@@ -19,6 +19,7 @@ from app.routers.seasons import _latest_running_season, create_season_core, gene
 from app.schemas import AckRequest, DecisionCommitRequest
 from app.services.decision_validation import (
     get_available_actions,
+    get_available_input_details,
     get_available_inputs,
     parse_decision_payload,
     validate_decision_payload,
@@ -1240,7 +1241,11 @@ def turn_console(
         )
     }
     available_inputs = get_available_inputs(db, turn, club_id)
-    normal_available_inputs = [key for key in available_inputs if key not in EVENT_INPUT_KEYS]
+    normal_available_input_details = [
+        detail
+        for detail in get_available_input_details(db, turn, club_id)
+        if detail["key"] not in EVENT_INPUT_KEYS
+    ]
     event_key = _event_key_for_turn(turn)
     event_budget = (
         _budget_event_for_turn(turn, _saved_payload_value(draft, decision, event_key))
@@ -1256,8 +1261,15 @@ def turn_console(
         },
         "draft": draft.payload_json if draft else None,
         "available_inputs": [
-            {"key": key, "label": DECISION_LABELS.get(key, key)}
-            for key in normal_available_inputs
+            {
+                **detail,
+                "label": (
+                    f"{detail['label']}（vs {detail['target']['opponent_name']}）"
+                    if turn.month_index == 12 and detail.get("target")
+                    else DECISION_LABELS.get(detail["key"], detail["label"])
+                ),
+            }
+            for detail in normal_available_input_details
         ],
         "available_actions": get_available_actions(db, turn, club_id),
         "event_budget": event_budget,

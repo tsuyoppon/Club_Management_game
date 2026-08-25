@@ -25,7 +25,7 @@ from app.db.models import (
     month_mappings,
 )
 from app.schemas import FixtureGenerateRequest, SeasonCreate, SeasonRead, StandingRead, SeasonStatusRead, FixtureView
-from app.services.fixtures import generate_round_robin
+from app.services.fixtures import generate_game_round_robin, ordered_clubs_for_game
 from app.services.standings import StandingsCalculator
 from app.services.season_finalize import SeasonFinalizer
 from app.services import reinforcement, sponsor, academy, finance, staff
@@ -157,7 +157,7 @@ def create_season_core(db: Session, game: Game, year_label: str) -> Season:
         db.add(turn)
     db.commit()
 
-    clubs = db.query(Club).filter(Club.game_id == game.id).all()
+    clubs = ordered_clubs_for_game(db, game.id)
     for turn in turns:
         for club in clubs:
             decision = TurnDecision(turn_id=turn.id, club_id=club.id, decision_state=DecisionState.draft)
@@ -247,11 +247,11 @@ def generate_fixtures_core(db: Session, season: Season, force: bool = False) -> 
             db.delete(row)
         db.commit()
 
-    clubs = db.query(Club).filter(Club.game_id == season.game_id).all()
+    clubs = ordered_clubs_for_game(db, season.game_id)
     if not clubs:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No clubs to schedule")
 
-    specs = generate_round_robin([club.id for club in clubs], match_months=10)
+    specs = generate_game_round_robin(db, season.game_id, match_months=10)
     month_lookup: Dict[int, str] = {m[0]: m[1] for m in month_mappings()}
 
     for spec in specs:

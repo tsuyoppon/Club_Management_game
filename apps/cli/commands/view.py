@@ -11,6 +11,7 @@ from ..config import CliConfig
 from ..errors import CliError, ValidationError
 from ..output import print_json, print_table
 from ..draft import load_draft
+from ..input_details import print_available_input_details
 
 
 def _resolve_required(option: Optional[str], fallback: Optional[str], label: str) -> str:
@@ -81,6 +82,7 @@ def view_cmd(
     }
     click.echo("Turn:")
     print_table([summary], ["season_turn", "month_index", "month_name", "decision_state", "committed_at", "payload_source"])
+    print_available_input_details(data)
     if payload:
         click.echo("Payload (server):")
         print_json(payload)

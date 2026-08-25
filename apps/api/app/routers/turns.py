@@ -18,7 +18,11 @@ from app.db.models import (
     TurnState,
 )
 from app.schemas import AckRequest, DecisionCommitRequest, DecisionPayload, DecisionRead, TurnStateResponse
-from app.services.decision_validation import get_available_inputs, get_available_actions
+from app.services.decision_validation import (
+    get_available_actions,
+    get_available_input_details,
+    get_available_inputs,
+)
 
 router = APIRouter(prefix="/turns", tags=["turns"])
 
@@ -45,7 +49,13 @@ def _ensure_game_active(turn: Turn) -> None:
         )
 
 
-def _decision_to_response(decision: TurnDecision, turn: Turn, available_inputs: Optional[list] = None, available_actions: Optional[list] = None) -> DecisionRead:
+def _decision_to_response(
+    decision: TurnDecision,
+    turn: Turn,
+    available_inputs: Optional[list] = None,
+    available_actions: Optional[list] = None,
+    available_input_details: Optional[list] = None,
+) -> DecisionRead:
     return DecisionRead(
         turn_id=decision.turn_id,
         season_id=turn.season_id,
@@ -56,6 +66,7 @@ def _decision_to_response(decision: TurnDecision, turn: Turn, available_inputs: 
         decision_state=decision.decision_state,
         payload=decision.payload_json,
         available_inputs=available_inputs or [],
+        available_input_details=available_input_details or [],
         available_actions=available_actions or [],
         committed_at=decision.committed_at,
         committed_by_user_id=decision.committed_by_user_id,
@@ -107,8 +118,15 @@ def get_current_decision(
         return None
 
     available_inputs = get_available_inputs(db, turn, club_id)
+    available_input_details = get_available_input_details(db, turn, club_id)
     available_actions = get_available_actions(db, turn, club_id)
-    return _decision_to_response(decision, turn, available_inputs, available_actions)
+    return _decision_to_response(
+        decision,
+        turn,
+        available_inputs,
+        available_actions,
+        available_input_details,
+    )
 
 
 @router.post("/{turn_id}/open")
@@ -197,8 +215,15 @@ def get_decision(
     if not decision:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Decision not found")
     available_inputs = get_available_inputs(db, turn, club_id)
+    available_input_details = get_available_input_details(db, turn, club_id)
     available_actions = get_available_actions(db, turn, club_id)
-    return _decision_to_response(decision, turn, available_inputs, available_actions)
+    return _decision_to_response(
+        decision,
+        turn,
+        available_inputs,
+        available_actions,
+        available_input_details,
+    )
 
 
 @router.post("/{turn_id}/lock")
