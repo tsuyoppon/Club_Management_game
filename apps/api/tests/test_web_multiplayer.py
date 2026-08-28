@@ -555,6 +555,8 @@ def test_archived_game_requires_confirmation_before_delete(db_session):
     deleted = host.request("DELETE", f"/api/games/{room['game_id']}", json={"confirm": room["invite_code"]})
     assert deleted.status_code == 200
     assert deleted.json()["deleted"] is True
+    assert deleted.json()["backup"]["verified"] is True
+    assert deleted.json()["backup"]["counts"]["games"] == 1
 
     assert db_session.query(models.Game).filter(models.Game.id == room["game_id"]).first() is None
     assert db_session.query(models.Club).count() == 0

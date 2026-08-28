@@ -1,3 +1,5 @@
+name: ${COMPOSE_PROJECT_NAME:-club_management_game}
+
 services:
   db:
     image: postgres:15-alpine
@@ -15,10 +17,16 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes:
       - ./apps/api:/app
+      - type: bind
+        source: ${CLUB_GAME_BACKUP_DIR:-/Users/scide_furusawa/.club-management-game/backups}
+        target: /backups
+        bind:
+          create_host_path: false
     environment:
       - DATABASE_URL=postgresql+psycopg2://postgres:postgres@db:5432/club_game
       - API_PREFIX=/api
       - PYTHONPATH=/app
+      - GAME_BACKUP_ROOT=/backups
     depends_on:
       - db
     ports:
@@ -38,3 +46,4 @@ services:
       - web
 volumes:
   pgdata:
+    name: ${CLUB_GAME_PGDATA_VOLUME:-club_management_game_pgdata}

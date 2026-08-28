@@ -30,6 +30,11 @@ from app.services import result_exports, result_summary
 from app.services import academy as academy_service
 from app.services import finance as finance_service
 from app.services import staff as staff_service
+from app.services.game_backup import (
+    GameBackupError,
+    create_game_backup,
+    latest_game_backup,
+)
 
 
 router = APIRouter(tags=["web-multiplayer"])
@@ -122,6 +127,18 @@ class HostTurnAction(BaseModel):
 
 class DeleteGameRequest(BaseModel):
     confirm: str = Field(..., min_length=1)
+
+
+def _public_backup_metadata(backup: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "backup_id": backup["backup_id"],
+        "game_id": backup["game_id"],
+        "created_at": backup["created_at"],
+        "size_bytes": backup["size_bytes"],
+        "sha256": backup["sha256"],
+        "counts": backup["counts"],
+        "verified": backup["verified"],
+    }
 
 
 class WebStaffPlan(BaseModel):
@@ -954,6 +971,61 @@ def archive_game(
     }
 
 
+@router.post("/games/{game_id}/unarchive")
+def unarchive_game(
+    game_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _require_host_for_game(db, game_id, user)
+    if room.game.status != models.GameStatus.archived or room.status != "archived":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Game is not archived")
+    has_season = db.query(models.Season.id).filter(models.Season.game_id == game_id).first() is not None
+    room.game.status = models.GameStatus.active
+    room.status = "active" if room.started_at is not None or has_season else "lobby"
+    db.commit()
+    return {
+        "game_id": str(game_id),
+        "status": room.game.status.value,
+        "room_status": room.status,
+    }
+
+
+@router.post("/games/{game_id}/backups", status_code=status.HTTP_201_CREATED)
+def backup_game(
+    game_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_host_for_game(db, game_id, user)
+    game = db.query(models.Game).filter(models.Game.id == game_id).with_for_update().first()
+    if game is None:
+        _not_found("Game not found")
+    try:
+        backup = create_game_backup(db, game_id, settings.game_backup_root, reason="manual")
+    except (GameBackupError, OSError) as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Game backup failed; no game data was changed: {exc}",
+        ) from exc
+    db.rollback()
+    return _public_backup_metadata(backup)
+
+
+@router.get("/games/{game_id}/backups/latest")
+def get_latest_game_backup(
+    game_id: UUID,
+    user: models.User = Depends(get_web_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_host_for_game(db, game_id, user)
+    backup = latest_game_backup(settings.game_backup_root, game_id)
+    if backup is None:
+        _not_found("No verified game backup found")
+    return _public_backup_metadata(backup)
+
+
 @router.get("/games/{game_id}/delete-preview")
 def delete_game_preview(
     game_id: UUID,
@@ -969,6 +1041,7 @@ def delete_game_preview(
         "room_status": room.status,
         "counts": _game_delete_counts(db, room.game, user.id),
         "confirm_options": [room.game.name, room.invite_code],
+        "verified_backup_required": True,
     }
 
 
@@ -986,7 +1059,19 @@ def delete_game(
     if payload.confirm not in {game.name, room.invite_code}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Confirmation did not match")
 
-    counts = _game_delete_counts(db, game, user.id)
+    locked_game = db.query(models.Game).filter(models.Game.id == game.id).with_for_update().first()
+    if locked_game is None:
+        _not_found("Game not found")
+    try:
+        backup = create_game_backup(db, game.id, settings.game_backup_root, reason="pre-delete")
+    except (GameBackupError, OSError) as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Verified backup could not be created; the game was not deleted: {exc}",
+        ) from exc
+
+    counts = _game_delete_counts(db, locked_game, user.id)
     cleanup_user_ids = _guest_user_cleanup_candidates(db, game, room, user.id)
     db.execute(sqlalchemy_delete(models.Game).where(models.Game.id == game.id))
     db.flush()
@@ -1000,7 +1085,12 @@ def delete_game(
         if remaining_room_memberships == 0 and remaining_game_memberships == 0:
             db.execute(sqlalchemy_delete(models.User).where(models.User.id == user_id))
     db.commit()
-    return {"deleted": True, "game_id": str(game_id), "counts": counts}
+    return {
+        "deleted": True,
+        "game_id": str(game_id),
+        "counts": counts,
+        "backup": _public_backup_metadata(backup),
+    }
 
 
 @router.post("/rooms/{room_id}/clubs/{club_id}/claim")

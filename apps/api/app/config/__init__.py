@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     web_session_cookie: str = Field("club_game_session", env="WEB_SESSION_COOKIE")
     web_session_ttl_days: int = Field(14, env="WEB_SESSION_TTL_DAYS")
     web_cookie_secure: bool = Field(False, env="WEB_COOKIE_SECURE")
+    game_backup_root: str = Field("/backups", env="GAME_BACKUP_ROOT")
 
     class Config:
         env_file = ".env"

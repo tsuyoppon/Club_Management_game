@@ -36,6 +36,12 @@ and restarts keep progress as long as the `pgdata` Docker volume and the same
 `DATABASE_URL` are preserved. Do not use `docker compose down -v` unless you intend
 to delete saved game data.
 
+Verified database and per-game backups are stored outside the repository and
+Docker volume. Setup, hourly scheduling, verification, isolated rehearsal, and
+restore procedures are documented in
+[`docs/BACKUP_RESTORE_RUNBOOK.md`](docs/BACKUP_RESTORE_RUNBOOK.md). Application
+`archived` state is not a backup.
+
 ## Development
 - Run Alembic migrations (inside the API container):
   ```bash

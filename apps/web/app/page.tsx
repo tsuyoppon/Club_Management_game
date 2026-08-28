@@ -56,6 +56,24 @@ type DeletePreview = {
   room_status: string;
   counts: Record<string, number>;
   confirm_options: string[];
+  verified_backup_required: boolean;
+};
+
+type GameBackup = {
+  backup_id: string;
+  game_id: string;
+  created_at: string;
+  size_bytes: number;
+  sha256: string;
+  counts: Record<string, number>;
+  verified: boolean;
+};
+
+type DeleteResult = {
+  deleted: true;
+  game_id: string;
+  counts: Record<string, number>;
+  backup: GameBackup;
 };
 
 type PlayState = {
@@ -528,6 +546,7 @@ function friendlyError(message: string) {
   if (message.includes('Only a resolved turn can be acknowledged')) return '結果確定前はackできません。ホストのresolveを待ってください。';
   if (message.includes('Only a resolved turn can advance')) return '結果確定前は次ターンへ進めません。先にresolveしてください。';
   if (message.includes('Committed input can only be reopened before lock')) return '入力確定の解除は締切前だけ実行できます。';
+  if (message.includes('Verified backup could not be created')) return '検証済みバックアップを作成できなかったため、ゲームは削除されませんでした。運用者に確認してください。';
   return message;
 }
 
@@ -900,13 +919,14 @@ export default function Home() {
     await report(
       api<DeletePreview>(`/api/games/${target.game_id}/delete-preview`).then(async (preview) => {
         const confirmText = window.prompt(
-          `${preview.room_name} を完全削除します。復元できません。削除するには招待コード ${preview.invite_code} を入力してください。`,
+          `${preview.room_name} を完全削除します。削除前に検証済みバックアップを作成し、復元は運用者が行います。削除するには招待コード ${preview.invite_code} を入力してください。`,
         );
         if (!confirmText) return;
-        await api(`/api/games/${target.game_id}`, {
+        const result = await api<DeleteResult>(`/api/games/${target.game_id}`, {
           method: 'DELETE',
           body: JSON.stringify({ confirm: confirmText }),
         });
+        window.alert(`ゲームを削除しました。バックアップID: ${result.backup.backup_id}`);
         clearCurrentGame();
         await loadRecentRooms();
       }),

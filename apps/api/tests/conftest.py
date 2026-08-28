@@ -1,4 +1,5 @@
 import os
+import tempfile
 import pytest
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -9,6 +10,7 @@ if "DATABASE_URL" not in os.environ:
     os.environ["DATABASE_URL"] = (
         "postgresql+psycopg2://postgres:postgres@localhost:5432/club_game_test"
     )
+os.environ.setdefault("GAME_BACKUP_ROOT", tempfile.mkdtemp(prefix="club-game-pytest-backups-"))
 
 test_database_name = make_url(os.environ["DATABASE_URL"]).database or ""
 if not test_database_name.endswith("_test"):
