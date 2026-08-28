@@ -33,7 +33,15 @@ def _backup_graph(db):
         status="archived",
         started_at=datetime.utcnow(),
     )
-    db.add_all([membership, room])
+    completion = models.GameCompletion(
+        game_id=game.id,
+        completed_by_user_id=user.id,
+        completed_at=datetime.utcnow(),
+        reopened_by_user_id=user.id,
+        reopened_at=datetime.utcnow(),
+        summary_json={"champion": "Backup FC"},
+    )
+    db.add_all([membership, room, completion])
     db.flush()
     db.add(models.GameRoomMember(room_id=room.id, user_id=user.id, club_id=club.id, is_ready=True))
     season = models.Season(game_id=game.id, season_number=1, year_label="2026")
@@ -101,6 +109,7 @@ def test_game_backup_round_trip(db_session, tmp_path):
     assert manifest["counts"]["games"] == 1
     assert manifest["counts"]["turn_decisions"] == 1
     assert manifest["counts"]["club_financial_ledgers"] == 1
+    assert manifest["counts"]["game_completions"] == 1
     assert manifest["counts"]["web_sessions"] == 1
     assert latest_game_backup(tmp_path, game_id)["backup_id"] == backup["backup_id"]
 
@@ -117,6 +126,7 @@ def test_game_backup_round_trip(db_session, tmp_path):
     assert restored_game.room.status == "archived"
     assert db_session.query(models.TurnDecision).count() == 1
     assert db_session.query(models.ClubFinancialLedger).one().amount == Decimal("123.45")
+    assert db_session.query(models.GameCompletion).one().summary_json == {"champion": "Backup FC"}
     assert db_session.query(models.WebSession).count() == 1
 
 

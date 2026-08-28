@@ -41,6 +41,7 @@ GAME_OWNED_TABLES = {
     "turn_decisions",
     "turn_acks",
     "game_rooms",
+    "game_completions",
     "game_room_members",
     "web_turn_drafts",
     "fixtures",
@@ -67,6 +68,7 @@ EXCLUDED_TABLES: set[str] = set()
 RESTORE_ORDER = [
     "users",
     "games",
+    "game_completions",
     "clubs",
     "seasons",
     "turns",
@@ -101,6 +103,8 @@ USER_REFERENCE_COLUMNS = {
     ("turn_decisions", "committed_by_user_id"),
     ("turn_acks", "user_id"),
     ("game_rooms", "host_user_id"),
+    ("game_completions", "completed_by_user_id"),
+    ("game_completions", "reopened_by_user_id"),
     ("game_room_members", "user_id"),
     ("web_sessions", "user_id"),
     ("web_turn_drafts", "user_id"),
@@ -184,6 +188,9 @@ def _collect_rows(db: Session, game_id: uuid.UUID) -> dict[str, list[dict[str, A
 
     rows: dict[str, list[dict[str, Any]]] = {}
     rows["games"] = _table_rows(db, "games", tables["games"].c.id == game_id)
+    rows["game_completions"] = _table_rows(
+        db, "game_completions", tables["game_completions"].c.game_id == game_id
+    )
     rows["clubs"] = _table_rows(db, "clubs", tables["clubs"].c.game_id == game_id)
     rows["memberships"] = _table_rows(db, "memberships", tables["memberships"].c.game_id == game_id)
     rows["seasons"] = _table_rows(db, "seasons", tables["seasons"].c.game_id == game_id)
