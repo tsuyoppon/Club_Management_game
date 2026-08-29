@@ -263,6 +263,7 @@ class GameRoom(Base):
     game_id = Column(UUID(as_uuid=True), ForeignKey("games.id", ondelete="CASCADE"), nullable=False, unique=True)
     host_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     invite_code = Column(String(24), nullable=False, unique=True)
+    host_mode = Column(String(24), nullable=False, default="player", server_default="player")
     status = Column(String(24), nullable=False, default="lobby")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
@@ -270,6 +271,10 @@ class GameRoom(Base):
     game = relationship("Game", back_populates="room")
     host = relationship("User", foreign_keys=[host_user_id])
     members = relationship("GameRoomMember", back_populates="room", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        CheckConstraint("host_mode IN ('player', 'dedicated')", name="ck_game_rooms_host_mode"),
+    )
 
 
 class GameCompletion(Base):

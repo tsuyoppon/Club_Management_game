@@ -15,8 +15,9 @@ from app.services.game_backup import (
 
 def _backup_graph(db):
     user = models.User(display_name="Backup Host")
+    player = models.User(display_name="Backup Player")
     game = models.Game(name="Backup League", status=models.GameStatus.archived)
-    db.add_all([user, game])
+    db.add_all([user, player, game])
     db.flush()
     club = models.Club(game_id=game.id, name="Backup FC", short_name="BFC")
     db.add(club)
@@ -26,10 +27,17 @@ def _backup_graph(db):
         user_id=user.id,
         role=models.MembershipRole.gm,
     )
+    player_membership = models.Membership(
+        game_id=game.id,
+        user_id=player.id,
+        role=models.MembershipRole.club_owner,
+        club_id=club.id,
+    )
     room = models.GameRoom(
         game_id=game.id,
         host_user_id=user.id,
         invite_code="BACKUP01",
+        host_mode="dedicated",
         status="archived",
         started_at=datetime.utcnow(),
     )
@@ -41,9 +49,14 @@ def _backup_graph(db):
         reopened_at=datetime.utcnow(),
         summary_json={"champion": "Backup FC"},
     )
-    db.add_all([membership, room, completion])
+    db.add_all([membership, player_membership, room, completion])
     db.flush()
-    db.add(models.GameRoomMember(room_id=room.id, user_id=user.id, club_id=club.id, is_ready=True))
+    db.add_all(
+        [
+            models.GameRoomMember(room_id=room.id, user_id=user.id),
+            models.GameRoomMember(room_id=room.id, user_id=player.id, club_id=club.id, is_ready=True),
+        ]
+    )
     season = models.Season(game_id=game.id, season_number=1, year_label="2026")
     db.add(season)
     db.flush()
@@ -62,14 +75,14 @@ def _backup_graph(db):
                 turn_id=turn.id,
                 club_id=club.id,
                 decision_state=models.DecisionState.locked,
-                committed_by_user_id=user.id,
+                committed_by_user_id=player.id,
                 payload_json={"sales_expense": 1000},
             ),
-            models.TurnAck(turn_id=turn.id, club_id=club.id, user_id=user.id, ack=True),
+            models.TurnAck(turn_id=turn.id, club_id=club.id, user_id=player.id, ack=True),
             models.WebTurnDraft(
                 turn_id=turn.id,
                 club_id=club.id,
-                user_id=user.id,
+                user_id=player.id,
                 payload_json={"promo_expense": 250},
             ),
             models.WebSession(
@@ -93,7 +106,7 @@ def _backup_graph(db):
         ]
     )
     db.commit()
-    return game.id, user.id
+    return game.id, [user.id, player.id]
 
 
 def test_all_model_tables_are_classified_for_game_backup():
@@ -101,7 +114,7 @@ def test_all_model_tables_are_classified_for_game_backup():
 
 
 def test_game_backup_round_trip(db_session, tmp_path):
-    game_id, user_id = _backup_graph(db_session)
+    game_id, user_ids = _backup_graph(db_session)
 
     backup = create_game_backup(db_session, game_id, tmp_path, reason="test")
     manifest = verify_game_backup(backup["archive_path"], backup["sha256"])
@@ -114,7 +127,7 @@ def test_game_backup_round_trip(db_session, tmp_path):
     assert latest_game_backup(tmp_path, game_id)["backup_id"] == backup["backup_id"]
 
     db_session.execute(delete(models.Game).where(models.Game.id == game_id))
-    db_session.execute(delete(models.User).where(models.User.id == user_id))
+    db_session.execute(delete(models.User).where(models.User.id.in_(user_ids)))
     db_session.commit()
 
     restored = restore_game_backup(db_session, backup["archive_path"])
@@ -124,6 +137,7 @@ def test_game_backup_round_trip(db_session, tmp_path):
     restored_game = db_session.get(models.Game, game_id)
     assert restored_game.status == models.GameStatus.archived
     assert restored_game.room.status == "archived"
+    assert restored_game.room.host_mode == "dedicated"
     assert db_session.query(models.TurnDecision).count() == 1
     assert db_session.query(models.ClubFinancialLedger).one().amount == Decimal("123.45")
     assert db_session.query(models.GameCompletion).one().summary_json == {"champion": "Backup FC"}

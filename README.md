@@ -25,9 +25,11 @@ The Web profile now serves the multiplayer browser console. Start it with:
 docker compose --profile web up --build
 ```
 
-The first screen creates or joins an invite-code room. A host creates club slots,
-players claim a club from their own browser, and the host advances each turn from
+The first screen creates or joins an invite-code room. A host creates club slots
+and chooses either the traditional host-player mode or a dedicated-host mode.
+Players claim a club from their own browser, and the host advances each turn from
 the role-aware console after each club has committed input and acknowledged results.
+In dedicated-host mode, the host cannot claim a club or access club-private data.
 The V1 scope, role matrix, environment notes, and playtest checklist are in
 [`docs/WEB_MULTIPLAYER_V1.md`](docs/WEB_MULTIPLAYER_V1.md).
 

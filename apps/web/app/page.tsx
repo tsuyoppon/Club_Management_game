@@ -5,6 +5,8 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 're
 import { downloadCsv, safeCsvFilenamePart } from './csv';
 import type { CsvCell } from './csv';
 
+type HostMode = 'player' | 'dedicated';
+
 type Room = {
   id: string;
   game_id: string;
@@ -12,6 +14,7 @@ type Room = {
   game_status: 'draft' | 'active' | 'completed' | 'archived';
   completed_at: string | null;
   invite_code: string;
+  host_mode: HostMode;
   is_host: boolean;
   self: { user_id: string; display_name: string; club_id: string | null; ready: boolean };
   clubs: Array<{
@@ -39,6 +42,7 @@ type RecentRoom = {
   game_status: string;
   room_status: string;
   invite_code: string;
+  host_mode: HostMode;
   is_host: boolean;
   club_id: string | null;
   club_name: string | null;
@@ -77,7 +81,7 @@ type DeleteResult = {
 };
 
 type PlayState = {
-  room: { id: string; invite_code: string; status: string };
+  room: { id: string; invite_code: string; status: string; host_mode: HostMode };
   game_id: string;
   game_status: string;
   completion: { eligible: boolean; blockers: string[]; season_id: string | null; turn_id: string | null };
@@ -546,6 +550,8 @@ function friendlyError(message: string) {
   if (message.includes('Only a resolved turn can be acknowledged')) return '結果確定前はackできません。ホストのresolveを待ってください。';
   if (message.includes('Only a resolved turn can advance')) return '結果確定前は次ターンへ進めません。先にresolveしてください。';
   if (message.includes('Committed input can only be reopened before lock')) return '入力確定の解除は締切前だけ実行できます。';
+  if (message.includes('Dedicated host cannot access a club role')) return '専任ホストはクラブを担当したり、クラブ固有情報を操作したりできません。';
+  if (message.includes('Dedicated host must remain unassigned')) return '専任ホストにクラブが割り当てられているため開始できません。';
   if (message.includes('Verified backup could not be created')) return '検証済みバックアップを作成できなかったため、ゲームは削除されませんでした。運用者に確認してください。';
   return message;
 }
@@ -564,6 +570,7 @@ export default function Home() {
   const [roomName, setRoomName] = useState('研修リーグ');
   const [inviteCode, setInviteCode] = useState('');
   const [clubNames, setClubNames] = useState(defaultClubs);
+  const [hostMode, setHostMode] = useState<HostMode>('player');
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [draftDirty, setDraftDirty] = useState(false);
   const [draftState, setDraftState] = useState('未保存');
@@ -733,7 +740,12 @@ export default function Home() {
     await report(
       api<Room>('/api/rooms', {
         method: 'POST',
-        body: JSON.stringify({ display_name: displayName, room_name: roomName, club_names: clubNames }),
+        body: JSON.stringify({
+          display_name: displayName,
+          room_name: roomName,
+          club_names: clubNames,
+          host_mode: hostMode,
+        }),
       }).then((nextRoom) => {
         setRoom(nextRoom);
         setStage('lobby');
@@ -943,6 +955,7 @@ export default function Home() {
         <div className="statusline">
           <span>{room ? `ROOM ${room.invite_code}` : 'ROOM ----'}</span>
           <span>{play?.season ? `SEASON ${play.season.number}` : 'LOBBY'}</span>
+          {room ? <span>{room.host_mode === 'dedicated' ? '専任ホスト' : 'ホスト兼任'}</span> : null}
           <span>{statusText(play?.turn?.state)}</span>
           <span className="online">polling</span>
         </div>
@@ -954,6 +967,7 @@ export default function Home() {
           busy={busy}
           clubNames={clubNames}
           displayName={displayName}
+          hostMode={hostMode}
           inviteCode={inviteCode}
           recentRooms={recentRooms}
           roomName={roomName}
@@ -962,6 +976,7 @@ export default function Home() {
           onCreate={createRoom}
           onDeleteArchived={deleteArchivedGame}
           onDisplayName={setDisplayName}
+          onHostMode={setHostMode}
           onInviteCode={setInviteCode}
           onJoin={joinRoom}
           onResume={(roomId) => report(loadRoom(roomId))}
@@ -1034,6 +1049,7 @@ function Entry({
   busy,
   clubNames,
   displayName,
+  hostMode,
   inviteCode,
   recentRooms,
   roomName,
@@ -1042,6 +1058,7 @@ function Entry({
   onCreate,
   onDeleteArchived,
   onDisplayName,
+  onHostMode,
   onInviteCode,
   onJoin,
   onResume,
@@ -1051,6 +1068,7 @@ function Entry({
   busy: boolean;
   clubNames: string[];
   displayName: string;
+  hostMode: HostMode;
   inviteCode: string;
   recentRooms: RecentRoom[];
   roomName: string;
@@ -1059,6 +1077,7 @@ function Entry({
   onCreate: (event: FormEvent) => void;
   onDeleteArchived: (room: RecentRoom) => void;
   onDisplayName: (value: string) => void;
+  onHostMode: (value: HostMode) => void;
   onInviteCode: (value: string) => void;
   onJoin: (event: FormEvent) => void;
   onResume: (roomId: string) => void;
@@ -1081,7 +1100,7 @@ function Entry({
                   <div>
                     <strong>{item.room_name}</strong>
                     <p className="muted">
-                      {item.club_name || (item.is_host ? 'ホスト' : '未割当')} / {item.season ? `S${item.season.number}` : 'ロビー'} / {item.room_status === 'completed' ? '終了済み' : item.turn?.month_name || item.room_status}
+                      {item.club_name || (item.is_host ? 'ホスト' : '未割当')} / {item.host_mode === 'dedicated' ? '専任' : '兼任'} / {item.season ? `S${item.season.number}` : 'ロビー'} / {item.room_status === 'completed' ? '終了済み' : item.turn?.month_name || item.room_status}
                     </p>
                   </div>
                   <div className="roomActions">
@@ -1132,6 +1151,16 @@ function Entry({
           ルーム名
           <input required value={roomName} onChange={(event) => onRoomName(event.target.value)} />
         </label>
+        <label>
+          ホストの参加形態
+          <select value={hostMode} onChange={(event) => onHostMode(event.target.value as HostMode)}>
+            <option value="player">ホスト兼プレーヤー（従来）</option>
+            <option value="dedicated">専任ホスト（クラブ担当なし）</option>
+          </select>
+        </label>
+        {hostMode === 'dedicated' ? (
+          <p className="muted">専任ホストとは別に、各クラブを担当するプレーヤーが1名ずつ必要です。</p>
+        ) : null}
         <div className="clubSlots">
           <span>クラブ枠</span>
           {clubNames.map((clubName, index) => (
@@ -1178,6 +1207,7 @@ function Lobby({
   onStart: () => void;
 }) {
   const allReady = room.clubs.every((club) => club.claimed_by && club.ready);
+  const dedicatedHost = room.is_host && room.host_mode === 'dedicated';
   return (
     <section className="lobbyGrid">
       <article className="pane widePane">
@@ -1196,7 +1226,7 @@ function Lobby({
                 <td>{club.claimed_by_name || '未割当'}</td>
                 <td><span className={club.ready ? 'ok' : 'pending'}>{club.ready ? 'ready' : 'waiting'}</span></td>
                 <td>
-                  {!club.claimed_by || club.claimed_by === room.self.user_id ? (
+                  {!dedicatedHost && (!club.claimed_by || club.claimed_by === room.self.user_id) ? (
                     <button type="button" disabled={busy} onClick={() => onClaim(club.id)}>
                       {club.claimed_by === room.self.user_id ? '選択中' : '担当する'}
                     </button>
@@ -1213,11 +1243,13 @@ function Lobby({
           {room.members.map((member) => (
             <li key={member.id}>
               <span>{member.display_name}</span>
-              <small>{member.is_host ? 'HOST' : member.ready ? 'READY' : 'WAIT'}</small>
+              <small>{member.is_host ? (room.host_mode === 'dedicated' ? 'HOST ONLY' : 'HOST') : member.ready ? 'READY' : 'WAIT'}</small>
             </li>
           ))}
         </ul>
-        {room.self.club_id ? (
+        {dedicatedHost ? (
+          <p className="muted">専任ホストとして、全クラブの担当者とready状態を確認してください。</p>
+        ) : room.self.club_id ? (
           <button type="button" disabled={busy} onClick={() => onReady(!room.self.ready)}>
             {room.self.ready ? 'ready解除' : 'readyにする'}
           </button>

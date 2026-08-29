@@ -18,14 +18,17 @@ from app.services import staff as staff_service
 from app.services.public_disclosure import _build_financial_summary
 
 
-def _create_room(client: TestClient):
+def _create_room(client: TestClient, host_mode: str | None = None):
+    payload = {
+        "display_name": "Host",
+        "room_name": "Browser League",
+        "club_names": ["Tokyo", "Osaka"],
+    }
+    if host_mode is not None:
+        payload["host_mode"] = host_mode
     response = client.post(
         "/api/rooms",
-        json={
-            "display_name": "Host",
-            "room_name": "Browser League",
-            "club_names": ["Tokyo", "Osaka"],
-        },
+        json=payload,
     )
     assert response.status_code == 201
     return response.json()
@@ -42,6 +45,88 @@ def _ready_two_player_room(host: TestClient, player: TestClient):
     assert player.post(f"/api/rooms/{room['id']}/clubs/{player_club['id']}/claim").status_code == 200
     assert player.patch(f"/api/rooms/{room['id']}/memberships/me/ready", json={"ready": True}).status_code == 200
     return room, host_club, player_club
+
+
+def test_room_create_defaults_to_player_host_mode():
+    host = TestClient(app)
+    room = _create_room(host)
+
+    assert room["host_mode"] == "player"
+    assert room["self"]["club_id"] is None
+
+
+def test_dedicated_host_mode_enforces_role_boundaries_and_result_scope(db):
+    host = TestClient(app)
+    player_one = TestClient(app)
+    player_two = TestClient(app)
+    room = _create_room(host, host_mode="dedicated")
+    first_club, second_club = room["clubs"]
+
+    assert room["host_mode"] == "dedicated"
+    assert room["self"]["club_id"] is None
+    assert host.post(f"/api/rooms/{room['id']}/clubs/{first_club['id']}/claim").status_code == 403
+    assert host.patch(
+        f"/api/rooms/{room['id']}/memberships/me/ready",
+        json={"ready": True},
+    ).status_code == 403
+
+    assert player_one.post(
+        f"/api/rooms/{room['invite_code']}/join",
+        json={"display_name": "Player One"},
+    ).status_code == 200
+    assert player_one.post(f"/api/rooms/{room['id']}/clubs/{first_club['id']}/claim").status_code == 200
+    assert player_one.patch(
+        f"/api/rooms/{room['id']}/memberships/me/ready",
+        json={"ready": True},
+    ).status_code == 200
+    assert host.post(f"/api/rooms/{room['id']}/start", json={}).status_code == 400
+
+    assert player_two.post(
+        f"/api/rooms/{room['invite_code']}/join",
+        json={"display_name": "Player Two"},
+    ).status_code == 200
+    assert player_two.post(f"/api/rooms/{room['id']}/clubs/{second_club['id']}/claim").status_code == 200
+    assert player_two.patch(
+        f"/api/rooms/{room['id']}/memberships/me/ready",
+        json={"ready": True},
+    ).status_code == 200
+
+    started = host.post(f"/api/rooms/{room['id']}/start", json={"year_label": "2026"})
+    assert started.status_code == 200
+    host_play = host.get(f"/api/games/{room['game_id']}/play-state")
+    assert host_play.status_code == 200
+    assert host_play.json()["room"]["host_mode"] == "dedicated"
+    assert host_play.json()["self"]["club_id"] is None
+    assert host.get(
+        f"/api/games/{room['game_id']}/clubs/{first_club['id']}/turn-console"
+    ).status_code == 403
+    assert player_one.get(
+        f"/api/games/{room['game_id']}/clubs/{second_club['id']}/turn-console"
+    ).status_code == 403
+
+    payload = {
+        "sales_expense": 1000000,
+        "promo_expense": 1000000,
+        "hometown_expense": 1000000,
+    }
+    _save_and_commit(player_one, room, first_club, payload)
+    _save_and_commit(player_two, room, second_club, payload)
+    assert host.post(
+        f"/api/games/{room['game_id']}/host/turn-action",
+        json={"action": "lock"},
+    ).status_code == 200
+
+    _prepare_completed_july(db, room)
+    db.commit()
+    completed = host.post(f"/api/games/{room['game_id']}/complete")
+    assert completed.status_code == 200
+    assert completed.json()["viewer_scope"] == "host_all"
+    assert len(completed.json()["club_reviews"]) == 2
+
+    player_summary = player_one.get(f"/api/games/{room['game_id']}/result-summary")
+    assert player_summary.status_code == 200
+    assert player_summary.json()["viewer_scope"] == f"club:{first_club['id']}"
+    assert [row["club_id"] for row in player_summary.json()["club_reviews"]] == [first_club["id"]]
 
 
 def _save_and_commit(client: TestClient, room: dict, club: dict, payload: dict):
@@ -496,6 +581,7 @@ def test_recent_rooms_restore_candidates_and_archive_visibility():
     assert host_room["game_id"] == room["game_id"]
     assert host_room["room_name"] == "Browser League"
     assert host_room["is_host"] is True
+    assert host_room["host_mode"] == "player"
     assert host_room["club_id"] == host_club["id"]
 
     player_recent = player.get("/api/rooms/recent")

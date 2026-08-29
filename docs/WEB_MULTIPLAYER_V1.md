@@ -5,7 +5,8 @@
 The first Web release is a small hosted multiplayer game for an internal network
 or a limited-access server. Players connect from separate browsers to one Web
 server, join an invite-code room, claim one club, mark ready, and play turns
-under host control.
+under host control. Room creation supports both a traditional host-player mode
+and a dedicated-host mode where the host never controls a club.
 
 The game rules and simulation remain in `apps/api`. `apps/web` is a role-aware
 console over the API. `apps/cli` remains available for regression checks and
@@ -20,22 +21,23 @@ Out of scope for V1:
 
 ## Roles And Data
 
-| Capability | Host GM | Club player | Viewer |
-| --- | --- | --- | --- |
-| Create room and invite code | yes | no | no |
-| Join room with browser session | yes | yes | later |
-| Claim a club slot | yes | yes | no |
-| Ready claimed club | yes | yes | no |
-| Start room after every club is ready | yes | no | no |
-| Read public play state and standings | yes | yes | later |
-| Read and edit claimed club draft | only own club | only own club | no |
-| Commit claimed club input | only own club | only own club | no |
-| See other club private input and finance | no | no | no |
-| Open, lock, resolve, advance turns | yes | no | no |
-| Ack resolved claimed club turn | only own club | only own club | no |
-| Resume own joined room from saved browser session | yes | yes | no |
-| Archive a game | yes | no | no |
-| Permanently delete an archived game | yes | no | no |
+| Capability | Dedicated host | Host-player | Club player | Viewer |
+| --- | --- | --- | --- | --- |
+| Create room and invite code | yes | yes | no | no |
+| Join room with browser session | yes | yes | yes | later |
+| Claim a club slot | no | yes | yes | no |
+| Ready claimed club | no | yes | yes | no |
+| Start room after every club is ready | yes | yes | no | no |
+| Read public play state and standings | yes | yes | yes | later |
+| Read and edit claimed club draft | no | only own club | only own club | no |
+| Commit claimed club input | no | only own club | only own club | no |
+| See other club private input and finance | no | no | no | no |
+| Open, lock, resolve, advance turns | yes | yes | no | no |
+| Ack resolved claimed club turn | no | only own club | only own club | no |
+| Read all club reviews after completion | yes | yes | no | no |
+| Resume own joined room from saved browser session | yes | yes | yes | no |
+| Archive a game | yes | yes | no | no |
+| Permanently delete an archived game | yes | yes | no | no |
 
 V1 browser identity is a guest display name bound to an opaque session token in
 an HttpOnly cookie. The database stores only the token hash, expiry, last-seen
@@ -47,9 +49,11 @@ identity in V1.
 
 ## Web Flow
 
-1. Host creates a room and club slots from the Web entry screen.
+1. Host creates a room and club slots from the Web entry screen, choosing
+   host-player or dedicated-host mode. The choice is fixed for that room.
 2. Other browsers join with the invite code.
-3. Each player claims a club and marks it ready in the lobby.
+3. Each club player claims a club and marks it ready in the lobby. In
+   dedicated-host mode, the host remains unassigned and does not mark ready.
 4. Host starts the room. The API creates the season, turns, decisions, and
    fixtures using the existing game model.
 5. Every browser enters the same game console. Public progress is polled.
@@ -134,9 +138,13 @@ Future public environment:
 
 ## Playtest Checklist
 
-- Two browsers complete lobby creation, join, claim, ready, and start.
+- Host-player mode completes lobby creation, join, claim, ready, and start with
+  the existing browser arrangement.
+- Dedicated-host mode completes the same flow with one host browser plus one
+  separate player browser for every club.
 - Maximum configured club count completes the same flow.
-- Host-only and host-player modes both enter the shared console correctly.
+- Dedicated-host and host-player modes both enter the shared console correctly.
+- A dedicated host has no club input pane and cannot call club-private APIs.
 - Reload during draft entry restores draft state.
 - Reconnect from the same browser session returns to the room.
 - A player cannot read another club console, draft, or private finance.

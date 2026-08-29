@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
 import secrets
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 from urllib.parse import quote, urlparse
 
@@ -103,6 +103,7 @@ class RoomCreate(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=80)
     room_name: str = Field(..., min_length=1, max_length=120)
     club_names: list[str] = Field(default_factory=list)
+    host_mode: Literal["player", "dedicated"] = "player"
 
 
 class RoomJoin(BaseModel):
@@ -196,6 +197,18 @@ def _require_host(room: models.GameRoom, user: models.User):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Host role required")
 
 
+def _is_dedicated_host(room: models.GameRoom, user: models.User) -> bool:
+    return room.host_mode == "dedicated" and room.host_user_id == user.id
+
+
+def _forbid_dedicated_host_club_access(room: models.GameRoom, user: models.User) -> None:
+    if _is_dedicated_host(room, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dedicated host cannot access a club role",
+        )
+
+
 def _require_host_for_game(db: Session, game_id: UUID, user: models.User) -> models.GameRoom:
     room = _room_for_game_or_404(db, game_id)
     _room_member(db, room, user)
@@ -269,6 +282,7 @@ def _serialize_room(db: Session, room: models.GameRoom, viewer: models.User) -> 
         "game_id": str(room.game_id),
         "status": room.status,
         "invite_code": room.invite_code,
+        "host_mode": room.host_mode,
         "is_host": room.host_user_id == viewer.id,
         "game_status": room.game.status.value,
         "completed_at": completion.completed_at.isoformat() if completion else None,
@@ -610,6 +624,7 @@ def _web_club_access(
     club_id: UUID,
 ) -> tuple[models.GameRoomMember, models.Club]:
     member = _room_member(db, room, user)
+    _forbid_dedicated_host_club_access(room, user)
     club = db.query(models.Club).filter(models.Club.id == club_id, models.Club.game_id == room.game_id).first()
     if not club:
         _not_found("Club not found")
@@ -648,6 +663,7 @@ def create_room(payload: RoomCreate, response: Response, db: Session = Depends(g
         game_id=game.id,
         host_user_id=user.id,
         invite_code=_invite_code(db),
+        host_mode=payload.host_mode,
         status="lobby",
     )
     db.add(room)
@@ -688,6 +704,7 @@ def current_browser_user(user: models.User = Depends(get_web_current_user), db: 
                 "game_id": str(room.game_id),
                 "invite_code": room.invite_code,
                 "status": room.status,
+                "host_mode": room.host_mode,
                 "is_host": room.host_user_id == user.id,
             }
             for room in rooms
@@ -754,6 +771,7 @@ def recent_rooms(
                 "game_status": room.game.status.value,
                 "room_status": room.status,
                 "invite_code": room.invite_code,
+                "host_mode": room.host_mode,
                 "is_host": room.host_user_id == user.id,
                 "club_id": str(club.id) if club else None,
                 "club_name": club.name if club else None,
@@ -1105,6 +1123,7 @@ def claim_club(
     member = _room_member(db, room, user)
     if room.status != "lobby":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Club claims close after start")
+    _forbid_dedicated_host_club_access(room, user)
     club = db.query(models.Club).filter(models.Club.id == club_id, models.Club.game_id == room.game_id).first()
     if not club:
         _not_found("Club not found")
@@ -1149,6 +1168,7 @@ def set_ready(
     room = _room_or_404(db, room_id)
     _ensure_game_active(room)
     member = _room_member(db, room, user)
+    _forbid_dedicated_host_club_access(room, user)
     if room.status != "lobby":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Room already started")
     if not member.club_id:
@@ -1167,14 +1187,24 @@ def start_room(
 ):
     room = _room_or_404(db, room_id)
     _ensure_game_active(room)
-    _room_member(db, room, user)
+    host_member = _room_member(db, room, user)
     _require_host(room, user)
     if room.status != "lobby":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Room already started")
 
     clubs = db.query(models.Club).filter(models.Club.game_id == room.game_id).all()
     claims = db.query(models.GameRoomMember).filter(models.GameRoomMember.room_id == room.id).all()
-    ready_clubs = {claim.club_id for claim in claims if claim.club_id and claim.is_ready}
+    if room.host_mode == "dedicated" and (host_member.club_id is not None or host_member.is_ready):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Dedicated host must remain unassigned",
+        )
+    eligible_claims = (
+        [claim for claim in claims if claim.user_id != room.host_user_id]
+        if room.host_mode == "dedicated"
+        else claims
+    )
+    ready_clubs = {claim.club_id for claim in eligible_claims if claim.club_id and claim.is_ready}
     if set(club.id for club in clubs) != ready_clubs:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Every club needs a ready player")
 
@@ -1216,6 +1246,7 @@ def play_state(
             "id": str(room.id),
             "invite_code": room.invite_code,
             "status": room.status,
+            "host_mode": room.host_mode,
         },
         "game_id": str(game_id),
         "game_status": room.game.status.value,
