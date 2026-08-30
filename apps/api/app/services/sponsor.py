@@ -12,6 +12,10 @@ from app.config.constants import (
     LEADS_L0, LEADS_L1, LEADS_L2, LEADS_L3, LEADS_L4,
     CONV_A0, CONV_A1, CONV_A2, CONV_A3,
     PIPELINE_PROB_EXISTING, PIPELINE_PROB_NEW,
+    SPONSOR_EFFORT_HISTORY_WEIGHTS,
+    SPONSOR_CONVERSION_HISTORY_WEIGHTS,
+    SPONSOR_RETENTION_REFERENCE_COUNT,
+    SPONSOR_RETENTION_DILUTION_EXPONENT,
 )
 
 
@@ -22,6 +26,95 @@ def _calculate_churn_rate(c_ret: float, perf: float, fan_growth: float) -> float
     term_f = float(CHURN_C3) * fan_growth
     churn_raw = float(CHURN_C0) - term_c - term_p - term_f
     return max(float(CHURN_MIN), min(float(CHURN_MAX), churn_raw))
+
+
+def _retention_effort_per_sponsor(c_ret: float, sponsor_count: int) -> float:
+    """Adjust retention effort for the number of sponsors cared for that season."""
+    reference_count = float(SPONSOR_RETENTION_REFERENCE_COUNT)
+    dilution_exponent = float(SPONSOR_RETENTION_DILUTION_EXPONENT)
+    effective_count = max(int(sponsor_count), 1)
+    return c_ret * (reference_count / effective_count) ** dilution_exponent
+
+
+def _weighted_effort(
+    effort_by_age: dict[int, float],
+    weights: tuple[Decimal, ...],
+) -> float:
+    """Return a normalized weighted average for the available season ages."""
+    weighted_total = 0.0
+    available_weight = 0.0
+    for age, effort in effort_by_age.items():
+        if age < 0 or age >= len(weights):
+            continue
+        weight = float(weights[age])
+        weighted_total += weight * effort
+        available_weight += weight
+    if available_weight == 0:
+        return 0.0
+    return weighted_total / available_weight
+
+
+def _calculate_effective_sponsor_efforts(
+    db: Session,
+    state: models.ClubSponsorState,
+    season_id: UUID,
+    club_id: UUID,
+) -> tuple[float, float, float]:
+    """Blend current and prior three seasons without mutating annual EWMA state.
+
+    Returns retention effort, new-business effort for lead generation, and the
+    more recent-weighted new-business effort used for conversion probability.
+    """
+    current_season = db.execute(
+        select(models.Season).where(models.Season.id == season_id)
+    ).scalar_one()
+
+    retention_by_age = {
+        0: _retention_effort_per_sponsor(
+            float(state.cumulative_effort_ret), state.count
+        )
+    }
+    new_effort_by_age = {0: float(state.cumulative_effort_new)}
+
+    oldest_season_number = current_season.season_number - (
+        len(SPONSOR_EFFORT_HISTORY_WEIGHTS) - 1
+    )
+    previous_seasons = db.execute(
+        select(models.Season).where(
+            models.Season.game_id == current_season.game_id,
+            models.Season.season_number < current_season.season_number,
+            models.Season.season_number >= oldest_season_number,
+            models.Season.is_finalized.is_(True),
+        )
+    ).scalars().all()
+
+    for previous_season in previous_seasons:
+        previous_state = db.execute(
+            select(models.ClubSponsorState).where(
+                models.ClubSponsorState.club_id == club_id,
+                models.ClubSponsorState.season_id == previous_season.id,
+            )
+        ).scalar_one_or_none()
+        if previous_state is None:
+            continue
+
+        age = current_season.season_number - previous_season.season_number
+        retention_by_age[age] = _retention_effort_per_sponsor(
+            float(previous_state.cumulative_effort_ret), previous_state.count
+        )
+        new_effort_by_age[age] = float(previous_state.cumulative_effort_new)
+
+    effective_retention = _weighted_effort(
+        retention_by_age, SPONSOR_EFFORT_HISTORY_WEIGHTS
+    )
+    effective_new_leads = _weighted_effort(
+        new_effort_by_age, SPONSOR_EFFORT_HISTORY_WEIGHTS
+    )
+    effective_new_conversion = _weighted_effort(
+        new_effort_by_age, SPONSOR_CONVERSION_HISTORY_WEIGHTS
+    )
+    return effective_retention, effective_new_leads, effective_new_conversion
+
 
 def ensure_sponsor_state(db: Session, club_id: UUID, season_id: UUID):
     state = db.execute(select(models.ClubSponsorState).where(
@@ -246,8 +339,9 @@ def _calculate_forecast_next_counts(
     """
     perf, followers, fan_growth = get_performance_metrics(db, club_id, season_id)
     
-    c_ret = float(state.cumulative_effort_ret)
-    c_new = float(state.cumulative_effort_new)
+    c_ret, c_new_leads, c_new_conversion = _calculate_effective_sponsor_efforts(
+        db, state, season_id, club_id
+    )
     
     seed = f"{season_id}-{club_id}-forecast"
     rng = random.Random(seed)
@@ -257,7 +351,7 @@ def _calculate_forecast_next_counts(
     n_exist_next = round(state.count * (1.0 - churn))
     
     # Leads calculation
-    term_l_c = float(LEADS_L1) * math.log(1 + c_new)
+    term_l_c = float(LEADS_L1) * math.log(1 + c_new_leads)
     term_l_n = float(LEADS_L2) * math.log(1 + state.count)
     term_l_p = float(LEADS_L3) * (perf - 0.5)
     term_l_f = float(LEADS_L4) * math.log(1 + followers)
@@ -265,7 +359,7 @@ def _calculate_forecast_next_counts(
     leads = max(0, round(leads_raw))
     
     # Conversion calculation
-    term_p_c = float(CONV_A1) * math.log(1 + c_new)
+    term_p_c = float(CONV_A1) * math.log(1 + c_new_conversion)
     term_p_p = float(CONV_A2) * (perf - 0.5)
     term_p_f = float(CONV_A3) * math.log(1 + followers)
     logit = float(CONV_A0) + term_p_c + term_p_p + term_p_f

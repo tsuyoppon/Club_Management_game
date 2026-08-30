@@ -134,6 +134,24 @@ SALES_EFFORT_STAFF_TO_SPEND_EFFICIENCY = Decimal("3")
 SALES_EFFORT_LAMBDA_RET = Decimal("0.12")
 SALES_EFFORT_LAMBDA_NEW = Decimal("0.05")
 
+# シーズン間の営業関係資産
+# 当年度と過去3年度の年度内EWMAを、近い年度ほど強く加重する。
+SPONSOR_EFFORT_HISTORY_WEIGHTS = (
+    Decimal("0.55"),
+    Decimal("0.25"),
+    Decimal("0.13"),
+    Decimal("0.07"),
+)
+# 新規成約率は直近のフォロー活動をより強く評価する。
+SPONSOR_CONVERSION_HISTORY_WEIGHTS = (
+    Decimal("0.70"),
+    Decimal("0.20"),
+    Decimal("0.07"),
+    Decimal("0.03"),
+)
+SPONSOR_RETENTION_REFERENCE_COUNT = Decimal("10")
+SPONSOR_RETENTION_DILUTION_EXPONENT = Decimal("0.7")
+
 # Churn（既存スポンサー脱落率）
 # 維持努力ゼロ・成績/ファン成長が中立なら脱落率40%。
 # 通常水準の維持努力（C_ret≒2）では従来に近い15〜20%まで改善する。

@@ -411,10 +411,39 @@ v1：
 - $\lambda_{ret}=0.12$
 - $\lambda_{new}=0.05$（新規は気長＝減衰弱い）
 
+年度内EWMAは各シーズンの開始時に0から計算し、前年度値を初期値として
+直接注入しない。スポンサー予測時に限り、当年度と過去3年度の年度末EWMAを
+別途加重平均して、中長期の営業関係資産として使用する。
+
+- 基本重み（当年度/前年/2年前/3年前）：$0.55/0.25/0.13/0.07$
+- 履歴が3年度に満たない場合は、利用可能な年度の重みだけで再正規化する
+- 過年度は確定済みシーズンだけを使用する
+
+既存スポンサー向け努力は、各年度にケアしていたスポンサー数で希薄化補正する。
+
+$$D^{ret}_y=C^{ret}_{y,12}\left(\frac{N_{ref}}{\max(N_y,1)}\right)^\gamma$$
+
+- $N_{ref}=10$
+- $\gamma=0.7$
+
+利用可能な年度集合を $A_y$ とすると、履歴不足時の再正規化を含む実効努力は
+次のとおりとする。
+
+$$H^{ret}_y=\frac{\sum_{i\in A_y}w_iD^{ret}_{y-i}}{\sum_{i\in A_y}w_i}$$
+$$H^{new,leads}_y=\frac{\sum_{i\in A_y}w_iC^{new}_{y-i,12}}{\sum_{i\in A_y}w_i}$$
+
+新規成約率は直近のフォロー活動をより強く評価し、重みを
+$0.70/0.20/0.07/0.03$ とする。
+
+$$H^{new,conv}_y=\frac{\sum_{i\in A_y}v_iC^{new}_{y-i,12}}{\sum_{i\in A_y}v_i},\quad v=(0.70,0.20,0.07,0.03)$$
+
+4〜6月の内定予測では、当年度分にその月時点の年度内EWMA、過年度分に
+各年度の7月確定値を使用する。年度間の尺度差は許容し、既存の内定下限は維持する。
+
 ### 10.5 既存スポンサー数（脱落率）
 
 $$ N^{exist}_{next}=round(N_{this}(1-Churn)) $$
-$$ Churn=clip\Big( c_0-c_1\ln(1+C^{ret}(7月)) -c_2(\overline{Perf}_{this}-0.5) -c_3(FanGrowth_{this}) ,\ c_{min},c_{max} \Big) $$
+$$ Churn=clip\Big( c_0-c_1\ln(1+H^{ret}) -c_2(\overline{Perf}_{this}-0.5) -c_3(FanGrowth_{this}) ,\ c_{min},c_{max} \Big) $$
 
 v1係数：
 - $c_0=0.40, c_1=0.20, c_2=0.06, c_3=0.04$
@@ -427,13 +456,13 @@ v1係数：
 ### 10.6 新規スポンサー数（見込み顧客×成約率）
 
 見込み顧客数：
-$$ L=round\Big( L_0+\ell_1\ln(1+C^{new}(7月)) +\ell_2\ln(1+N_{this}) +\ell_3(\overline{Perf}^{past}-0.5) +\ell_4\ln(1+Followers(7月)) \Big) $$
+$$ L=round\Big( L_0+\ell_1\ln(1+H^{new,leads}) +\ell_2\ln(1+N_{this}) +\ell_3(\overline{Perf}^{past}-0.5) +\ell_4\ln(1+Followers(7月)) \Big) $$
 
 v1係数：
 - $L_0=4, \ell_1=4.0, \ell_2=1.2, \ell_3=2.0, \ell_4=0.8$
 
 成約率：
-$$ p=\sigma\Big( a_0+a_1\ln(1+C^{new}(7月)) +a_2(\overline{Perf}_{this}-0.5) +a_3\ln(1+Followers(7月)) \Big) $$
+$$ p=\sigma\Big( a_0+a_1\ln(1+H^{new,conv}) +a_2(\overline{Perf}_{this}-0.5) +a_3\ln(1+Followers(7月)) \Big) $$
 
 v1係数：
 - $a_0=-2.0, a_1=0.55, a_2=0.45, a_3=0.10$
