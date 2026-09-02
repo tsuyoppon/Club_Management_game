@@ -337,22 +337,43 @@ $$ TicketRev = (A^{home}+A^{away})\cdot \bar P $$
 
 EWMA（最近重視）：$\lambda=0.10$
 
+FB更新ルールはゲーム作成時に固定する。
+
+- ruleset 1：既存ゲーム向けの従来ロジック
+- ruleset 2：新規ゲーム向けのプロモーション再校正ロジック
+
+累積プロモーション人員：
+$$ C^{promoStaff}(t)=0.90C^{promoStaff}(t-1)+0.10N^{promoStaff}(t) $$
+
+- 初期値は1人
+- $N^{promoStaff}(t)$ はターン解決時点の実在籍人数
+- 年度移行ではリセットせず次シーズンへ継承
+
+ruleset 2 の人員効率倍率：
+$$ M^{promoStaff}(t)=1+0.40\ln\left(1+\frac{\max(0,C^{promoStaff}(t)-1)}{2}\right) $$
+$$ EffectivePromoSpend(t)=PromoSpend(t)\cdot M^{promoStaff}(t) $$
+
 累積プロモ：
-$$ C^{promo}(t)=(1-\lambda)C^{promo}(t-1)+\lambda PromoSpend(t) $$
+$$ C^{promo}(t)=(1-\lambda)C^{promo}(t-1)+\lambda EffectivePromoSpend(t) $$
+
+ruleset 1 では $M^{promoStaff}=1$ として従来の支出EWMAを維持する。
 
 累積ホームタウン（急変ペナルティ）：
 $$ C^{ht}(t)=(1-\lambda)C^{ht}(t-1)+\lambda HTSpend(t)-\phi|\Delta HTSpend(t)| $$
 - v1：$\phi=0.00002$
 
 成長率（月次）：
-- スケール：$S_{promo-growth}=50,000,000, S_{ht-growth}=50,000,000$
+- ruleset 1：$S_{promo-growth}=10,000,000, a_1=0.006$
+- ruleset 2：$S_{promo-growth}=1,000,000, a_1=0.040$
+- $S_{ht-growth}=10,000,000$
 
 $$ g(t)=g_0 +a_1\ln(1+\frac{C^{promo}}{S_{promo-growth}}) +a_2\ln(1+\frac{C^{ht}}{S_{ht-growth}}) +a_3(Perf-0.5)+a_4(HistPerf-0.5) $$
 
-v1係数：
-- $g_0=-0.002$
-- $a_1=0.006, a_2=0.006$
+共通係数：
+- $g_0=-0.0005$
+- $a_2=0.006$
 - $a_3=0.010, a_4=0.006$
+- プロモーション人員の独立成長係数は0.0015、ホームタウン人員は0.0012
 
 上限接近で伸びにくく：
 $$ g^{eff}=g(t)\left(1-\frac{f(t)}{f_{max}}\right) $$
@@ -599,8 +620,11 @@ UI表示：
 ### 15.5 FB成長
 
 - $\lambda=0.10, \phi=0.00002$
-- $S_{promo-growth}=50M, S_{ht-growth}=50M$
-- $g_0=-0.002, a_1=0.006, a_2=0.006, a_3=0.010, a_4=0.006$
+- ruleset 1：$S_{promo-growth}=10M, a_1=0.006$（既存ゲーム）
+- ruleset 2：$S_{promo-growth}=1M, a_1=0.040$（新規ゲーム）
+- $S_{ht-growth}=10M$
+- $g_0=-0.0005, a_2=0.006, a_3=0.010, a_4=0.006$
+- ruleset 2 の人員効率係数：$\eta=0.40$、人員EWMA $\lambda_{staff}=0.10$
 
 ### 15.6 公開ファン指標
 

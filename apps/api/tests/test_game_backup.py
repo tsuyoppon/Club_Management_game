@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
+from uuid import uuid4
 
 from sqlalchemy import delete
 
+from app.config import constants
 from app.db import models
+from app.services import game_backup as game_backup_service
 from app.services.game_backup import (
     assert_table_classification,
     create_game_backup,
@@ -136,12 +139,41 @@ def test_game_backup_round_trip(db_session, tmp_path):
     assert restored["game_id"] == str(game_id)
     restored_game = db_session.get(models.Game, game_id)
     assert restored_game.status == models.GameStatus.archived
+    assert restored_game.fanbase_ruleset_version == constants.CURRENT_FANBASE_RULESET_VERSION
     assert restored_game.room.status == "archived"
     assert restored_game.room.host_mode == "dedicated"
     assert db_session.query(models.TurnDecision).count() == 1
     assert db_session.query(models.ClubFinancialLedger).one().amount == Decimal("123.45")
     assert db_session.query(models.GameCompletion).one().summary_json == {"champion": "Backup FC"}
     assert db_session.query(models.WebSession).count() == 1
+
+
+def test_pre_ruleset_backup_restores_as_legacy(monkeypatch, db_session, tmp_path):
+    game_id = uuid4()
+    rows = {table_name: [] for table_name in game_backup_service.RESTORE_ORDER}
+    rows["games"] = [
+        {
+            "id": str(game_id),
+            "name": "Pre-ruleset backup",
+            "status": models.GameStatus.active.value,
+        }
+    ]
+    manifest = {
+        "game_id": str(game_id),
+        "backup_id": "pre-ruleset",
+        "counts": {table_name: len(table_rows) for table_name, table_rows in rows.items()},
+    }
+    monkeypatch.setattr(
+        game_backup_service,
+        "_archive_rows",
+        lambda _path: (manifest, rows),
+    )
+
+    restore_game_backup(db_session, tmp_path / "legacy.clubgame.zip")
+    db_session.commit()
+
+    restored_game = db_session.get(models.Game, game_id)
+    assert restored_game.fanbase_ruleset_version == constants.FANBASE_RULESET_LEGACY
 
 
 def test_delete_is_blocked_when_backup_storage_is_invalid(monkeypatch, tmp_path):

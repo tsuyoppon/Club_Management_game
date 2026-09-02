@@ -99,13 +99,25 @@ G_EVENT = Decimal("0.4")  # 開幕/最終戦
 
 FB_EWMA_LAMBDA = Decimal("0.10")
 FB_HT_PENALTY_PHI = Decimal("0.00002")
-FB_S_PROMO_GROWTH = Decimal("10000000")  # 調整済み（PR5テスト通過値）
+
+# Fanbase rulesets are fixed when a game is created.  Existing games migrated
+# from a schema without a ruleset stay on v1; only newly created games use v2.
+FANBASE_RULESET_LEGACY = 1
+FANBASE_RULESET_PROMO_ROI = 2
+CURRENT_FANBASE_RULESET_VERSION = FANBASE_RULESET_PROMO_ROI
+
+FB_S_PROMO_GROWTH_LEGACY = Decimal("10000000")
+FB_S_PROMO_GROWTH_PROMO_ROI = Decimal("1000000")
+FB_S_PROMO_GROWTH = FB_S_PROMO_GROWTH_PROMO_ROI
 FB_S_HT_GROWTH = Decimal("10000000")  # 調整済み
 FB_G0 = Decimal("-0.0005")  # 調整済み
-FB_A1 = Decimal("0.006")
+FB_A1_LEGACY = Decimal("0.006")
+FB_A1_PROMO_ROI = Decimal("0.040")
+FB_A1 = FB_A1_PROMO_ROI
 FB_A2 = Decimal("0.006")
 FB_A3 = Decimal("0.010")
 FB_A4 = Decimal("0.006")
+FB_PROMOTION_STAFF_SPEND_EFFICIENCY = Decimal("0.40")
 
 # 公開ファン指標
 FAN_INDICATOR_KAPPA = Decimal("0.3")

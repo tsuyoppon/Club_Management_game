@@ -3,7 +3,11 @@ import math
 from decimal import Decimal
 from uuid import uuid4
 from app.services import fanbase
-from app.config.constants import INITIAL_FANBASE_COUNT, INITIAL_FB_RATE
+from app.config.constants import (
+    CURRENT_FANBASE_RULESET_VERSION,
+    INITIAL_FANBASE_COUNT,
+    INITIAL_FB_RATE,
+)
 from app.db.models import (
     ClubFanbaseState,
     ClubStaff,
@@ -76,7 +80,15 @@ def test_fanbase_update_logic(db_session):
     perf = 1.0 # Best
     hist = 0.5
     
-    updated = fanbase.update_fanbase_for_turn(db_session, state, promo, ht, perf, hist)
+    updated = fanbase.update_fanbase_for_turn(
+        db_session,
+        state,
+        promo,
+        ht,
+        perf,
+        hist,
+        fanbase_ruleset_version=CURRENT_FANBASE_RULESET_VERSION,
+    )
     
     assert updated.cumulative_promo > 0
     assert updated.cumulative_ht > 0
@@ -87,7 +99,15 @@ def test_fanbase_update_logic(db_session):
     # Test Penalty
     # Increase HT spend drastically
     ht2 = Decimal("50000000") # +45M
-    updated2 = fanbase.update_fanbase_for_turn(db_session, state, promo, ht2, perf, hist)
+    updated2 = fanbase.update_fanbase_for_turn(
+        db_session,
+        state,
+        promo,
+        ht2,
+        perf,
+        hist,
+        fanbase_ruleset_version=CURRENT_FANBASE_RULESET_VERSION,
+    )
     
     # Check if penalty applied (hard to check exact value without calc, but should run)
     assert updated2.last_ht_spend == ht2
@@ -133,6 +153,7 @@ def test_fanbase_staff_cumulatives_affect_growth_with_hometown_longer_memory(db_
         Decimal("0"),
         0.5,
         0.5,
+        fanbase_ruleset_version=CURRENT_FANBASE_RULESET_VERSION,
     )
 
     assert float(updated.cumulative_promotion_staff) == pytest.approx(1.2)
@@ -162,6 +183,7 @@ def test_fanbase_staff_cumulatives_affect_growth_with_hometown_longer_memory(db_
         Decimal("0"),
         0.5,
         0.5,
+        fanbase_ruleset_version=CURRENT_FANBASE_RULESET_VERSION,
     )
 
     assert float(updated2.cumulative_promotion_staff) == pytest.approx(1.18)
@@ -210,6 +232,7 @@ def test_followers_use_new_scale_and_positive_trend_bias(db_session, monkeypatch
         Decimal("5000000"),
         1.0,
         0.5,
+        fanbase_ruleset_version=CURRENT_FANBASE_RULESET_VERSION,
     )
 
     assert updated.fb_trend_streak == 1
@@ -261,6 +284,7 @@ def test_followers_negative_trend_lowers_error_mean(db_session, monkeypatch):
         Decimal("0"),
         0.0,
         0.0,
+        fanbase_ruleset_version=CURRENT_FANBASE_RULESET_VERSION,
     )
 
     assert updated.fb_trend_streak == -3

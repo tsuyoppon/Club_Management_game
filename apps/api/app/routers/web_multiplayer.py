@@ -12,6 +12,7 @@ from sqlalchemy import delete as sqlalchemy_delete
 from sqlalchemy.orm import Session, selectinload
 
 from app.config import get_settings
+from app.config.constants import CURRENT_FANBASE_RULESET_VERSION
 from app.db import models
 from app.dependencies import get_db, get_web_current_user, hash_session_token
 from app.routers import turns as turn_routes
@@ -653,7 +654,11 @@ def create_room(payload: RoomCreate, response: Response, db: Session = Depends(g
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Room needs 2 to 5 named clubs")
 
     user = models.User(display_name=payload.display_name.strip())
-    game = models.Game(name=payload.room_name.strip(), status=models.GameStatus.active)
+    game = models.Game(
+        name=payload.room_name.strip(),
+        status=models.GameStatus.active,
+        fanbase_ruleset_version=CURRENT_FANBASE_RULESET_VERSION,
+    )
     db.add_all([user, game])
     db.flush()
     db.add(models.Membership(game_id=game.id, user_id=user.id, role=models.MembershipRole.gm))

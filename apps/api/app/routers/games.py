@@ -3,6 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.config.constants import CURRENT_FANBASE_RULESET_VERSION
 from app.dependencies import get_current_user, get_db, require_role
 from app.db.models import Club, Game, GameStatus, Membership, MembershipRole, Season, User
 from app.schemas import ClubCreate, ClubRead, GameCreate, GameRead, MembershipCreate, SeasonSummaryRead
@@ -16,7 +17,11 @@ def create_game(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    game = Game(name=payload.name, status=GameStatus.active)
+    game = Game(
+        name=payload.name,
+        status=GameStatus.active,
+        fanbase_ruleset_version=CURRENT_FANBASE_RULESET_VERSION,
+    )
     db.add(game)
     db.commit()
     db.refresh(game)

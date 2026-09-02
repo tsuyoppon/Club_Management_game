@@ -122,7 +122,7 @@ def apply_finance_for_turn(db: Session, season_id: UUID, turn_id: UUID):
     season = db.execute(select(models.Season).where(models.Season.id == season_id)).scalar_one_or_none()
     if not season:
         raise ValueError(f"Season {season_id} not found")
-    
+
     clubs = db.execute(select(models.Club).where(models.Club.game_id == season.game_id)).scalars().all()
     
 from app.services import sponsor, reinforcement, staff, academy, ticket, fanbase, standings
@@ -143,6 +143,10 @@ def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
     season = db.execute(select(models.Season).where(models.Season.id == season_id)).scalar_one_or_none()
     if not season:
         raise ValueError(f"Season {season_id} not found")
+
+    game = db.execute(select(models.Game).where(models.Game.id == season.game_id)).scalar_one_or_none()
+    if not game:
+        raise ValueError(f"Game {season.game_id} not found")
     
     clubs = db.execute(select(models.Club).where(models.Club.game_id == season.game_id)).scalars().all()
     
@@ -193,7 +197,15 @@ def process_turn_expenses(db: Session, season_id: UUID, turn_id: UUID):
                 db, season_id, club.id
             )
         hist_perf = hist_perf_cache[club.id]
-        fanbase.update_fanbase_for_turn(db, fb_state, promo_spend, ht_spend, perf, hist_perf)
+        fanbase.update_fanbase_for_turn(
+            db,
+            fb_state,
+            promo_spend,
+            ht_spend,
+            perf,
+            hist_perf,
+            fanbase_ruleset_version=game.fanbase_ruleset_version,
+        )
         
         # PR7: 営業努力更新（毎月）
         sales_staff = sales_effort.get_sales_staff_count(db, club.id)

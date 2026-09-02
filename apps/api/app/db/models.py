@@ -18,7 +18,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
-from app.config.constants import TICKET_PRICE
+from app.config.constants import CURRENT_FANBASE_RULESET_VERSION, TICKET_PRICE
 from app.db.base import Base
 
 
@@ -66,6 +66,12 @@ class Game(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     status = Column(Enum(GameStatus), nullable=False, default=GameStatus.active)
+    fanbase_ruleset_version = Column(
+        Integer,
+        nullable=False,
+        default=CURRENT_FANBASE_RULESET_VERSION,
+        server_default=str(CURRENT_FANBASE_RULESET_VERSION),
+    )
     # PR8: 最下位ペナルティON/OFF設定
     last_place_penalty_enabled = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -76,6 +82,13 @@ class Game(Base):
     seasons = relationship("Season", back_populates="game", cascade="all, delete-orphan")
     room = relationship("GameRoom", back_populates="game", uselist=False, cascade="all, delete-orphan")
     completions = relationship("GameCompletion", back_populates="game", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        CheckConstraint(
+            "fanbase_ruleset_version IN (1, 2)",
+            name="ck_games_fanbase_ruleset_version",
+        ),
+    )
 
 
 class Club(Base):

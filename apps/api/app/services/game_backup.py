@@ -25,6 +25,7 @@ from sqlalchemy import DateTime, Enum, Numeric, inspect, select, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Session
 
+from app.config import constants
 from app.db.base import Base
 from app.db import models
 
@@ -517,6 +518,13 @@ def restore_game_backup(db: Session, path: str | Path) -> dict[str, Any]:
                     values[column_name] = user_map[str(values[column_name])]
             if table_name == "games":
                 values["status"] = models.GameStatus.archived.value
+                # Backups created before fanbase rulesets existed must retain
+                # legacy behavior rather than silently adopting the latest
+                # rules when restored.
+                values.setdefault(
+                    "fanbase_ruleset_version",
+                    constants.FANBASE_RULESET_LEGACY,
+                )
             if table_name == "game_rooms":
                 values["status"] = "archived"
                 invite_exists = db.execute(
