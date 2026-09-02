@@ -168,12 +168,16 @@ LEADS_L1 = Decimal("4.0")
 LEADS_L2 = Decimal("1.2")
 LEADS_L3 = Decimal("2.0")
 LEADS_L4 = Decimal("0.8")
+# 初期FB 10,000 × 公開指標係数0.3を、人気効果を再中心化する基準とする。
+SPONSOR_FOLLOWER_REFERENCE_COUNT = Decimal("3000")
+LEADS_FOLLOWER_RELATIVE_BOOST = Decimal("2.0")
 
 # Conversion（成約率）
 CONV_A0 = Decimal("-2.0")
 CONV_A1 = Decimal("0.55")
 CONV_A2 = Decimal("0.45")
 CONV_A3 = Decimal("0.10")
+CONV_FOLLOWER_RELATIVE_BOOST = Decimal("0.30")
 
 # 内定進捗確率（仕様は4〜6月、実装の month_index では9〜11に対応）
 PIPELINE_PROB_EXISTING = {9: 0.40, 10: 0.35, 11: 0.30}

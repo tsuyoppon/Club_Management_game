@@ -11,6 +11,9 @@ from app.config.constants import (
     CHURN_C0, CHURN_C1, CHURN_C2, CHURN_C3, CHURN_MIN, CHURN_MAX,
     LEADS_L0, LEADS_L1, LEADS_L2, LEADS_L3, LEADS_L4,
     CONV_A0, CONV_A1, CONV_A2, CONV_A3,
+    LEADS_FOLLOWER_RELATIVE_BOOST,
+    CONV_FOLLOWER_RELATIVE_BOOST,
+    SPONSOR_FOLLOWER_REFERENCE_COUNT,
     PIPELINE_PROB_EXISTING, PIPELINE_PROB_NEW,
     SPONSOR_EFFORT_HISTORY_WEIGHTS,
     SPONSOR_CONVERSION_HISTORY_WEIGHTS,
@@ -26,6 +29,29 @@ def _calculate_churn_rate(c_ret: float, perf: float, fan_growth: float) -> float
     term_f = float(CHURN_C3) * fan_growth
     churn_raw = float(CHURN_C0) - term_c - term_p - term_f
     return max(float(CHURN_MIN), min(float(CHURN_MAX), churn_raw))
+
+
+def _calculate_follower_effects(followers: float) -> tuple[float, float]:
+    """Return lead and conversion terms for the current follower count.
+
+    The relative boost is zero at the reference count, preserving the previous
+    sponsor balance there while making differences in popularity matter more.
+    Historical follower values are intentionally not included.
+    """
+    safe_followers = max(float(followers), 0.0)
+    log_followers = math.log1p(safe_followers)
+    log_reference = math.log1p(float(SPONSOR_FOLLOWER_REFERENCE_COUNT))
+    relative_popularity = log_followers - log_reference
+
+    lead_term = (
+        float(LEADS_L4) * log_followers
+        + float(LEADS_FOLLOWER_RELATIVE_BOOST) * relative_popularity
+    )
+    conversion_term = (
+        float(CONV_A3) * log_followers
+        + float(CONV_FOLLOWER_RELATIVE_BOOST) * relative_popularity
+    )
+    return lead_term, conversion_term
 
 
 def _retention_effort_per_sponsor(c_ret: float, sponsor_count: int) -> float:
@@ -354,14 +380,13 @@ def _calculate_forecast_next_counts(
     term_l_c = float(LEADS_L1) * math.log(1 + c_new_leads)
     term_l_n = float(LEADS_L2) * math.log(1 + state.count)
     term_l_p = float(LEADS_L3) * (perf - 0.5)
-    term_l_f = float(LEADS_L4) * math.log(1 + followers)
+    term_l_f, term_p_f = _calculate_follower_effects(followers)
     leads_raw = float(LEADS_L0) + term_l_c + term_l_n + term_l_p + term_l_f
     leads = max(0, round(leads_raw))
     
     # Conversion calculation
     term_p_c = float(CONV_A1) * math.log(1 + c_new_conversion)
     term_p_p = float(CONV_A2) * (perf - 0.5)
-    term_p_f = float(CONV_A3) * math.log(1 + followers)
     logit = float(CONV_A0) + term_p_c + term_p_p + term_p_f
     try:
         prob = 1.0 / (1.0 + math.exp(-logit))

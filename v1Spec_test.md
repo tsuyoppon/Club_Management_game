@@ -455,17 +455,26 @@ v1係数：
 
 ### 10.6 新規スポンサー数（見込み顧客×成約率）
 
+公開フォロワーの基準値を $F_{ref}=3,000$ とし、現在値だけから相対人気を計算する。
+過去シーズンのフォロワー平均・累積値は使用しない。
+
+$$ R_F=\ln(1+Followers(7月))-\ln(1+F_{ref}) $$
+
 見込み顧客数：
-$$ L=round\Big( L_0+\ell_1\ln(1+H^{new,leads}) +\ell_2\ln(1+N_{this}) +\ell_3(\overline{Perf}^{past}-0.5) +\ell_4\ln(1+Followers(7月)) \Big) $$
+$$ L=round\Big( L_0+\ell_1\ln(1+H^{new,leads}) +\ell_2\ln(1+N_{this}) +\ell_3(\overline{Perf}^{past}-0.5) +\ell_4\ln(1+Followers(7月)) + b_LR_F \Big) $$
 
 v1係数：
-- $L_0=4, \ell_1=4.0, \ell_2=1.2, \ell_3=2.0, \ell_4=0.8$
+- $L_0=4, \ell_1=4.0, \ell_2=1.2, \ell_3=2.0, \ell_4=0.8, b_L=2.0$
 
 成約率：
-$$ p=\sigma\Big( a_0+a_1\ln(1+H^{new,conv}) +a_2(\overline{Perf}_{this}-0.5) +a_3\ln(1+Followers(7月)) \Big) $$
+$$ p=\sigma\Big( a_0+a_1\ln(1+H^{new,conv}) +a_2(\overline{Perf}_{this}-0.5) +a_3\ln(1+Followers(7月)) + b_pR_F \Big) $$
 
 v1係数：
-- $a_0=-2.0, a_1=0.55, a_2=0.45, a_3=0.10$
+- $a_0=-2.0, a_1=0.55, a_2=0.45, a_3=0.10, b_p=0.30$
+
+$Followers=F_{ref}$ では $R_F=0$ となるため従来のスポンサー水準を維持する。
+その他の条件を同一にしてフォロワー数を2倍にした場合、5シーズン後のスポンサー数が
+平均約30%多くなるように $b_L$ と $b_p$ を校正する。
 
 新規契約数（確率）：
 $$ N^{new}_{next}\sim Binomial(L,p) $$
